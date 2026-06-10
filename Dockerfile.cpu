@@ -1,0 +1,93 @@
+# Effigies — CPU-only image for LOCAL INTEGRATION TESTING.
+#
+# This builds the SAME engine (COLMAP + full OpenMVS chain) from the SAME pinned
+# sources as the production Dockerfile, but WITHOUT CUDA, on a plain Ubuntu base.
+# It builds natively on arm64 (Apple Silicon) and runs without a GPU.
+#
+#   Purpose : validate the NodeODM/WebODM contract and the pipeline end-to-end on
+#             a SMALL dataset.
+#   NOT for : real or large jobs. OpenMVS RefineMesh on CPU is slow; this image
+#             exists to prove the node works, not to produce production meshes.
+#
+# Build:  docker build -f Dockerfile.cpu -t effigies:cpu .
+# Run:    docker run -p 3001:3000 effigies:cpu        # no --gpus
+# In a task, set the "Use GPU" option to OFF (this build has no CUDA).
+#
+# See docs/DEPLOYMENT.md for the GPU production path.
+
+ARG UBUNTU_VERSION=22.04
+FROM ubuntu:${UBUNTU_VERSION} AS engine
+
+# --- Pinned upstream versions (kept in sync with the CUDA Dockerfile) ---
+ARG COLMAP_VERSION=3.11.1
+ARG OPENMVS_VERSION=v2.3.0
+ARG VCG_REF=master
+# Parallel build jobs. OpenMVS compilation is memory-hungry; keep this modest so
+# the build does not OOM on a default Docker Desktop VM. Raise if you have RAM.
+ARG JOBS=4
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Same dependency set as the CUDA image, minus Qt (we build COLMAP CLI-only) —
+# CUDA itself came from the base image there, so the apt list is otherwise identical.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git cmake ninja-build build-essential ca-certificates \
+      libeigen3-dev libcgal-dev libgmp-dev libmpfr-dev \
+      libboost-program-options-dev libboost-graph-dev libboost-system-dev \
+      libboost-iostreams-dev libboost-serialization-dev \
+      libflann-dev libfreeimage-dev libmetis-dev libsqlite3-dev \
+      libgoogle-glog-dev libgtest-dev libceres-dev libcurl4-openssl-dev \
+      libglew-dev libglfw3-dev libglu1-mesa-dev \
+      libopencv-dev libpng-dev libjpeg-dev libtiff-dev \
+      python3 python3-dev python3-numpy python3-pip \
+      pdal \
+      nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- COLMAP from pinned source, CPU-only, no GUI ---
+RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/colmap.git /opt/colmap && \
+    cmake -S /opt/colmap -B /opt/colmap/build -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCUDA_ENABLED=OFF \
+      -DGUI_ENABLED=OFF \
+      -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    ninja -C /opt/colmap/build install && \
+    rm -rf /opt/colmap
+
+# --- OpenMVS from pinned source, CPU-only ---
+RUN git clone https://github.com/cdcseacave/VCG.git /opt/vcglib && \
+    git -C /opt/vcglib checkout ${VCG_REF} && \
+    git clone --depth 1 --branch ${OPENMVS_VERSION} https://github.com/cdcseacave/openMVS.git /opt/openMVS && \
+    cmake -S /opt/openMVS -B /opt/openMVS_build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DVCG_ROOT=/opt/vcglib \
+      -DOpenMVS_USE_CUDA=OFF \
+      -DEIGEN3_INCLUDE_DIR=/usr/include/eigen3 \
+      -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    cmake --build /opt/openMVS_build -j"${JOBS}" --target install && \
+    rm -rf /opt/openMVS /opt/openMVS_build /opt/vcglib
+
+ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
+
+# --- Verify the binaries that justify this node's existence (fail loudly) ---
+RUN set -eux; \
+    command -v colmap; \
+    for b in DensifyPointCloud ReconstructMesh RefineMesh TextureMesh InterfaceCOLMAP; do \
+      command -v "$b" || { echo "FATAL: required OpenMVS binary '$b' missing after build" >&2; exit 1; }; \
+    done; \
+    command -v pdal; \
+    echo "[effigies] all required engine binaries present (CPU build)"
+
+# --- NodeODM REST layer (unmodified upstream) ---
+WORKDIR /opt
+RUN git clone --depth 1 https://github.com/OpenDroneMap/NodeODM.git
+WORKDIR /opt/NodeODM
+RUN npm install --production
+
+# --- our engine ---
+COPY . /opt/effigies
+ENV ODM_PATH=/opt/effigies
+RUN ln -sf /opt/effigies/helpers/optionsToJson.py /opt/NodeODM/helpers/odmOptionsToJson.py || true
+
+EXPOSE 3000
+CMD ["node", "/opt/NodeODM/index.js", "--odm_path", "/opt/effigies"]
