@@ -11,7 +11,7 @@ labels: bug
 **Dataset**
 - Sparse engine: [colmap / opensfm]
 - Georeference mode: [auto / gcp / exif / none]
-- CRS: [e.g. EPSG:32637]
+- CRS: [auto / e.g. EPSG:32633]
 - Image count / type: [e.g. 120 close-range turntable]
 
 **Logs**

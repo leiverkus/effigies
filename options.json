@@ -84,7 +84,7 @@
     "value": "auto",
     "domain": "string",
     "type": "string",
-    "help": "Target projected CRS for georeferencing. Levant: 'EPSG:6991' (Israeli TM Grid), 'EPSG:28191' (Palestine 1923), 'EPSG:32637' (UTM 37N). 'auto' derives UTM from GPS/GCP. Default: %(default)s"
+    "help": "Target projected CRS for georeferencing, given as an EPSG code (e.g. 'EPSG:32633'). 'auto' derives the appropriate UTM zone automatically from the GPS/GCP coordinates. Any projected EPSG code is accepted, including regional grids. Default: %(default)s"
   },
   {
     "name": "gcp",

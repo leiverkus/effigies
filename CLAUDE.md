@@ -12,8 +12,10 @@ than commercial tools (Metashape, RealityCapture): ODM runs OpenMVS only up to
 (Densify → ReconstructMesh → RefineMesh → TextureMesh) on top of a COLMAP sparse
 reconstruction, and bridges the result into the WebODM asset contract.
 
-Target use: close-range / convergent photogrammetry of finds and architecture in
-the Southern Levant, alongside the standard ODM node for GPS-tagged aerial work.
+Target use: close-range / convergent photogrammetry of objects (finds, artefacts)
+and architecture, alongside the standard ODM node for GPS-tagged aerial work. The
+node is region-agnostic; it was originally built for archaeological documentation
+in the Southern Levant, but nothing in the engine is specific to that region.
 
 > *effigies* (lat.) — „das plastische Abbild, die geformte Nachbildung".
 
@@ -49,9 +51,11 @@ Do not break these without an explicit instruction to do so.
 3. **Georeferencing must support `none`.** Object / turntable captures have no
    meaningful world position. `--georeference none` must always keep a metrically
    consistent local frame and must never fail for lack of GPS/GCP.
-4. **CRS defaults are explicit.** Levant projected CRS: **EPSG:6991** (Israeli TM
-   Grid), **EPSG:28191** (Palestine 1923), **EPSG:32637** (UTM 37N). Never
-   hard-code a single CRS; honour the `--crs` option and `auto` UTM derivation.
+4. **CRS handling is explicit and general.** The default is `auto` (UTM zone
+   derived from GPS/GCP). Never hard-code a single CRS; honour the `--crs` option
+   for any projected EPSG code. Regional grids (e.g. **EPSG:6991** Israeli TM Grid,
+   **EPSG:28191** Palestine 1923, **EPSG:32637** UTM 37N for the Southern Levant)
+   are valid `--crs` *values*, not defaults.
 5. **Float precision via offset.** Any georeferenced OBJ must be written with the
    projected offset subtracted (offset recorded in `georef_transform.json`).
    Never write raw UTM coordinates into vertex positions.
