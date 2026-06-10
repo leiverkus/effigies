@@ -58,7 +58,7 @@
     "name": "mesh-decimate",
     "title": "Mesh Decimation Factor",
     "value": "1.0",
-    "domain": "float > 0 and <= 1",
+    "domain": "float: 0 <= x <= 1",
     "type": "float",
     "help": "ReconstructMesh decimation. 1.0 = no decimation (full detail). 0.5 = halve faces. Default: %(default)s"
   },
