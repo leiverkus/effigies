@@ -1,0 +1,2 @@
+# Synthetic COLMAP fixtures are generated at test time by tests/test_georef.py.
+# This dir is kept so the allow-list in .gitignore has a target.

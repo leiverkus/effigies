@@ -1,0 +1,20 @@
+# Normalize line endings
+* text=auto eol=lf
+
+# Shell scripts must stay LF and executable
+*.sh text eol=lf
+run.sh text eol=lf
+
+# Python
+*.py text eol=lf
+
+# Mark common binaries (in case any slip in) as binary
+*.png binary
+*.jpg binary
+*.tif binary
+*.laz binary
+*.ply binary
+*.obj binary
+
+# Language stats: don't count vendored or generated dirs
+NodeODM/** linguist-vendored

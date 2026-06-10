@@ -1,0 +1,69 @@
+# --- Photogrammetry inputs / outputs (never commit data) ---
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+*.JPG
+*.JPEG
+*.PNG
+images/
+uploads/
+# OpenMVS / COLMAP working artifacts
+*.mvs
+*.dmap
+*.ply
+*.obj
+*.mtl
+database.db
+sparse/
+dense/
+depthmaps/
+scene*.mvs
+*_dense*
+work/
+effigies/                  # per-project workdir created by run.sh
+
+# --- GIS binary formats ---
+*.las
+*.laz
+*.ept
+*.shp
+*.shx
+*.dbf
+*.gpkg
+*.geotiff
+
+# --- Secrets / local config ---
+.env
+.env.*
+*.key
+*.pem
+secrets/
+*.local.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Node (NodeODM is cloned at build time, not vendored) ---
+node_modules/
+NodeODM/
+
+# --- Build / OS / editor ---
+*.log
+*.tmp
+dist/
+build/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- Allow-list: keep test fixtures even though they look like data ---
+!tests/fixtures/**

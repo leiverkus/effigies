@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test deps
+        run: pip install numpy
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck run.sh pipeline/*.sh scripts/*.sh || true  # advisory, not blocking yet
+
+      - name: Bash syntax
+        run: |
+          for f in run.sh pipeline/*.sh scripts/*.sh; do bash -n "$f"; done
+
+      - name: Python compile
+        run: |
+          for f in helpers/*.py tests/*.py; do python3 -m py_compile "$f"; done
+
+      - name: Validate options.json
+        run: python3 -c "import json; json.load(open('options.json'))"
+
+      - name: Unit tests (georef)
+        run: python3 tests/test_georef.py
