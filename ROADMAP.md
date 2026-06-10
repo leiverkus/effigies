@@ -22,20 +22,28 @@ are targets, not promises. Items move to [CHANGELOG.md](CHANGELOG.md) as they sh
 Working NodeODM-compatible engine: COLMAP sparse → full OpenMVS chain → georef
 bridge → WebODM asset mapping, with unit tests and CI. See the changelog.
 
-## v0.2.0 — Reproducible & verifiable build *(next)*
+## v0.2.0 — Reproducible & verifiable build *(in progress)*
 
 Make the image trustworthy and the output cloud web-ready.
 
-- [ ] **Source-built, pinned Dockerfile.** Build COLMAP and OpenMVS from known-good
-      tags instead of distro packages. Add a build-time gate:
-      `RUN which DensifyPointCloud ReconstructMesh RefineMesh TextureMesh`.
-- [ ] **Point cloud → `.laz` + EPT.** Convert `scene_dense.ply` with PDAL and emit
-      an Entwine/EPT tileset so the WebODM Potree viewer works.
+- [x] **Source-built, pinned Dockerfile.** COLMAP `3.11.1` and OpenMVS `v2.3.0`
+      built from source (versions as build `ARG`s), with a build-time gate:
+      `which colmap DensifyPointCloud ReconstructMesh RefineMesh TextureMesh
+      InterfaceCOLMAP pdal` — the build fails loudly if any is missing.
+- [x] **Point cloud → `.laz` + EPT.** `helpers/pointcloud_to_laz.py` applies the
+      georef transform, writes `odm_georeferenced_model.laz` via PDAL, and builds
+      an EPT tileset (entwine/untwine) for the Potree viewer.
+- [x] **No `latest` tags.** Base image and engine versions are explicit `ARG`s.
 - [ ] **End-to-end smoke test** against a small public close-range dataset (run
-      behind a manual / self-hosted CI job, not the GPU-less default runner).
-- [ ] **Pin and document image tags**; no `latest` anywhere.
+      behind a manual / self-hosted CI job, not the GPU-less default runner). The
+      from-source image has not yet been built/run on real hardware — until then
+      the `which` gate is the safety net, not a green end-to-end run.
+- [ ] **Pin VCGlib to a verified commit SHA** (currently tracks a branch via the
+      `VCG_REF` arg; lock it before tagging a release image).
 - [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
       builds and handle the variants.
+- [ ] Slim the image with a multi-stage (devel build → runtime copy) layout once
+      the single-stage build is confirmed working.
 
 ## v0.3.0 — Georeferencing accuracy
 

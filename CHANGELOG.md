@@ -7,9 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Source-built, pinned Dockerfile.** COLMAP (`3.11.1`) and OpenMVS (`v2.3.0`)
+  are now compiled from upstream source with CUDA, replacing the distro packages;
+  Eigen/CGAL/Boost/OpenCV come from Ubuntu 22.04. Versions are declared as build
+  `ARG`s and a build-time `which` gate fails the build loudly if `colmap`,
+  `DensifyPointCloud`, `ReconstructMesh`, `RefineMesh`, `TextureMesh`,
+  `InterfaceCOLMAP` or `pdal` is missing.
+- **Georeferenced point cloud output.** New `helpers/pointcloud_to_laz.py` applies
+  the georef similarity to `scene_dense.ply` and writes
+  `odm_georeferenced_model.laz` via PDAL (full projected coordinates, LAS
+  scale/offset for precision), and optionally builds an EPT tileset
+  (`entwine_pointcloud/`) for the Potree viewer when `entwine`/`untwine` is
+  present. `map_outputs.py` maps the LAZ + EPT into the WebODM paths, with the raw
+  PLY kept as a documented fallback.
+- Unit tests for the point-cloud transform matrix (`tests/test_pointcloud.py`);
+  the local runner and CI now execute every `tests/test_*.py`.
+
 ### Planned
-See [ROADMAP.md](ROADMAP.md). Next up: source-built and binary-verified Dockerfile,
-`.laz` + EPT point-cloud output, multi-view GCP triangulation.
+See [ROADMAP.md](ROADMAP.md). Still open for 0.2.0: an end-to-end smoke test on a
+real dataset, a verified VCGlib commit pin, and confirming the
+`InterfaceCOLMAP`/`InterfaceOpenSfM` binary names across OpenMVS builds. Beyond
+that: multi-view GCP triangulation (0.3.0).
 
 ## [0.1.0] - 2026-06-10
 
