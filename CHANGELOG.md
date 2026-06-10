@@ -21,12 +21,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`entwine_pointcloud/`) for the Potree viewer when `entwine`/`untwine` is
   present. `map_outputs.py` maps the LAZ + EPT into the WebODM paths, with the raw
   PLY kept as a documented fallback.
-- Unit tests for the point-cloud transform matrix (`tests/test_pointcloud.py`);
-  the local runner and CI now execute every `tests/test_*.py`.
+- **CPU test image** (`Dockerfile.cpu`) — same pinned engine built without CUDA,
+  for local integration testing on machines without an NVIDIA GPU (e.g. Apple
+  Silicon). Plus `docs/DEPLOYMENT.md` (local CPU + GPU host recipes, WebODM node
+  wiring) and a `.dockerignore`.
+- Unit tests for the point-cloud transform matrix (`tests/test_pointcloud.py`) and
+  the NodeODM options translation (`tests/test_options.py`); the local runner and
+  CI now execute every `tests/test_*.py`.
+
+### Fixed
+- **Options were incompatible with NodeODM.** `options.json` was a flat list, but
+  NodeODM (`libs/odmInfo.js`) expects an argparse-style descriptor object keyed by
+  `--flag`; it was serving every option as `name="0".."12"` with the wrong types.
+  `helpers/optionsToJson.py` now translates our list into NodeODM's schema (enum
+  choices, `<class 'int'>`/`float`, bool via `default`, valid `metavar` domains),
+  so WebODM builds the correct task UI. (Found by actually running the node.)
+- **Options shim could not find `options.json`.** It resolved the path with
+  `abspath(__file__)`, which does not follow the NodeODM symlink — it looked in
+  `/opt/NodeODM`. Now prefers `ODM_PATH` and falls back to `realpath`.
+- `mesh-decimate` domain changed to `float: 0 <= x <= 1` so it passes NodeODM's
+  `checkDomain` validation on task submission.
+
+### Notes
+- NodeODM hard-skips a `--gcp` UI option (WebODM handles GCP upload natively), so
+  the `gcp` option is intentionally not shown; `run.sh` still auto-detects
+  `gcp_list.txt`. The node is verified to build, run, serve all options and be
+  reachable on the WebODM network; a full processing run on a dataset is the
+  remaining 0.2.0 validation.
 
 ### Planned
-See [ROADMAP.md](ROADMAP.md). Still open for 0.2.0: an end-to-end smoke test on a
-real dataset, a verified VCGlib commit pin, and confirming the
+See [ROADMAP.md](ROADMAP.md). Still open for 0.2.0: a full end-to-end processing
+run on a real dataset, a verified VCGlib commit pin, and confirming the
 `InterfaceCOLMAP`/`InterfaceOpenSfM` binary names across OpenMVS builds. Beyond
 that: multi-view GCP triangulation (0.3.0).
 

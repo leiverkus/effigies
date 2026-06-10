@@ -34,10 +34,12 @@ Make the image trustworthy and the output cloud web-ready.
       georef transform, writes `odm_georeferenced_model.laz` via PDAL, and builds
       an EPT tileset (entwine/untwine) for the Potree viewer.
 - [x] **No `latest` tags.** Base image and engine versions are explicit `ARG`s.
-- [ ] **End-to-end smoke test** against a small public close-range dataset (run
-      behind a manual / self-hosted CI job, not the GPU-less default runner). The
-      from-source image has not yet been built/run on real hardware — until then
-      the `which` gate is the safety net, not a green end-to-end run.
+- [~] **End-to-end smoke test.** The CPU image (`Dockerfile.cpu`) now builds the
+      pinned engine from source on arm64, the `which` gate passes, and the node
+      runs: NodeODM reports `engine=effigies`, serves all options correctly and is
+      reachable on the WebODM network. STILL OPEN: a full processing run on a real
+      dataset (sparse → densify → refine → texture → LAZ) to confirm the pipeline,
+      and the same on the CUDA image on GPU hardware.
 - [ ] **Pin VCGlib to a verified commit SHA** (currently tracks a branch via the
       `VCG_REF` arg; lock it before tagging a release image).
 - [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
