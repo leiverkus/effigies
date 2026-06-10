@@ -56,11 +56,25 @@ def main():
         for png in glob.glob(os.path.join(W, base + "*.png")):
             link_or_copy(png, os.path.join(P, "odm_texturing", os.path.basename(png)))
 
-    # 2. dense point cloud -> odm_georeferencing (WebODM expects .laz here)
-    #    Convert scene_dense.ply -> laz with PDAL at build time; here we pass the ply
-    #    through and let postprocessing build EPT.
-    link_or_copy(os.path.join(W, "scene_dense.ply"),
-                 os.path.join(P, "odm_georeferencing", "odm_georeferenced_model.ply"))
+    # 2. dense point cloud -> odm_georeferencing (WebODM expects .laz here).
+    #    pointcloud_to_laz.py produces the georeferenced LAZ; fall back to the raw
+    #    PLY only if the LAZ step could not run (e.g. PDAL unavailable).
+    laz = os.path.join(W, "odm_georeferenced_model.laz")
+    if os.path.exists(laz):
+        link_or_copy(laz, os.path.join(P, "odm_georeferencing", "odm_georeferenced_model.laz"))
+    else:
+        print("[map] no LAZ found; passing the raw PLY through as a fallback")
+        link_or_copy(os.path.join(W, "scene_dense.ply"),
+                     os.path.join(P, "odm_georeferencing", "odm_georeferenced_model.ply"))
+
+    # 2b. EPT tileset -> entwine_pointcloud/ (for the Potree web viewer), if built.
+    ept_src = os.path.join(W, "entwine_pointcloud")
+    if os.path.isdir(ept_src):
+        ept_dst = os.path.join(P, "entwine_pointcloud")
+        if os.path.exists(ept_dst):
+            shutil.rmtree(ept_dst)
+        shutil.copytree(ept_src, ept_dst)
+        print(f"[map] {ept_src} -> {ept_dst}")
 
     # 3. report stub so the UI has a stats target
     os.makedirs(os.path.join(P, "odm_report"), exist_ok=True)

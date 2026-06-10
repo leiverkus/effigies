@@ -98,7 +98,15 @@ python3 "$(dirname "$0")/helpers/georef_bridge.py" \
      --gcp "${OPT[gcp]}"
 
 # ---------------------------------------------------------------------------
-# 5. Map outputs onto the WebODM asset contract
+# 5. Point cloud -> georeferenced LAZ (+ EPT for the Potree viewer)
+#    Applies the georef transform to scene_dense.ply and writes LAZ via PDAL.
+# ---------------------------------------------------------------------------
+if ! python3 "$(dirname "$0")/helpers/pointcloud_to_laz.py" --work "$WORK" --ept; then
+  echo "[effigies] WARN: LAZ/EPT step failed; map_outputs will fall back to the raw PLY" >&2
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Map outputs onto the WebODM asset contract
 # ---------------------------------------------------------------------------
 python3 "$(dirname "$0")/helpers/map_outputs.py" --proj "$PROJ" --work "$WORK"
 

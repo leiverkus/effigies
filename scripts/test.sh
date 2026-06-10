@@ -13,7 +13,7 @@ echo "== options.json =="
 python3 -c "import json; n=len(json.load(open('options.json'))); print(f'  ok {n} options')"
 
 echo "== unit tests =="
-python3 tests/test_georef.py
+for t in tests/test_*.py; do echo "-- $t"; python3 "$t"; done
 
 echo
 echo "all checks passed"
