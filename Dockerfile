@@ -5,22 +5,86 @@
 # Run:    docker run -p 3001:3000 --gpus all effigies
 # Then add http://<host>:3001 as a Processing Node in WebODM.
 #
-# Base carries CUDA so COLMAP and OpenMVS can use the GPU.
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS engine
+# The whole point of this node is OpenMVS' ReconstructMesh/RefineMesh. Distro
+# packages of OpenMVS are frequently too old or built without those binaries, so
+# we build COLMAP and OpenMVS from PINNED upstream source and then *verify* the
+# binaries exist (the `which` gate below fails the build loudly if any is
+# missing). Eigen 3.4, CGAL, Boost and OpenCV come from Ubuntu 22.04 packages —
+# they are recent enough for the pinned OpenMVS/COLMAP releases.
+#
+# NOTE: this is a single-stage image on the CUDA *devel* base, so every build and
+# runtime library is present and the result is more likely to actually run. A
+# slimmer multi-stage (devel build -> runtime copy) image is a later optimization
+# (see ROADMAP.md); correctness and verifiability come first.
+
+ARG CUDA_VERSION=12.4.1
+ARG UBUNTU_VERSION=22.04
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS engine
+
+# --- Pinned upstream versions (bump here; the which-gate guards regressions) ---
+ARG COLMAP_VERSION=3.11.1
+ARG OPENMVS_VERSION=v2.3.0
+# VCGlib has no release tags aligned to OpenMVS. Pin to a verified commit SHA once
+# the build has been exercised in CI; until then this is the one ref tracking a
+# moving branch and must be locked before tagging a release image.
+ARG VCG_REF=master
+# GPU architectures to compile for. 'all-major' covers common cards; narrow it
+# (e.g. "75;86;89") to speed up the build for known hardware.
+ARG CUDA_ARCH=all-major
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# --- Build + runtime dependencies (shared by COLMAP and OpenMVS) ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      colmap \
-      openmvs-tools \
-      python3 python3-numpy python3-pip \
+      git cmake ninja-build build-essential ca-certificates \
+      libeigen3-dev libcgal-dev libgmp-dev libmpfr-dev \
+      libboost-program-options-dev libboost-graph-dev libboost-system-dev \
+      libboost-iostreams-dev libboost-serialization-dev \
+      libflann-dev libfreeimage-dev libmetis-dev libsqlite3-dev \
+      libgoogle-glog-dev libgtest-dev libceres-dev libcurl4-openssl-dev \
+      libglew-dev libglfw3-dev libglu1-mesa-dev \
+      qtbase5-dev libqt5opengl5-dev \
+      libopencv-dev libpng-dev libjpeg-dev libtiff-dev \
+      python3 python3-dev python3-numpy python3-pip \
       pdal \
       nodejs npm \
-      git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-# NOTE: distro packages for colmap/openmvs vary in freshness. For production,
-# build OpenMVS and COLMAP from source pinned to a known-good tag — the whole
-# point of this node is using OpenMVS' ReconstructMesh/RefineMesh, so verify
-# those binaries exist:  RUN which DensifyPointCloud ReconstructMesh RefineMesh TextureMesh
+
+# --- COLMAP from pinned source ---
+RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/colmap.git /opt/colmap && \
+    cmake -S /opt/colmap -B /opt/colmap/build -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} \
+      -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    ninja -C /opt/colmap/build install && \
+    rm -rf /opt/colmap
+
+# --- OpenMVS from pinned source (VCGlib is a build-time header dependency) ---
+RUN git clone https://github.com/cdcseacave/VCG.git /opt/vcglib && \
+    git -C /opt/vcglib checkout ${VCG_REF} && \
+    git clone --depth 1 --branch ${OPENMVS_VERSION} https://github.com/cdcseacave/openMVS.git /opt/openMVS && \
+    cmake -S /opt/openMVS -B /opt/openMVS_build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DVCG_ROOT=/opt/vcglib \
+      -DOpenMVS_USE_CUDA=ON \
+      -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} \
+      -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs/ \
+      -DEIGEN3_INCLUDE_DIR=/usr/include/eigen3 \
+      -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    cmake --build /opt/openMVS_build -j"$(nproc)" --target install && \
+    rm -rf /opt/openMVS /opt/openMVS_build /opt/vcglib
+
+# OpenMVS installs its tools under <prefix>/bin/OpenMVS — put them on PATH.
+ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
+
+# --- Verify the binaries that justify this node's existence (fail loudly) ---
+RUN set -eux; \
+    command -v colmap; \
+    for b in DensifyPointCloud ReconstructMesh RefineMesh TextureMesh InterfaceCOLMAP; do \
+      command -v "$b" || { echo "FATAL: required OpenMVS binary '$b' missing after build" >&2; exit 1; }; \
+    done; \
+    command -v pdal; \
+    echo "[effigies] all required engine binaries present"
 
 # --- NodeODM REST layer (unmodified upstream) ---
 WORKDIR /opt
