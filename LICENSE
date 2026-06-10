@@ -19,24 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-Third-party components
--------------------------------------------------------------------------------
-
-The Effigies source code in this repository is licensed under MIT (above).
-Effigies is an orchestration layer: it invokes the projects below as separate
-programs, and the Docker image bundles them as an aggregation. Each retains its
-own license, which continues to govern that component:
-
-  NodeODM, ODM   — AGPL-3.0     (https://github.com/OpenDroneMap)
-  OpenMVS        — AGPL-3.0     (https://github.com/cdcseacave/openMVS)
-  COLMAP         — BSD-3-Clause (https://github.com/colmap/colmap)
-  OpenSfM        — BSD-2-Clause (https://github.com/mapillary/OpenSfM)
-
-If you redistribute the Docker image (or any build that bundles the AGPL-3.0
-components above), the AGPL-3.0 obligations apply to those components — in
-particular, you must make their corresponding source available to users who
-interact with them over a network. Effigies uses these components unmodified,
-so that obligation is satisfied by pointing to their upstream repositories.
-See THIRD_PARTY_LICENSES.md for details.
