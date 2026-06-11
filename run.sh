@@ -70,8 +70,10 @@ fi
 if [[ "${OPT[sparse-engine]}" == "colmap" ]]; then
   bash "$(dirname "$0")/pipeline/sparse_colmap.sh" \
        "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG"
-  # COLMAP -> OpenMVS scene
-  InterfaceCOLMAP -i "$WORK/sparse/0" -o "$WORK/scene.mvs" -w "$WORK"
+  # COLMAP -> OpenMVS scene. InterfaceCOLMAP reads the undistorted dense
+  # workspace (dense/sparse model + dense/images), produced by image_undistorter
+  # in sparse_colmap.sh — not the raw sparse/0 model.
+  InterfaceCOLMAP -i "$WORK/dense" -o "$WORK/scene.mvs" -w "$WORK"
 else
   bash "$(dirname "$0")/pipeline/sparse_opensfm.sh" "$IMAGES" "$WORK"
   InterfaceOpenSfM -i "$WORK/opensfm" -o "$WORK/scene.mvs" -w "$WORK"

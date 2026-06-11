@@ -61,3 +61,20 @@ if [[ ! -d "$WORK/sparse/0" ]]; then
   exit 1
 fi
 echo "[colmap] sparse model at $WORK/sparse/0"
+
+# Undistort into the workspace layout OpenMVS' InterfaceCOLMAP expects:
+# <dense>/sparse/{cameras,images,points3D}.bin + <dense>/images/ (undistorted).
+# This is also required for correctness, not just layout: OpenMVS densifies on
+# pinhole (undistorted) images, so the raw distorted sparse/0 must not be fed in.
+echo "[colmap] image_undistorter -> dense workspace for OpenMVS"
+rm -rf "$WORK/dense"
+colmap image_undistorter \
+  --image_path "$IMAGES" \
+  --input_path "$WORK/sparse/0" \
+  --output_path "$WORK/dense" \
+  --output_type COLMAP
+if [[ ! -f "$WORK/dense/sparse/cameras.bin" ]]; then
+  echo "[colmap] undistortion failed: no dense/sparse model produced" >&2
+  exit 1
+fi
+echo "[colmap] dense workspace at $WORK/dense"
