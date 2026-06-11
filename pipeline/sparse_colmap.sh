@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # COLMAP sparse stage.
-# args: IMAGES WORK MATCHER CAMERA_MODEL GPU_FLAG
+# args: IMAGES WORK MATCHER CAMERA_MODEL GPU_FLAG [MAPPER]
 set -euo pipefail
-IMAGES="$1"; WORK="$2"; MATCHER="$3"; CAMERA_MODEL="$4"; GPU="$5"
+IMAGES="$1"; WORK="$2"; MATCHER="$3"; CAMERA_MODEL="$4"; GPU="$5"; MAPPER="${6:-incremental}"
 
 DB="$WORK/database.db"
 mkdir -p "$WORK/sparse"
@@ -51,11 +51,26 @@ case "$MATCHER" in
   *) echo "[colmap] unknown matcher $MATCHER" >&2; exit 1 ;;
 esac
 
-echo "[colmap] mapper (incremental SfM)"
-colmap mapper \
-  --database_path "$DB" \
-  --image_path "$IMAGES" \
-  --output_path "$WORK/sparse"
+if [[ "$MAPPER" == "global" ]]; then
+  # GLOMAP global SfM, built into COLMAP 4 (colmap global_mapper). Optional, never
+  # the default: incremental is more robust on close-range / convergent sets;
+  # global is much faster on large, well-connected (e.g. aerial) blocks. Same
+  # database/output contract as the incremental mapper (writes sparse/0).
+  echo "[colmap] global_mapper (GLOMAP global SfM)"
+  GLOBAL_THREADS=()
+  [[ "$GPU" != "1" ]] && GLOBAL_THREADS=(--GlobalMapper.num_threads "${EFFIGIES_CPU_THREADS:-4}")
+  colmap global_mapper \
+    --database_path "$DB" \
+    --image_path "$IMAGES" \
+    --output_path "$WORK/sparse" \
+    "${GLOBAL_THREADS[@]}"
+else
+  echo "[colmap] mapper (incremental SfM)"
+  colmap mapper \
+    --database_path "$DB" \
+    --image_path "$IMAGES" \
+    --output_path "$WORK/sparse"
+fi
 
 # COLMAP writes model(s) under sparse/0, sparse/1, ... ; downstream uses sparse/0
 if [[ ! -d "$WORK/sparse/0" ]]; then

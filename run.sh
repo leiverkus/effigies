@@ -13,6 +13,7 @@ set -euo pipefail
 declare -A OPT=(
   [sparse-engine]=colmap
   [matcher]=exhaustive
+  [mapper]=incremental
   [camera-model]=OPENCV
   [densify-resolution-level]=1
   [number-views-fuse]=3
@@ -48,7 +49,7 @@ WORK="${PROJ}/effigies"
 mkdir -p "$WORK"
 
 echo "[effigies] project: $PROJ"
-echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
+echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} mapper=${OPT[mapper]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
 
 # Resolve GPU usage. Honour --use-gpu, but fall back to CPU when no usable CUDA
 # GPU is present: COLMAP's SIFT aborts hard ("Cannot use Sift GPU without CUDA or
@@ -69,7 +70,7 @@ fi
 # ---------------------------------------------------------------------------
 if [[ "${OPT[sparse-engine]}" == "colmap" ]]; then
   bash "$(dirname "$0")/pipeline/sparse_colmap.sh" \
-       "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG"
+       "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG" "${OPT[mapper]}"
   # COLMAP -> OpenMVS scene. InterfaceCOLMAP reads the undistorted dense
   # workspace (dense/sparse model + dense/images), produced by image_undistorter
   # in sparse_colmap.sh — not the raw sparse/0 model. --image-folder is given the
