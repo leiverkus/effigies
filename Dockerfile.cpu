@@ -32,7 +32,9 @@ FROM ubuntu:${UBUNTU_VERSION} AS engine
 # Densify -> ReconstructMesh -> RefineMesh -> TextureMesh chain cleanly.
 ARG COLMAP_VERSION=3.11.1
 ARG OPENMVS_VERSION=v2.4.0
-ARG VCG_REF=master
+# VCGlib has no release tags aligned to OpenMVS. Pinned to the cdcseacave/VCG
+# master commit the 2.4.0 CPU image was built and validated end-to-end against.
+ARG VCG_REF=658ba36d0a5666650da6e066b4794efc5a463407
 # Header-only deps vendored for OpenMVS 2.4.0 (jammy is too old: nanoflann 1.4.2,
 # CGAL 5.4). nanoflann 1.5 renamed SearchParams->SearchParameters; CGAL 6.0 added
 # the CGAL/AABB_traits_3.h header OpenMVS now includes.

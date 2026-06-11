@@ -24,9 +24,11 @@ FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS engine
 # --- Pinned upstream versions (bump here; the which-gate guards regressions) ---
 ARG COLMAP_VERSION=3.11.1
 ARG OPENMVS_VERSION=v2.3.0
-# VCGlib has no release tags aligned to OpenMVS. Pin to a verified commit SHA once
-# the build has been exercised in CI; until then this is the one ref tracking a
-# moving branch and must be locked before tagging a release image.
+# VCGlib has no release tags aligned to OpenMVS. The CPU image (Dockerfile.cpu)
+# is pinned to the commit it was validated against; this production image still
+# tracks a moving branch and is left so deliberately — its VCG SHA is locked
+# together with the pending OpenMVS 2.4.0 bump (see ROADMAP), once the CUDA build
+# is exercised on GPU hardware. Must be locked before tagging a release image.
 ARG VCG_REF=master
 # GPU architectures to compile for. 'all-major' covers common cards; narrow it
 # (e.g. "75;86;89") to speed up the build for known hardware.

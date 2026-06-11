@@ -48,8 +48,10 @@ Make the image trustworthy and the output cloud web-ready.
       requirement to build 2.4.0 on Ubuntu 22.04. For the CUDA/production image,
       decide between the same header-vendor recipe and OpenMVS' own vcpkg build
       (exact upstream dep versions, no source patches, but a much heavier build).
-- [ ] **Pin VCGlib to a verified commit SHA** (currently tracks a branch via the
-      `VCG_REF` arg; lock it before tagging a release image).
+- [~] **Pin VCGlib to a verified commit SHA.** The CPU image is pinned to the
+      `cdcseacave/VCG` commit it was built and validated against (`658ba36`); the
+      production (CUDA) image still tracks `master` and is pinned together with its
+      OpenMVS 2.4.0 bump. Both must be locked before tagging a release image.
 - [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
       builds and handle the variants.
 - [ ] Slim the image with a multi-stage (devel build → runtime copy) layout once
