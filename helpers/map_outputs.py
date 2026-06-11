@@ -102,8 +102,11 @@ def main():
     if os.path.exists(shots):
         link_or_copy(shots, os.path.join(P, "odm_report", "shots.geojson"))
 
-    # 3. report stub so the UI has a stats target
+    # 3. quality report -> odm_report/report.pdf ("Qualitätsbericht")
     os.makedirs(os.path.join(P, "odm_report"), exist_ok=True)
+    report = os.path.join(W, "report.pdf")
+    if os.path.exists(report):
+        link_or_copy(report, os.path.join(P, "odm_report", "report.pdf"))
 
     print("[map] output mapping complete")
 

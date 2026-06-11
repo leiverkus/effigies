@@ -35,6 +35,7 @@ WebODM ──HTTP──> NodeODM REST layer ──run.sh──> [ Effigies engin
    orthophoto.py      (textured mesh -> georeferenced GeoTIFF orthophoto)
    camera_exports.py  (-> cameras.json + odm_report/shots.geojson)
    mesh_to_gltf.py    (textured OBJ -> odm_textured_model_geo.glb)
+   report.py          (stats + ortho thumbnail -> odm_report/report.pdf)
    map_outputs.py     (-> WebODM asset paths)
 ```
 

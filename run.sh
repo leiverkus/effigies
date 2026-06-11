@@ -157,6 +157,16 @@ if ! python3 "$(dirname "$0")/helpers/mesh_to_gltf.py" --work "$WORK"; then
 fi
 
 # ---------------------------------------------------------------------------
+# 5e. Quality report PDF — WebODM's "Qualitätsbericht" (odm_report/report.pdf).
+#     Stats table + orthophoto thumbnail. Non-fatal.
+# ---------------------------------------------------------------------------
+if ! python3 "$(dirname "$0")/helpers/report.py" --work "$WORK" --name "$PROJECT_NAME" \
+     --sparse-engine "${OPT[sparse-engine]}" --matcher "${OPT[matcher]}" \
+     --mapper "${OPT[mapper]}" --refine-iters "${OPT[refine-mesh-iters]}"; then
+  echo "[effigies] WARN: report step failed; continuing without it" >&2
+fi
+
+# ---------------------------------------------------------------------------
 # 6. Map outputs onto the WebODM asset contract
 # ---------------------------------------------------------------------------
 python3 "$(dirname "$0")/helpers/map_outputs.py" --proj "$PROJ" --work "$WORK"

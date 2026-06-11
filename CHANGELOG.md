@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Full ODM output parity.** Effigies now fills every WebODM download slot the
+  stock ODM nodes do — orthophoto, point cloud, textured model, **glTF model**,
+  **camera parameters** (`cameras.json`), **camera shots** (`shots.geojson`), and a
+  **quality report** (`odm_report/report.pdf`, stats table + orthophoto thumbnail
+  via reportlab). One node, every product.
 - **glTF model (`helpers/mesh_to_gltf.py`) — "Struktur-Modell (glTF)".** A
   self-contained binary glTF (`odm_texturing/odm_textured_model_geo.glb`) of the
   refined textured mesh, with the texture atlas embedded. Written by a dependency-
