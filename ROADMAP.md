@@ -100,13 +100,15 @@ kept** (24.04 dropped it). Facts worth keeping:
       error, runtime). Scaffolded: `scripts/benchmark.sh` (per-stage runtime +
       mesh/cloud stats) and a prior-art review in
       [docs/benchmark-literature.md](docs/benchmark-literature.md) (BibTeX in
-      `docs/references.bib`). `benchmark.sh` now also computes the accuracy core:
-      `compare` (cloud-to-reference distance via PDAL ICP + scipy KD-tree, plus
+      `docs/references.bib`). `benchmark.sh` computes the full accuracy core:
+      `compare` (cloud-to-reference **and** mesh-to-reference distance — an OBJ is
+      area-weighted surface-sampled first — via PDAL ICP + scipy KD-tree, plus
       completeness), `cprmse` (check-point RMSE), and `stats` surface roughness
-      (local plane-fit residual, detail-vs-noise). Open: mesh-to-reference
-      distance (sample the OBJ first). No prior
-      study benchmarks COLMAP + OpenMVS *with RefineMesh* against the commercial
-      tools, so this is a publishable contribution, not just an internal check.
+      (local plane-fit residual, detail-vs-noise). Remaining: run the actual
+      comparison against stock ODM / Metashape / RealityCapture on shared datasets.
+      No prior study benchmarks COLMAP + OpenMVS *with RefineMesh* against the
+      commercial tools, so this is a publishable contribution, not just an internal
+      check.
 
 ## v1.0.0 — Production
 

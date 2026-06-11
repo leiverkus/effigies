@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Mesh-to-reference distance in `benchmark.sh`.** `compare` now accepts an OBJ
+  mesh on either side: it area-weighted surface-samples the mesh to a point cloud
+  (deterministic) before the existing ICP + nearest-neighbour distance, so a
+  textured mesh can be measured against a reference scan directly — completing the
+  benchmark accuracy core (cloud-to-reference, mesh-to-reference, check-point RMSE).
+
 ## [0.2.0] - 2026-06-11
 
 ### Added

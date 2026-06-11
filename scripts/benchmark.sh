@@ -21,16 +21,18 @@
 #       Tune with --rough-k (neighbours, default 16) and --rough-sample (query
 #       points, default 50000); --no-roughness turns it off.
 #
-#   benchmark.sh compare <output_cloud> <reference_cloud> [out.json] [--no-icp] [--sample N] [--eps E]
+#   benchmark.sh compare <output_cloud|mesh.obj> <reference_cloud|mesh.obj> [out.json] [--no-icp] [--sample N] [--eps E]
 #       Cloud-to-reference distance — the accuracy core of the comparison
 #       literature (CloudCompare C2C vs. TLS in Gabara & Sawicki 2023, Cutugno
 #       2022; see docs/benchmark-literature.md). ICP-aligns the output to the
 #       reference (PDAL filters.icp), then nearest-neighbour distance (scipy
-#       cKDTree) → {mean, std, rms, p95, max} plus completeness. Clouds are
-#       decimated to ~N points (default 1e6) for tractability — reported, not
-#       silent. Units follow the data (georeferenced = metres). The completeness
-#       threshold --eps defaults to "auto" (2x the reference cloud's median point
-#       spacing), so it is meaningful in any frame; pass a number to override.
+#       cKDTree) → {mean, std, rms, p95, max} plus completeness. Either side may be
+#       an OBJ mesh — it is area-weighted surface-sampled to a point cloud first
+#       (mesh-to-reference distance). Clouds are decimated to ~N points (default
+#       1e6) for tractability — reported, not silent. Units follow the data
+#       (georeferenced = metres). The completeness threshold --eps defaults to
+#       "auto" (2x the reference cloud's median point spacing), so it is meaningful
+#       in any frame; pass a number to override.
 #
 #   benchmark.sh cprmse <pairs.csv> [out.json]
 #       Check-point RMSE — surveyed control points vs. their modelled position.
@@ -56,7 +58,7 @@ usage() {
 usage:
   $0 run     <images_dir> [work_dir] [gpu_flag]            # time the Effigies pipeline + stats
   $0 stats   <mesh|cloud> [out.json] [--no-roughness] [--rough-k K] [--rough-sample N]
-  $0 compare <output_cloud> <reference_cloud> [out.json] [--no-icp] [--sample N] [--eps E]
+  $0 compare <output_cloud|mesh.obj> <reference_cloud|mesh.obj> [out.json] [--no-icp] [--sample N] [--eps E]
   $0 cprmse  <pairs.csv> [out.json]                        # check-point RMSE (world vs model)
 EOF
   exit 2
@@ -381,13 +383,76 @@ def load_xyz(path, n_target):
         return np.empty((0, 3)), c, step
     return arr[:, :3], c, step
 
-# Load each cloud SEPARATELY and cleanly. Do NOT read a written ICP output:
+def write_temp_cloud(xyz):
+    """Write XYZ to a temp LAS via PDAL so the ICP stage can read a sampled mesh.
+    (A hand-written ASCII PLY is not reliably summarised by `pdal info`; a real
+    LAS is PDAL-native.)"""
+    las = tempfile.mktemp(suffix=".las"); csv = tempfile.mktemp(suffix=".csv")
+    pj = tempfile.mktemp(suffix=".json"); tmp.extend([las, csv, pj])
+    np.savetxt(csv, np.asarray(xyz, dtype=np.float64), delimiter=",",
+               header="X,Y,Z", comments="")
+    open(pj, "w").write(json.dumps({"pipeline": [
+        {"type": "readers.text", "filename": csv},
+        {"type": "writers.las", "filename": las}]}))
+    subprocess.check_call(["pdal", "pipeline", pj],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return las
+
+def sample_mesh_surface(path, n_target):
+    """Area-weighted uniform sample of ~n_target points ON an OBJ mesh surface.
+    Mesh-to-reference distance needs surface points, not just the vertices (which
+    over-weight dense regions and miss the interior of large faces). Deterministic
+    (fixed seed) so the metric is reproducible. Returns (xyz, n_faces)."""
+    vs, faces = [], []
+    with open(path, "r", errors="ignore") as f:
+        for line in f:
+            if line.startswith("v "):
+                p = line.split(); vs.append((float(p[1]), float(p[2]), float(p[3])))
+            elif line.startswith("f "):
+                faces.append([int(t.split("/")[0]) for t in line.split()[1:]])
+    V = np.asarray(vs, dtype=np.float64); nv = len(V)
+    tris = []
+    for fa in faces:                        # 1-based OBJ indices, may be negative
+        fa = [(i - 1) if i > 0 else (nv + i) for i in fa]
+        for k in range(1, len(fa) - 1):     # fan-triangulate polygons
+            tris.append((fa[0], fa[k], fa[k + 1]))
+    T = np.asarray(tris, dtype=np.int64)
+    if nv == 0 or len(T) == 0:
+        return np.empty((0, 3)), 0
+    a, b, c = V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]
+    areas = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
+    tot = areas.sum()
+    if tot <= 0:
+        return V, len(T)                    # degenerate areas -> fall back to vertices
+    n = max(1, int(n_target))
+    rng = np.random.default_rng(0)
+    pick = rng.choice(len(T), size=n, p=areas / tot)   # area-weighted face choice
+    u = rng.random(n); v = rng.random(n)
+    flip = (u + v) > 1.0                     # fold back into the triangle
+    u[flip] = 1.0 - u[flip]; v[flip] = 1.0 - v[flip]
+    w = 1.0 - u - v
+    pts = w[:, None] * a[pick] + u[:, None] * b[pick] + v[:, None] * c[pick]
+    return pts, len(T)
+
+def load_any(path, n_target):
+    """Load a cloud (LAS/LAZ/PLY) or sample a mesh (OBJ) to ~n_target XYZ points.
+    Returns (xyz, total_desc, step_desc, cloud_path); cloud_path is a file PDAL can
+    read for ICP — the original cloud, or a temp PLY of the mesh surface sample."""
+    if os.path.splitext(path)[1].lower() == ".obj":
+        xyz, nf = sample_mesh_surface(path, n_target)
+        return (xyz, f"mesh: {nf} faces", "surface-sampled",
+                write_temp_cloud(xyz) if len(xyz) else path)
+    xyz, c, step = load_xyz(path, n_target)
+    return xyz, c, step, path
+
+# Load each input SEPARATELY and cleanly. Do NOT read a written ICP output:
 # filters.icp emits one point view PER INPUT, so any writer merges the reference
 # INTO the output and the reference points would contaminate the distance
 # (deflating it toward 0). Instead we run ICP only to get the rigid transform
-# (metadata) and apply it to the output points in numpy.
-out_xyz, out_n, out_step = load_xyz(out_path, sample)
-ref_xyz, ref_n, ref_step = load_xyz(ref_path, sample)
+# (metadata) and apply it to the output points in numpy. Either side may be an
+# OBJ mesh — it is surface-sampled to a point cloud first (cloud_path = temp PLY).
+out_xyz, out_n, out_step, out_cloud = load_any(out_path, sample)
+ref_xyz, ref_n, ref_step, ref_cloud = load_any(ref_path, sample)
 
 icp_meta = "skipped"
 if do_icp:
@@ -396,7 +461,7 @@ if do_icp:
     # filters.icp registers the moving (2nd) cloud onto the fixed (1st) and reports
     # the rigid transform; writers.null keeps the pipeline valid without emitting
     # the (merged) cloud.
-    pipe = {"pipeline": [ref_path, out_path,
+    pipe = {"pipeline": [ref_cloud, out_cloud,
             {"type": "filters.icp"},
             {"type": "writers.null"}]}
     open(pj, "w").write(json.dumps(pipe))

@@ -235,6 +235,63 @@ def test_roughness_respects_sample_budget():
           f"({rough['evaluated_points']}/{rough['total_points']} evaluated)")
 
 
+def _grid_mesh_obj(path, side=20, extent=10.0):
+    """Flat z=0 grid mesh (side×side vertices, quad faces) as an OBJ — exercises
+    the surface sampler's fan-triangulation and area weighting."""
+    import numpy as np
+    g = np.linspace(0.0, extent, side)
+    with open(path, "w") as f:
+        for y in g:
+            for x in g:
+                f.write(f"v {x} {y} 0\n")
+        idx = lambda r, c: r * side + c + 1          # 1-based OBJ index
+        for r in range(side - 1):
+            for c in range(side - 1):
+                f.write(f"f {idx(r, c)} {idx(r, c + 1)} {idx(r + 1, c + 1)} {idx(r + 1, c)}\n")
+
+
+def _grid_cloud(path, side=40, extent=10.0):
+    """Flat z=0 point grid as a LAS (a synthetic, PDAL-readable 'reference scan')."""
+    import numpy as np
+    g = np.linspace(0.0, extent, side)
+    xx, yy = np.meshgrid(g, g)
+    pts = np.column_stack([xx.ravel(), yy.ravel(), np.zeros(xx.size)])
+    csv = path + ".csv"
+    np.savetxt(csv, pts, delimiter=",", header="X,Y,Z", comments="")
+    pipe = {"pipeline": [{"type": "readers.text", "filename": csv},
+                         {"type": "writers.las", "filename": path}]}
+    pj = path + ".json"
+    open(pj, "w").write(json.dumps(pipe))
+    subprocess.check_call(["pdal", "pipeline", pj],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.remove(csv); os.remove(pj)
+
+
+def test_compare_mesh_to_reference():
+    """An OBJ mesh output is area-weighted surface-sampled and compared to a
+    reference cloud. A flat mesh vs a flat reference on the same plane gives a
+    small distance and high completeness. (--no-icp: two coplanar grids are
+    degenerate for ICP — in-plane slide is unconstrained — and already aligned.)"""
+    if not _have_compare_deps():
+        print("skip mesh-to-reference (needs pdal + scipy)")
+        return
+    d = tempfile.mkdtemp()
+    mesh = os.path.join(d, "m.obj")
+    ref = os.path.join(d, "r.las")
+    _grid_mesh_obj(mesh)
+    _grid_cloud(ref)
+    try:
+        r = _run("compare", mesh, ref, "--no-icp", "--sample", "4000", "--eps", "0.5")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    assert r["type"] == "cloud-to-reference", r
+    assert "mesh:" in str(r["sampled"]["output_total"]), r   # surface-sampled, not loaded
+    assert r["sampled"]["output_points"] <= 4000, r
+    assert r["distance"]["rms"] < 0.3, r                      # both on the same plane
+    assert r["completeness"]["fraction"] > 0.9, r
+    print("ok  compare surface-samples an OBJ mesh (mesh-to-reference distance)")
+
+
 def _have_scipy():
     try:
         import scipy.spatial  # noqa: F401
@@ -309,6 +366,7 @@ if __name__ == "__main__":
     test_compare_measures_output_only()
     test_compare_empty_cloud()
     test_compare_auto_eps_is_scale_aware()
+    test_compare_mesh_to_reference()
     test_roughness_flat_plane_is_zero()
     test_roughness_scales_with_noise()
     test_roughness_respects_sample_budget()
