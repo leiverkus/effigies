@@ -13,6 +13,7 @@ set -euo pipefail
 declare -A OPT=(
   [sparse-engine]=colmap
   [matcher]=exhaustive
+  [mapper]=incremental
   [camera-model]=OPENCV
   [densify-resolution-level]=1
   [number-views-fuse]=3
@@ -48,19 +49,37 @@ WORK="${PROJ}/effigies"
 mkdir -p "$WORK"
 
 echo "[effigies] project: $PROJ"
-echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
+echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} mapper=${OPT[mapper]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
 
+# Resolve GPU usage. Honour --use-gpu, but fall back to CPU when no usable CUDA
+# GPU is present: COLMAP's SIFT aborts hard ("Cannot use Sift GPU without CUDA or
+# OpenGL support") rather than degrading, which would surface to WebODM only as
+# the opaque "Cannot process dataset". A documented CPU fallback beats a cryptic
+# failure (the CPU image has no CUDA at all, and a GPU image may run without one).
 GPU_FLAG=0
-[[ "${OPT[use-gpu]}" == "true" ]] && GPU_FLAG=1
+if [[ "${OPT[use-gpu]}" == "true" ]]; then
+  if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    GPU_FLAG=1
+  else
+    echo "[effigies] WARN: --use-gpu requested but no usable CUDA GPU detected; falling back to CPU" >&2
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Sparse reconstruction  ->  produces $WORK/sparse  (+ scene.mvs)
 # ---------------------------------------------------------------------------
 if [[ "${OPT[sparse-engine]}" == "colmap" ]]; then
   bash "$(dirname "$0")/pipeline/sparse_colmap.sh" \
-       "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG"
-  # COLMAP -> OpenMVS scene
-  InterfaceCOLMAP -i "$WORK/sparse/0" -o "$WORK/scene.mvs" -w "$WORK"
+       "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG" "${OPT[mapper]}"
+  # COLMAP -> OpenMVS scene. InterfaceCOLMAP reads the undistorted dense
+  # workspace (dense/sparse model + dense/images), produced by image_undistorter
+  # in sparse_colmap.sh — not the raw sparse/0 model. --image-folder is given the
+  # absolute undistorted-images path; InterfaceCOLMAP records it relative to the
+  # working folder ($WORK) as "dense/images/...", which the OpenMVS dense stage
+  # (also run with -w $WORK) then resolves correctly. Without this it defaults to
+  # "images/" and DensifyPointCloud fails to find the images under $WORK/images.
+  InterfaceCOLMAP -i "$WORK/dense" --image-folder "$WORK/dense/images/" \
+                  -o "$WORK/scene.mvs" -w "$WORK"
 else
   bash "$(dirname "$0")/pipeline/sparse_opensfm.sh" "$IMAGES" "$WORK"
   InterfaceOpenSfM -i "$WORK/opensfm" -o "$WORK/scene.mvs" -w "$WORK"
@@ -98,7 +117,15 @@ python3 "$(dirname "$0")/helpers/georef_bridge.py" \
      --gcp "${OPT[gcp]}"
 
 # ---------------------------------------------------------------------------
-# 5. Map outputs onto the WebODM asset contract
+# 5. Point cloud -> georeferenced LAZ (+ EPT for the Potree viewer)
+#    Applies the georef transform to scene_dense.ply and writes LAZ via PDAL.
+# ---------------------------------------------------------------------------
+if ! python3 "$(dirname "$0")/helpers/pointcloud_to_laz.py" --work "$WORK" --ept; then
+  echo "[effigies] WARN: LAZ/EPT step failed; map_outputs will fall back to the raw PLY" >&2
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Map outputs onto the WebODM asset contract
 # ---------------------------------------------------------------------------
 python3 "$(dirname "$0")/helpers/map_outputs.py" --proj "$PROJ" --work "$WORK"
 

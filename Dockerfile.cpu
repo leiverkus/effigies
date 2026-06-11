@@ -1,55 +1,53 @@
-# Effigies — a NodeODM-compatible processing node whose engine is
-# COLMAP (sparse) + OpenMVS full mesh/refine/texture (dense).
+# Effigies — CPU-only image for LOCAL INTEGRATION TESTING.
 #
-# Build:  docker build -t effigies .
-# Run:    docker run -p 3001:3000 --gpus all effigies
-# Then add http://<host>:3001 as a Processing Node in WebODM.
+# This builds the SAME engine (COLMAP + full OpenMVS chain) from the SAME pinned
+# sources as the production Dockerfile, but WITHOUT CUDA, on a plain Ubuntu base.
+# It builds natively on arm64 (Apple Silicon) and runs without a GPU.
 #
-# The whole point of this node is OpenMVS' ReconstructMesh/RefineMesh. Distro
-# packages of OpenMVS are frequently too old or built without those binaries, so
-# we build COLMAP and OpenMVS from PINNED upstream source and then *verify* the
-# binaries exist (the `which` gate below fails the build loudly if any is
-# missing).
+#   Purpose : validate the NodeODM/WebODM contract and the pipeline end-to-end on
+#             a SMALL dataset.
+#   NOT for : real or large jobs. OpenMVS RefineMesh on CPU is slow; this image
+#             exists to prove the node works, not to produce production meshes.
 #
-# This is the CUDA/production image. It builds the SAME engine, from the SAME
-# pinned sources and with the SAME build recipe, as the CPU test image
-# (Dockerfile.cpu) — the ONLY differences are the CUDA base and the three
-# -D*CUDA* flags. Keep the two files in lock-step: bump versions in both.
+# Build:  docker build -f Dockerfile.cpu -t effigies:cpu .
+# Run:    docker run -p 3001:3000 effigies:cpu        # no --gpus
+# In a task, set the "Use GPU" option to OFF (this build has no CUDA).
 #
-# NOTE: single-stage image on the CUDA *devel* base, so every build and runtime
-# library is present and the result is more likely to actually run. A slimmer
-# multi-stage (devel build -> runtime copy) image is a later optimization (see
-# ROADMAP.md); correctness and verifiability come first.
+# See docs/DEPLOYMENT.md for the GPU production path.
 
-ARG CUDA_VERSION=12.4.1
-# Ubuntu 22.04 (jammy), exactly as the CPU image: PDAL is available here (it was
-# dropped from 24.04's repos) and the same header-only deps are vendored below.
+# Stays on Ubuntu 22.04 so PDAL is available (it was dropped from 24.04's repos)
+# and the rest of the dependency set is unchanged. OpenMVS 2.4.0 needs two libs
+# newer than jammy ships — nanoflann >=1.5 and CGAL >=6.0 — but both are
+# header-only, so we vendor pinned releases of them below rather than bumping the
+# whole base. (OpenMVS' own libjxl requirement is patched out in the build step;
+# we do not produce JPEG-XL output.)
 ARG UBUNTU_VERSION=22.04
-FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS engine
+FROM ubuntu:${UBUNTU_VERSION} AS engine
 
-# --- Pinned upstream versions (identical to Dockerfile.cpu; bump both together) ---
+# --- Pinned upstream versions (identical to the CUDA Dockerfile; bump both) ---
 # OpenMVS 2.4.0 swaps the FLANN-based nearest-neighbour code for nanoflann and
-# brings dense-stage stability fixes over 2.3.0; COLMAP 4.0.4 is the validated
-# baseline (CLI option names, built-in GLOMAP, FAISS retrieval). The which-gate
-# below guards regressions.
+# brings dense-stage stability fixes over 2.3.0 — it matters specifically on the
+# CPU/arm64 build, where 2.3.0's DensifyPointCloud corrupts the heap and aborts;
+# 2.4.0 runs the full Densify -> ReconstructMesh -> RefineMesh -> TextureMesh
+# chain cleanly. COLMAP 4.0.4 is the shared baseline.
 ARG COLMAP_VERSION=4.0.4
 ARG OPENMVS_VERSION=v2.4.0
 # VCGlib has no release tags aligned to OpenMVS. Pinned to the cdcseacave/VCG
-# commit the 2.4.0 engine was built and validated end-to-end against.
+# master commit the 2.4.0 CPU image was built and validated end-to-end against.
 ARG VCG_REF=658ba36d0a5666650da6e066b4794efc5a463407
 # Header-only deps vendored for OpenMVS 2.4.0 (jammy is too old: nanoflann 1.4.2,
 # CGAL 5.4). nanoflann 1.5 renamed SearchParams->SearchParameters; CGAL 6.0 added
 # the CGAL/AABB_traits_3.h header OpenMVS now includes.
 ARG NANOFLANN_VERSION=v1.5.5
 ARG CGAL_VERSION=6.0.1
-# GPU architectures to compile for. 'all-major' covers common cards; narrow it
-# (e.g. "75;86;89") to speed up the build for known hardware.
-ARG CUDA_ARCH=all-major
+# Parallel build jobs. OpenMVS compilation is memory-hungry; keep this modest so
+# the build does not OOM on a default Docker Desktop VM. Raise if you have RAM.
+ARG JOBS=4
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# --- Build + runtime dependencies (identical to Dockerfile.cpu) ---
-# No Qt: COLMAP is built CLI-only (GUI_ENABLED=OFF). CUDA comes from the base image.
+# Dependency set identical to the CUDA image (both build COLMAP CLI-only, GUI off,
+# so neither installs Qt; CUDA there comes from the base image, not apt).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git cmake ninja-build build-essential ca-certificates \
       libeigen3-dev libcgal-dev libgmp-dev libmpfr-dev \
@@ -66,12 +64,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
-# --- COLMAP from pinned source, CUDA-enabled, no GUI ---
+# --- COLMAP from pinned source, CPU-only, no GUI ---
 RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/colmap.git /opt/colmap && \
     cmake -S /opt/colmap -B /opt/colmap/build -GNinja \
       -DCMAKE_BUILD_TYPE=Release \
-      -DCUDA_ENABLED=ON \
-      -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} \
+      -DCUDA_ENABLED=OFF \
       -DGUI_ENABLED=OFF \
       -DONNX_ENABLED=OFF \
       -DTESTS_ENABLED=OFF \
@@ -90,8 +87,8 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
 # FLANN-format trees from demuc.de make COLMAP 4 abort with std::invalid_argument
 # in IndexImages(). This is exactly the tree COLMAP 4 auto-downloads when no path
 # is given; we pin it here. (The "3.11.1" in the URL is the GitHub *release tag*
-# that hosts the asset, not the COLMAP version we build.) Flickr100K, 256K words
-# (~72 MB). Override with --build-arg VOCAB_TREE_URL=/VOCAB_TREE_SHA256=.
+# that hosts the asset, not the COLMAP version — both images build COLMAP 4.0.4.)
+# Flickr100K, 256K words (~72 MB). Override with --build-arg VOCAB_TREE_URL=/SHA256=.
 ARG VOCAB_TREE_URL=https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
 ARG VOCAB_TREE_SHA256=96ca8ec8ea60b1f73465aaf2c401fd3b3ca75cdba2d3c50d6a2f6f760f275ddc
 RUN mkdir -p /usr/local/share/effigies && \
@@ -113,16 +110,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends libnanoflann-de
     python3 -c "import urllib.request; urllib.request.urlretrieve('https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}-library.tar.xz', '/tmp/cgal.tar.xz')" && \
     tar -xf /tmp/cgal.tar.xz -C /opt && rm /tmp/cgal.tar.xz
 
-# --- OpenMVS from pinned source, CUDA-enabled ---
-# Two source patches keep 2.4.0 building against jammy's OpenCV (4.5) — identical
-# to the CPU image:
+# --- OpenMVS from pinned source, CPU-only ---
+# Two source patches keep 2.4.0 building against jammy's OpenCV (4.5):
 #   1. libs/IO: the JXL pkg-config check is hard-REQUIRED via a macro, but jammy
 #      has no libjxl. Drop REQUIRED so JXL support self-disables (the surrounding
 #      code already guards on JPEGXL_FOUND); we never emit JPEG-XL.
 #   2. Types.inl references cv::IMWRITE_JPEGXL_QUALITY (OpenCV >= 4.7 only) on the
 #      .jxl write path we never take; map it to the JPEG constant so it compiles.
-# CUDA differences vs. the CPU image: OpenMVS_USE_CUDA=ON, the CUDA arch, and the
-# CUDA stubs library path (so the link finds libcuda at build time).
 RUN git clone https://github.com/cdcseacave/VCG.git /opt/vcglib && \
     git -C /opt/vcglib checkout ${VCG_REF} && \
     git clone --depth 1 --branch ${OPENMVS_VERSION} https://github.com/cdcseacave/openMVS.git /opt/openMVS && \
@@ -132,19 +126,16 @@ RUN git clone https://github.com/cdcseacave/VCG.git /opt/vcglib && \
       -DCMAKE_BUILD_TYPE=Release \
       -DVCG_ROOT=/opt/vcglib \
       -DCGAL_DIR=/opt/CGAL-${CGAL_VERSION} \
-      -DOpenMVS_USE_CUDA=ON \
-      -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} \
-      -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs/ \
+      -DOpenMVS_USE_CUDA=OFF \
       -DOpenMVS_BUILD_VIEWER=OFF \
       -DOpenMVS_USE_PYTHON=OFF \
       -DOpenMVS_USE_BREAKPAD=OFF \
       -DOpenMVS_ENABLE_TESTS=OFF \
       -DEIGEN3_INCLUDE_DIR=/usr/include/eigen3 \
       -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    cmake --build /opt/openMVS_build -j"$(nproc)" --target install && \
+    cmake --build /opt/openMVS_build -j"${JOBS}" --target install && \
     rm -rf /opt/openMVS /opt/openMVS_build /opt/vcglib /opt/CGAL-${CGAL_VERSION}
 
-# OpenMVS installs its tools under <prefix>/bin/OpenMVS — put them on PATH.
 ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
 
 # --- Verify the binaries that justify this node's existence (fail loudly) ---
@@ -154,7 +145,7 @@ RUN set -eux; \
       command -v "$b" || { echo "FATAL: required OpenMVS binary '$b' missing after build" >&2; exit 1; }; \
     done; \
     command -v pdal; \
-    echo "[effigies] all required engine binaries present"
+    echo "[effigies] all required engine binaries present (CPU build)"
 
 # --- NodeODM REST layer (unmodified upstream) ---
 WORKDIR /opt
@@ -164,11 +155,7 @@ RUN npm install --production
 
 # --- our engine ---
 COPY . /opt/effigies
-# Point NodeODM at our engine dir: it reads ENGINE, run.sh and the options helper here.
 ENV ODM_PATH=/opt/effigies
-
-# NodeODM calls helpers/odmOptionsToJson.py inside ODM_PATH-adjacent path; we expose
-# our optionsToJson via a shim named to match what odmRunner invokes.
 RUN ln -sf /opt/effigies/helpers/optionsToJson.py /opt/NodeODM/helpers/odmOptionsToJson.py || true
 
 EXPOSE 3000

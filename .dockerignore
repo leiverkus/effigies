@@ -1,0 +1,14 @@
+# Keep the build context small and the image clean.
+.git
+.github
+**/__pycache__
+*.pyc
+tests/fixtures/*
+# Never ship data / working dirs
+images/
+uploads/
+work/
+effigies/
+*.zip
+*.log
+.DS_Store

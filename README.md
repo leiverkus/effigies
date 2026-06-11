@@ -117,19 +117,19 @@ precision.
 
 ## Project status
 
-This is **v0.1.0 — an alpha, a working scaffold, not a finished product.** The
-pipeline contract, the georeferencing bridge and the WebODM output mapping are in
-place and unit-tested, but several parts still need hardening before production
-use. The honest list lives in [ROADMAP.md](ROADMAP.md); the short version:
+This is **alpha — a working scaffold, not a finished product.** The pipeline
+contract, the georeferencing bridge and the WebODM output mapping are in place and
+unit-tested, but several parts still need hardening before production use. The
+honest list lives in [ROADMAP.md](ROADMAP.md); the short version:
 
-- The Dockerfile installs COLMAP/OpenMVS from distro packages — these may lack a
-  working `RefineMesh`. Production builds should compile pinned upstream sources
-  and verify the binaries (`which DensifyPointCloud ReconstructMesh RefineMesh
-  TextureMesh`).
+- The Dockerfile now builds COLMAP and OpenMVS from **pinned source** with a
+  build-time `which` gate that fails loudly if `RefineMesh` (or any other required
+  binary) is missing. It has **not yet been built/run on real hardware** — the gate
+  is the safety net until an end-to-end run confirms it.
+- VCGlib (an OpenMVS build dependency) still tracks a branch via the `VCG_REF`
+  build arg; it must be pinned to a verified commit before a release image.
 - GCP localization uses the nearest observed sparse point to the marked pixel;
   multi-view triangulation would be more precise.
-- The dense point cloud is passed through as `.ply`; LAZ + EPT (PDAL) for the
-  Potree viewer is planned.
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
@@ -140,7 +140,7 @@ ENGINE                 engine name reported to WebODM
 options.json           task options advertised to the WebODM UI
 run.sh                 entry point: parses args, drives the pipeline
 pipeline/              COLMAP / OpenSfM sparse + OpenMVS dense stages
-helpers/               georef bridge, output mapping, options shim
+helpers/               georef bridge, point-cloud -> LAZ/EPT, output mapping, options shim
 tests/                 unit tests (synthetic COLMAP fixtures)
 scripts/               setup.sh (build), test.sh (CI mirror)
 Dockerfile             COLMAP + OpenMVS + NodeODM REST layer
