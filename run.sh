@@ -50,8 +50,19 @@ mkdir -p "$WORK"
 echo "[effigies] project: $PROJ"
 echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
 
+# Resolve GPU usage. Honour --use-gpu, but fall back to CPU when no usable CUDA
+# GPU is present: COLMAP's SIFT aborts hard ("Cannot use Sift GPU without CUDA or
+# OpenGL support") rather than degrading, which would surface to WebODM only as
+# the opaque "Cannot process dataset". A documented CPU fallback beats a cryptic
+# failure (the CPU image has no CUDA at all, and a GPU image may run without one).
 GPU_FLAG=0
-[[ "${OPT[use-gpu]}" == "true" ]] && GPU_FLAG=1
+if [[ "${OPT[use-gpu]}" == "true" ]]; then
+  if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    GPU_FLAG=1
+  else
+    echo "[effigies] WARN: --use-gpu requested but no usable CUDA GPU detected; falling back to CPU" >&2
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Sparse reconstruction  ->  produces $WORK/sparse  (+ scene.mvs)
