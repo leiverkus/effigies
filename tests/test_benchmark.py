@@ -25,6 +25,19 @@ def _run(*args):
     return json.loads(out)
 
 
+def _run_expect_error(*args):
+    """Run a mode expected to fail: return (returncode, parsed-json-or-text).
+    Regression guard for the captured-substitution + `set -e` pattern, which used
+    to swallow the error JSON whenever the python exited non-zero."""
+    p = subprocess.run(["bash", BENCH, *args], capture_output=True, text=True)
+    out = p.stdout.strip()
+    try:
+        parsed = json.loads(out)
+    except json.JSONDecodeError:
+        parsed = out
+    return p.returncode, parsed
+
+
 def test_cprmse_known_offset():
     """model = world - (0.01, 0.02, 0.03) ⇒ per-axis RMSE = the offset."""
     rows = [
@@ -65,6 +78,23 @@ def test_cprmse_ignores_label_columns():
     assert math.isclose(r["rmse"]["x"], 0.1, abs_tol=1e-9), r
     assert math.isclose(r["rmse"]["y"], 0.0, abs_tol=1e-9), r
     print("ok  cprmse ignores id/label columns")
+
+
+def test_cprmse_rejects_ambiguous_columns():
+    """A row with >6 numeric columns is ambiguous (which six are the coords?) and
+    must fail loudly — AND the error JSON must actually reach the caller (not be
+    swallowed by `set -e` on the captured python exit)."""
+    rows = ["A,10,20,5,9.99,19.98,4.97,0.022"]  # 7 numeric: trailing residual
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+        f.write("\n".join(rows) + "\n")
+        path = f.name
+    try:
+        rc, parsed = _run_expect_error("cprmse", path)
+    finally:
+        os.remove(path)
+    assert rc != 0, (rc, parsed)
+    assert isinstance(parsed, dict) and "numeric columns" in parsed.get("error", ""), parsed
+    print("ok  cprmse rejects ambiguous (>6 numeric) rows, with a visible error")
 
 
 def _have_compare_deps():
@@ -128,6 +158,81 @@ def test_compare_measures_output_only():
     assert r["sampled"]["output_points"] == 2000, r        # output only, not 7000
     assert r["sampled"]["reference_points"] == 5000, r
     print("ok  compare measures the output cloud only (no reference contamination)")
+
+
+def _empty_cloud(path):
+    """Write a valid LAS with zero points (faux ramp filtered to an empty Z band)."""
+    pipe = {"pipeline": [
+        {"type": "readers.faux", "mode": "ramp", "count": 50,
+         "bounds": "([0,10],[0,10],[0,2])"},
+        {"type": "filters.range", "limits": "Z[900:1000]"},  # keeps no points
+        {"type": "writers.las", "filename": path}]}
+    pj = path + ".json"
+    open(pj, "w").write(json.dumps(pipe))
+    subprocess.check_call(["pdal", "pipeline", pj],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.remove(pj)
+
+
+def test_compare_empty_cloud():
+    """An empty output cloud yields a clean, visible error (not a cKDTree stack
+    trace, and not a blank `set -e` abort that hides the JSON)."""
+    if not _have_compare_deps():
+        print("skip compare-empty (needs pdal + scipy)")
+        return
+    d = tempfile.mkdtemp()
+    ref = os.path.join(d, "ref.las")
+    empt = os.path.join(d, "empty.las")
+    _faux_cloud(ref, 2000)
+    _empty_cloud(empt)
+    try:
+        rc, parsed = _run_expect_error("compare", empt, ref)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    assert rc != 0, (rc, parsed)
+    assert isinstance(parsed, dict) and "empty cloud" in parsed.get("error", ""), parsed
+    print("ok  compare reports an empty cloud cleanly (error JSON not swallowed)")
+
+
+def test_compare_auto_eps_is_scale_aware():
+    """With no --eps, the completeness threshold is derived from the reference
+    cloud (auto), not a fixed 0.01 — so it is non-zero and reports its basis."""
+    if not _have_compare_deps():
+        print("skip compare-auto-eps (needs pdal + scipy)")
+        return
+    d = tempfile.mkdtemp()
+    ref = os.path.join(d, "ref.las")
+    out = os.path.join(d, "out.las")
+    _faux_cloud(ref, 3000)
+    _faux_cloud(out, 2000)
+    try:
+        r = _run("compare", out, ref)            # no --eps → auto
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    comp = r["completeness"]
+    assert comp["eps"] > 0, comp                 # never a degenerate 0 threshold
+    assert comp["eps_basis"].startswith("auto"), comp
+    print(f"ok  compare derives a scale-aware auto eps ({comp['eps_basis']})")
+
+
+def test_roughness_respects_sample_budget():
+    """Regression: a floor step (n // sample) collapses to 1 for n < 2*sample and
+    evaluates ALL points; the sample budget must be honoured for any n/sample."""
+    if not _have_scipy():
+        print("skip roughness-budget (needs scipy)")
+        return
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "flat.obj")
+    _plane_obj(p, noise=0.0, side=60)            # 3600 vertices
+    try:
+        r = _run("stats", p, "--rough-sample", "2000")   # 2000 <= 3600 < 4000
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    rough = r["roughness"]
+    assert rough["total_points"] == 3600, rough
+    assert rough["evaluated_points"] <= 2000, rough       # was 3600 before the fix
+    print(f"ok  roughness honours the sample budget "
+          f"({rough['evaluated_points']}/{rough['total_points']} evaluated)")
 
 
 def _have_scipy():
@@ -199,8 +304,12 @@ def test_roughness_scales_with_noise():
 if __name__ == "__main__":
     test_cprmse_known_offset()
     test_cprmse_ignores_label_columns()
+    test_cprmse_rejects_ambiguous_columns()
     test_compare_identical_clouds()
     test_compare_measures_output_only()
+    test_compare_empty_cloud()
+    test_compare_auto_eps_is_scale_aware()
     test_roughness_flat_plane_is_zero()
     test_roughness_scales_with_noise()
+    test_roughness_respects_sample_budget()
     print("\nall benchmark tests passed")

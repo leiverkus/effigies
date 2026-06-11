@@ -28,7 +28,9 @@
 #       reference (PDAL filters.icp), then nearest-neighbour distance (scipy
 #       cKDTree) → {mean, std, rms, p95, max} plus completeness. Clouds are
 #       decimated to ~N points (default 1e6) for tractability — reported, not
-#       silent. Units follow the data (georeferenced = metres).
+#       silent. Units follow the data (georeferenced = metres). The completeness
+#       threshold --eps defaults to "auto" (2x the reference cloud's median point
+#       spacing), so it is meaningful in any frame; pass a number to override.
 #
 #   benchmark.sh cprmse <pairs.csv> [out.json]
 #       Check-point RMSE — surveyed control points vs. their modelled position.
@@ -96,8 +98,11 @@ def roughness_xyz(xyz):
     tree = cKDTree(xyz)
     sample = int(os.environ.get("ROUGH_SAMPLE", "50000"))
     if 0 < sample < n:
-        step = n // sample
-        qidx = np.arange(0, n, step)
+        # Exactly `sample` evenly-spaced query points. A floor step (n // sample)
+        # collapses to 1 whenever n < 2*sample, which then evaluates ALL n points
+        # and blows the budget by up to ~2x; linspace caps it at `sample` for any
+        # n/sample ratio. unique() drops collisions when sample approaches n.
+        qidx = np.unique(np.linspace(0, n - 1, sample).astype(np.int64))
     else:
         qidx = np.arange(n)
     q = xyz[qidx]
@@ -136,9 +141,12 @@ def _load_cloud_xyz(path):
     try:
         subprocess.check_call(["pdal", "pipeline", pj],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        arr = np.loadtxt(txt, delimiter=",")
-        if arr.ndim == 1:
-            arr = arr.reshape(1, -1)
+        try:
+            arr = np.atleast_2d(np.loadtxt(txt, delimiter=","))
+        except (ValueError, StopIteration):
+            return np.empty((0, 3))   # empty cloud
+        if arr.size == 0 or arr.shape[1] < 3:
+            return np.empty((0, 3))
         return arr[:, :3]
     finally:
         for f in (txt, pj):
@@ -314,7 +322,7 @@ PY
 compare_mode() {
   local out="${1:?output cloud required}" ref="${2:?reference cloud required}"
   shift 2
-  local outjson="" icp=1 sample=1000000 eps=0.01
+  local outjson="" icp=1 sample=1000000 eps=auto
   while [ $# -gt 0 ]; do
     case "$1" in
       --no-icp)  icp=0; shift ;;
@@ -323,7 +331,11 @@ compare_mode() {
       *)         outjson="$1"; shift ;;
     esac
   done
-  local json
+  local json rc=0
+  # NB: capture the exit code rather than letting `set -e` abort on a non-zero
+  # python exit. The python prints a clean error JSON before exit(1) (empty cloud,
+  # missing scipy); without `|| rc=$?` the failed assignment would kill the script
+  # and that JSON would never be echoed — an opaque blank failure.
   json="$(ICP="$icp" SAMPLE="$sample" EPS="$eps" python3 - "$out" "$ref" <<'PY'
 import sys, os, json, subprocess, tempfile
 import numpy as np
@@ -336,7 +348,11 @@ except ImportError:
 out_path, ref_path = sys.argv[1], sys.argv[2]
 do_icp = os.environ.get("ICP", "1") == "1"
 sample = int(os.environ.get("SAMPLE", "1000000"))
-eps    = float(os.environ.get("EPS", "0.01"))
+# eps for the completeness threshold. "auto" (the default) derives a scale-aware
+# value from the reference cloud's own point spacing below, so completeness is
+# meaningful in ANY frame — a fixed absolute 0.01 means 1 cm for a metric
+# georeferenced cloud but is arbitrary for a local/object-scale one.
+eps_raw = os.environ.get("EPS", "auto")
 tmp = []
 
 def count(p):
@@ -357,9 +373,12 @@ def load_xyz(path, n_target):
     open(pj, "w").write(json.dumps(pipe))
     subprocess.check_call(["pdal", "pipeline", pj],
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    arr = np.loadtxt(txt, delimiter=",")
-    if arr.ndim == 1:
-        arr = arr.reshape(1, -1)
+    try:
+        arr = np.atleast_2d(np.loadtxt(txt, delimiter=","))
+    except (ValueError, StopIteration):
+        return np.empty((0, 3)), c, step   # empty cloud -> no points
+    if arr.size == 0 or arr.shape[1] < 3:
+        return np.empty((0, 3)), c, step
     return arr[:, :3], c, step
 
 # Load each cloud SEPARATELY and cleanly. Do NOT read a written ICP output:
@@ -414,10 +433,49 @@ if do_icp:
     except subprocess.CalledProcessError:
         icp_meta = {"error": "icp failed; raw (unaligned) distance"}
 
+# An empty output or reference cloud has no distance to report; say so cleanly
+# rather than letting cKDTree raise on a degenerate array.
+if len(out_xyz) == 0 or len(ref_xyz) == 0:
+    print(json.dumps({"type": "cloud-to-reference",
+        "output": os.path.abspath(out_path), "reference": os.path.abspath(ref_path),
+        "error": f"empty cloud (output points: {len(out_xyz)}, "
+                 f"reference points: {len(ref_xyz)})"}, indent=2))
+    sys.exit(1)
+
 # nearest-neighbour distance: each output point to the reference cloud
-d, _ = cKDTree(ref_xyz).query(out_xyz, k=1)
+ref_tree = cKDTree(ref_xyz)
+d, _ = ref_tree.query(out_xyz, k=1)
 # completeness: fraction of reference points within eps of an output point
 dr, _ = cKDTree(out_xyz).query(ref_xyz, k=1)
+
+# Resolve the completeness threshold. "auto" = 2x the median nearest-neighbour
+# spacing of the reference cloud: a point is "covered" if the output reproduces
+# it to within roughly the reference's own resolution. This tracks the data
+# scale (local or projected) instead of a fixed absolute distance.
+if str(eps_raw).lower() == "auto":
+    spacing = 0.0
+    if len(ref_xyz) > 1:
+        self_d, _ = ref_tree.query(ref_xyz, k=2)   # col 1 = nearest non-self
+        # Ignore zero distances: coincident/duplicate points (common after
+        # decimation or coordinate quantisation) would otherwise drag the median
+        # to 0 and collapse eps to an exact-match-only threshold.
+        nz = self_d[:, 1][self_d[:, 1] > 0]
+        if nz.size:
+            spacing = float(np.median(nz))
+    if spacing > 0:
+        eps = 2.0 * spacing
+        eps_basis = f"auto: 2x median reference NN spacing ({spacing:.4g})"
+    else:
+        # Degenerate spacing (all-duplicate / single point): fall back to a small
+        # fraction of the reference bounding-box diagonal — still scale-aware.
+        diag = (float(np.linalg.norm(ref_xyz.max(0) - ref_xyz.min(0)))
+                if len(ref_xyz) else 0.0)
+        eps = 0.005 * diag
+        eps_basis = (f"auto: 0.5% of reference bbox diagonal ({diag:.4g}); "
+                     "NN spacing degenerate")
+else:
+    eps = float(eps_raw)
+    eps_basis = "explicit"
 
 rms = float(np.sqrt(np.mean(d ** 2)))
 report = {
@@ -432,21 +490,25 @@ report = {
     "distance": {"unit": "data units (metres if georeferenced)",
                  "mean": float(d.mean()), "std": float(d.std()), "rms": rms,
                  "p95": float(np.percentile(d, 95)), "max": float(d.max())},
-    "completeness": {"eps": eps, "fraction": float((dr <= eps).mean())},
+    "completeness": {"eps": eps, "eps_basis": eps_basis,
+                     "fraction": float((dr <= eps).mean())},
 }
 for f in tmp:
     try: os.remove(f)
     except OSError: pass
 print(json.dumps(report, indent=2))
 PY
-)"
+)" || rc=$?
   if [ -n "$outjson" ]; then printf '%s\n' "$json" | tee "$outjson"; else printf '%s\n' "$json"; fi
+  return "$rc"
 }
 
 # --- Check-point RMSE: surveyed control points vs. modelled position ---------
 cprmse_mode() {
   local pairs="${1:?pairs.csv required}" outjson="${2:-}"
-  local json
+  local json rc=0
+  # See compare_mode: `|| rc=$?` so a clean error JSON + exit(1) (ambiguous
+  # columns, no valid rows) is still echoed instead of being swallowed by set -e.
   json="$(python3 - "$pairs" <<'PY'
 import sys, json
 import numpy as np
@@ -461,9 +523,18 @@ for line in open(sys.argv[1], encoding="utf-8"):
         try:
             nums.append(float(tok))
         except ValueError:
-            pass  # ignore id / label columns
-    if len(nums) >= 6:
-        rows.append(nums[-6:])  # world_x,y,z, model_x,y,z (last 6 numeric)
+            pass  # ignore a non-numeric id / label column
+    if len(nums) == 6:
+        rows.append(nums)  # world_x,y,z, model_x,y,z
+    elif len(nums) > 6:
+        # Ambiguous: with >6 numeric columns we cannot tell which six are the
+        # world/model coordinates (a trailing residual/quality/numeric-id column
+        # would silently shift the window). Fail loudly rather than mispair.
+        print(json.dumps({"error": f"row has {len(nums)} numeric columns; expected "
+              "exactly 6 (world_x,y,z, model_x,y,z) plus at most one non-numeric "
+              f"id/label column -> {line[:80]}"}))
+        sys.exit(1)
+    # rows with <6 numeric values (e.g. a header) are skipped
 
 if not rows:
     print(json.dumps({"error": "no rows with 6 numeric coords "
@@ -481,8 +552,9 @@ print(json.dumps({
              "xyz": float(np.sqrt(np.mean(np.sum(d ** 2, axis=1))))},
 }, indent=2))
 PY
-)"
+)" || rc=$?
   if [ -n "$outjson" ]; then printf '%s\n' "$json" | tee "$outjson"; else printf '%s\n' "$json"; fi
+  return "$rc"
 }
 
 case "${1:-}" in
