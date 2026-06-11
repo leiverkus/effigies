@@ -14,7 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   textured mesh can be measured against a reference scan directly — completing the
   benchmark accuracy core (cloud-to-reference, mesh-to-reference, check-point RMSE).
 
-## [0.2.0] - 2026-06-11
+### Fixed
+- **EXIF-GPS georeferencing silently dropped on real reconstructions.**
+  `read_colmap_camera_centers` filtered blank lines out of `images.txt`, but a
+  COLMAP image registered with no observed 3D points has an *empty* points2D line;
+  dropping it desynced the two-line stride and silently lost cameras. On drone /
+  GLOMAP runs this pushed the EXIF-GPS fix count below the required 3, so
+  `georeference=auto` fell back to a local (un-georeferenced) frame even though the
+  images carried GPS. The center reader now delegates to the robust pose/points2D
+  pairing used by the GCP path, and the EXIF loop tolerates a single malformed
+  image instead of failing the whole solve. (The EXIF path had no test coverage;
+  added a regression test for the empty-points2D case.)
 
 ### Added
 - **First full end-to-end run on the CPU image.** The complete chain — COLMAP

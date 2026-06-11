@@ -117,9 +117,31 @@ def test_none_mode_keeps_local():
         print("ok  none mode keeps local frame")
 
 
+def test_camera_centers_survive_empty_points2d():
+    """Regression: an image registered with NO observed 3D points has an EMPTY
+    points2D line in images.txt. read_colmap_camera_centers must not drop blank
+    lines — doing so desynced the two-line stride and silently lost cameras, which
+    pushed real drone / GLOMAP runs below the >=3 EXIF-GPS fixes needed and
+    produced a spurious local-only georef instead of using the GPS."""
+    with tempfile.TemporaryDirectory() as d:
+        m = os.path.join(d, "m")
+        os.makedirs(m)
+        with open(os.path.join(m, "images.txt"), "w") as f:
+            f.write("# Image list\n")
+            f.write("1 1 0 0 0 0 0 0 1 a.jpg\n");  f.write("10 20 -1\n")
+            f.write("2 1 0 0 0 -1 0 0 1 b.jpg\n"); f.write("\n")          # no observations
+            f.write("3 1 0 0 0 0 -1 0 1 c.jpg\n"); f.write("11 21 -1\n")
+            f.write("4 1 0 0 0 0 0 -1 1 d.jpg\n"); f.write("12 22 -1\n")
+        centers = gb.read_colmap_camera_centers(m)
+    assert set(centers) == {"a.jpg", "b.jpg", "c.jpg", "d.jpg"}, centers
+    assert np.allclose(centers["b.jpg"], [1, 0, 0]), centers["b.jpg"]   # R=I -> C=-t
+    print("ok  camera centers survive an empty points2D line (no stride desync)")
+
+
 if __name__ == "__main__":
     test_umeyama_recovers_known_similarity()
     test_quat_identity()
     test_gcp_path_recovers_scale()
     test_none_mode_keeps_local()
+    test_camera_centers_survive_empty_points2d()
     print("\nall georef tests passed")

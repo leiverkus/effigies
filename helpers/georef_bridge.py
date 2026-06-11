@@ -83,23 +83,18 @@ def _find_colmap_model(work):
 
 def read_colmap_camera_centers(model_dir):
     """Return {image_name: C} where C is the camera center in the local frame.
-    COLMAP images.txt stores world-to-cam (R, t); center C = -R^T t."""
+    COLMAP images.txt stores world-to-cam (R, t); center C = -R^T t.
+
+    Delegates to _read_images_full's robust pose/points2D pairing. (The earlier
+    stride-2 reader filtered out blank lines, but an image registered with NO
+    observed 3D points has an EMPTY points2D line — dropping it desynced the
+    two-line stride and silently lost cameras. On real drone / GLOMAP
+    reconstructions that pushed the EXIF-GPS fix count below 3 and produced a
+    spurious local-only georef instead of using the GPS.)"""
     centers = {}
-    images_txt = os.path.join(model_dir, "images.txt")
-    with open(images_txt) as f:
-        lines = [l for l in f if not l.startswith("#") and l.strip()]
-    # images.txt: every image is TWO lines; the 1st has the pose, the 2nd the 2D pts
-    for i in range(0, len(lines), 2):
-        parts = lines[i].split()
-        if len(parts) < 10:
-            continue
-        qw, qx, qy, qz = map(float, parts[1:5])
-        tx, ty, tz = map(float, parts[5:8])
-        name = parts[9]
-        R = _quat_to_rot(qw, qx, qy, qz)
-        t = np.array([tx, ty, tz])
-        C = -R.T @ t
-        centers[name] = C
+    for name, im in _read_images_full(model_dir).items():
+        R = np.asarray(im["R"]); t = np.asarray(im["t"])
+        centers[name] = -R.T @ t
     return centers
 
 
@@ -312,7 +307,10 @@ def exif_correspondences(model_dir, images_dir, target_crs):
         ip = next((c for c in candidates if os.path.exists(c)), None)
         if not ip:
             continue
-        g = _gps(ip)
+        try:                       # one malformed image must not sink the whole solve
+            g = _gps(ip)
+        except Exception:
+            g = None
         if g:
             fixes[name] = g
             first = first or g
