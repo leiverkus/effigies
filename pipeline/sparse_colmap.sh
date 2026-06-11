@@ -63,8 +63,22 @@ case "$MATCHER" in
   exhaustive) colmap exhaustive_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" "${EXHAUSTIVE_CPU[@]}" ;;
   sequential) colmap sequential_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
   spatial)    colmap spatial_matcher    --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
-  vocab_tree) colmap vocab_tree_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
-  *) echo "[colmap] unknown matcher $MATCHER" >&2; exit 1 ;;
+  vocab_tree)
+    # Image-retrieval matching for large sets: instead of all O(n^2) pairs, each
+    # image queries a pre-trained vocabulary tree for its most similar images and
+    # only those pairs are matched. Needs the vocab tree .bin, which the image
+    # bakes in (both Dockerfiles, Flickr100K 256K words) at the path below. If it
+    # is absent, fail with guidance rather than the opaque NodeODM "Cannot process
+    # dataset" COLMAP would otherwise produce for an empty --vocab_tree_path.
+    VOCAB="${EFFIGIES_VOCAB_TREE:-/usr/local/share/effigies/vocab_tree.bin}"
+    if [[ ! -f "$VOCAB" ]]; then
+      echo "[colmap] matcher=vocab_tree needs a COLMAP vocabulary tree, but none was found at '$VOCAB'. The Effigies image bakes one in there; set EFFIGIES_VOCAB_TREE to a vocab-tree .bin to override, or use matcher=exhaustive (recommended for close-range object sets)." >&2
+      exit 1
+    fi
+    colmap vocab_tree_matcher --database_path "$DB" \
+      --VocabTreeMatching.vocab_tree_path "$VOCAB" \
+      --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+  *) echo "[colmap] unknown/unsupported matcher '$MATCHER'" >&2; exit 1 ;;
 esac
 
 if [[ "$MAPPER" == "global" ]]; then

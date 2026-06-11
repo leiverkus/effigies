@@ -62,6 +62,27 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
     ninja -C /opt/colmap/build install && \
     rm -rf /opt/colmap
 
+# --- COLMAP vocabulary tree (for matcher=vocab_tree) ---
+# Image-retrieval matching for large sets: each image queries this pre-trained
+# tree for its most similar images instead of matching all O(n^2) pairs. Baked in
+# so the matcher works offline (this COLMAP-3 image has no runtime resource
+# auto-download). Pinned URL + SHA256 (Flickr100K, 256K words, ~112 MB — COLMAP's
+# general recommendation, good from a few hundred to a few thousand images).
+#
+# FORMAT MATTERS: this image is COLMAP 3.11.1, whose retrieval uses FLANN, so it
+# needs the classic FLANN-format tree from demuc.de. COLMAP 3.12+ switched to
+# FAISS; WHEN THIS IMAGE IS BUMPED TO COLMAP 4, switch to the FAISS tree
+# (vocab_tree_faiss_*, as the CPU image already does) or COLMAP will abort with
+# std::invalid_argument when reading this tree. Override with
+# --build-arg VOCAB_TREE_URL=/VOCAB_TREE_SHA256=.
+ARG VOCAB_TREE_URL=https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin
+ARG VOCAB_TREE_SHA256=d2055600452a531b5b0a62aa5943e1a07195273dc4eeebcf23d3a924d881d53a
+RUN mkdir -p /usr/local/share/effigies && \
+    python3 -c "import urllib.request; urllib.request.urlretrieve('${VOCAB_TREE_URL}', '/usr/local/share/effigies/vocab_tree.bin')" && \
+    echo "${VOCAB_TREE_SHA256}  /usr/local/share/effigies/vocab_tree.bin" | sha256sum -c - && \
+    echo "[effigies] COLMAP vocab tree baked in (FLANN, Flickr100K 256K words)"
+ENV EFFIGIES_VOCAB_TREE=/usr/local/share/effigies/vocab_tree.bin
+
 # --- OpenMVS from pinned source (VCGlib is a build-time header dependency) ---
 RUN git clone https://github.com/cdcseacave/VCG.git /opt/vcglib && \
     git -C /opt/vcglib checkout ${VCG_REF} && \
