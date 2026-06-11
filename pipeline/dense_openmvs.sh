@@ -7,15 +7,22 @@ REFINE_ITERS="$5"; DECIMATE="$6"; TEX_RES="$7"; GPU="$8"
 
 cd "$WORK"
 
-# CUDA device: -1 = first GPU, -2 = CPU only (OpenMVS convention)
-if [[ "$GPU" == "1" ]]; then CUDA="--cuda-device -1"; else CUDA="--cuda-device -2"; fi
+# CUDA device selection (-1 = first GPU, -2 = CPU only). The --cuda-device option
+# only exists in a CUDA-enabled OpenMVS build; the CPU image is built with
+# OpenMVS_USE_CUDA=OFF and rejects it ("unrecognised option '--cuda-device'").
+# Probe the binary so we pass the flag only where it is understood: on a CUDA
+# build honour GPU (-1) vs. forced-CPU fallback (-2); on a CPU build omit it.
+CUDA_ARGS=()
+if DensifyPointCloud --help 2>&1 | grep -q -- '--cuda-device'; then
+  if [[ "$GPU" == "1" ]]; then CUDA_ARGS=(--cuda-device -1); else CUDA_ARGS=(--cuda-device -2); fi
+fi
 
 echo "[openmvs] DensifyPointCloud"
 DensifyPointCloud scene.mvs \
   --resolution-level "$RES_LEVEL" \
   --number-views-fuse "$VIEWS_FUSE" \
   --archive-type 3 \
-  $CUDA \
+  "${CUDA_ARGS[@]}" \
   -w "$WORK"
 
 MESH_INPUT="scene_dense.mvs"
@@ -25,7 +32,7 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
   ReconstructMesh "$MESH_INPUT" \
     --decimate "$DECIMATE" \
     --archive-type 3 \
-    $CUDA \
+    "${CUDA_ARGS[@]}" \
     -w "$WORK"
   MESH_MVS="scene_dense_mesh.mvs"
 
@@ -36,7 +43,7 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
       --scales 1 \
       --gradient-step 25.05 \
       --resolution-level "$RES_LEVEL" \
-      $CUDA \
+      "${CUDA_ARGS[@]}" \
       -w "$WORK"
     MESH_MVS="scene_dense_mesh_refine.mvs"
   fi
@@ -46,7 +53,7 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
     --export-type obj \
     --texture-size "$TEX_RES" \
     --archive-type 3 \
-    $CUDA \
+    "${CUDA_ARGS[@]}" \
     -w "$WORK"
 else
   echo "[openmvs] reconstruct-mesh disabled; leaving dense point cloud only"
