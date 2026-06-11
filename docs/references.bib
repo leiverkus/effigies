@@ -1,0 +1,133 @@
+% References for the Effigies engine-comparison benchmark (ROADMAP v0.4.0).
+% Prior art on comparing photogrammetry pipelines — open-source vs. commercial
+% (Agisoft Metashape, RealityCapture) — with a focus on close-range / cultural
+% heritage, which is Effigies' target regime. Metadata verified via DOI.
+
+@article{SolemNau2020,
+  author  = {Solem, Dag-{\O}yvind and Nau, Erich},
+  title   = {Two New Ways of Documenting Miniature Incisions Using a Combination
+             of Image-Based Modelling and Reflectance Transformation Imaging},
+  journal = {Remote Sensing},
+  year    = {2020},
+  volume  = {12},
+  number  = {10},
+  pages   = {1626},
+  doi     = {10.3390/rs12101626},
+  note    = {Metashape vs. RealityCapture on archaeological fine detail; RC
+             faster and more detailed but noisier, accuracy inconclusive}
+}
+
+@article{GabaraSawicki2023,
+  author  = {Gabara, Grzegorz and Sawicki, Piotr},
+  title   = {{CRBeDaSet}: A Benchmark Dataset for High Accuracy Close Range
+             {3D} Object Reconstruction},
+  journal = {Remote Sensing},
+  year    = {2023},
+  volume  = {15},
+  number  = {4},
+  pages   = {1116},
+  doi     = {10.3390/rs15041116},
+  note    = {Close-range benchmark dataset; GRAPHOS vs. ContextCapture,
+             Metashape, Pix4Dmapper, RealityCapture; mm-range accuracy}
+}
+
+@article{Cutugno2022,
+  author  = {Cutugno, Matteo and Robustelli, Umberto and Pugliano, Giovanni},
+  title   = {Structure-from-Motion {3D} Reconstruction of the Historical Overpass
+             Ponte della Cerra: A Comparison between {MicMac} Open Source Software
+             and {Metashape}},
+  journal = {Drones},
+  year    = {2022},
+  volume  = {6},
+  number  = {9},
+  pages   = {242},
+  doi     = {10.3390/drones6090242},
+  note    = {Open (MicMac) vs. Metashape; GCP/CP errors + Cloud-to-Cloud; results
+             comparable (residuals 0.770 vs. 0.735 px; 3D error 3.7 vs. 3.1 cm)}
+}
+
+@article{RahamanChampion2019,
+  author  = {Rahaman, Hafizur and Champion, Erik},
+  title   = {To {3D} or Not {3D}: Choosing a Photogrammetry Workflow for Cultural
+             Heritage Groups},
+  journal = {Heritage},
+  year    = {2019},
+  volume  = {2},
+  number  = {3},
+  pages   = {1835--1851},
+  doi     = {10.3390/heritage2030112},
+  note    = {FOSS vs. Metashape; point-cloud deviation via CloudCompare; FOSS
+             accuracy promising for visualisation}
+}
+
+@article{Qureshi2022,
+  author  = {Qureshi, Abdul Hannan and Alaloul, Wesam Salah and Hussain, Syed Jawad
+             and Murtiyoso, Arnadi and Saad, Syed and Alzubi, Khalid Mhmoud and
+             Ammad, Syed and Baarimah, Abdullah O.},
+  title   = {Evaluation of Photogrammetry Tools following Progress Detection of
+             Rebar towards Sustainable Construction Processes},
+  journal = {Sustainability},
+  year    = {2022},
+  volume  = {15},
+  number  = {1},
+  pages   = {21},
+  doi     = {10.3390/su15010021},
+  note    = {Methodology to assess photogrammetry tools (37 -> 12); ground-truth
+             and averaged-merged cloud comparison}
+}
+
+@article{Barszcz2021,
+  author  = {Barszcz, Marcin and Montusiewicz, Jerzy and
+             Pa{\'s}nikowska-{\L}ukaszuk, Magdalena and Sa{\l}amacha, Anna},
+  title   = {Comparative Analysis of Digital Models of Objects of Cultural
+             Heritage Obtained by the ``{3D} {SLS}'' and ``{SfM}'' Methods},
+  journal = {Applied Sciences},
+  year    = {2021},
+  volume  = {11},
+  number  = {12},
+  pages   = {5321},
+  doi     = {10.3390/app11125321},
+  note    = {SfM vs. structured-light on museum artefacts; SfM lacks scale ->
+             not fully suitable for archiving without scaling}
+}
+
+@article{Croce2024,
+  author  = {Croce, Valeria and Billi, Dario and Caroti, Gabriella and
+             Piemonte, Andrea and De Luca, Livio and V{\'e}ron, Philippe},
+  title   = {Comparative Assessment of Neural Radiance Fields and Photogrammetry
+             in Digital Heritage: Impact of Varying Image Conditions on {3D}
+             Reconstruction},
+  journal = {Remote Sensing},
+  year    = {2024},
+  volume  = {16},
+  number  = {2},
+  pages   = {301},
+  doi     = {10.3390/rs16020301},
+  note    = {NeRF vs. photogrammetry on a statue; NeRF better completeness with
+             few images but noisier}
+}
+
+@article{PepeAlfioCostantino2022,
+  author  = {Pepe, Massimiliano and Alfio, Vincenzo Saverio and Costantino, Domenica},
+  title   = {{UAV} Platforms and the {SfM-MVS} Approach in the {3D} Surveys and
+             Modelling: A Review in the Cultural Heritage Field},
+  journal = {Applied Sciences},
+  year    = {2022},
+  volume  = {12},
+  number  = {24},
+  pages   = {12886},
+  doi     = {10.3390/app122412886},
+  note    = {Review of the SfM-MVS pipeline in cultural heritage}
+}
+
+@inproceedings{Griwodz2021,
+  author    = {Griwodz, Carsten and Gasparini, Simone and Calvet, Lilian and
+               Gurdjos, Pierre and Castan, Fabien and Maujean, Benoit and
+               De Lillo, Gregoire and Lanthony, Yann},
+  title     = {{AliceVision Meshroom}: An Open-Source {3D} Reconstruction Pipeline},
+  booktitle = {Proceedings of the 12th ACM Multimedia Systems Conference (MMSys)},
+  year      = {2021},
+  pages     = {241--247},
+  doi       = {10.1145/3458305.3478443},
+  note      = {The open SfM+MVS pipeline most comparable to COLMAP+OpenMVS}
+}

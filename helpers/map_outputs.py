@@ -14,8 +14,15 @@ We symlink/copy from the OpenMVS workdir into these locations.
 """
 import argparse
 import os
+import sys
 import shutil
 import glob
+
+# Shared OpenMVS mesh-name lookup — the SAME ordered candidate list the georef
+# bridge uses, so the OBJ this maps into the WebODM asset path is exactly the one
+# georef_bridge transformed (see helpers/openmvs_mesh.py).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from openmvs_mesh import find_mesh_obj  # noqa: E402
 
 
 def link_or_copy(src, dst):
@@ -41,26 +48,41 @@ def main():
     P, W = args.proj, args.work
 
     # 1. textured model -> odm_texturing
-    #    OpenMVS TextureMesh emits scene_dense_mesh_refine.obj/.mtl/.png
-    obj = None
-    for cand in ("scene_dense_mesh_refine.obj", "scene_dense_mesh.obj"):
-        if os.path.exists(os.path.join(W, cand)):
-            obj = cand
-            break
+    #    TextureMesh appends "_texture" to the input mesh name and emits the OBJ
+    #    plus a .mtl and texture maps (jpg or png depending on the build).
+    obj = find_mesh_obj(W)
     if obj:
         base = obj[:-4]
+        # Rename only the OBJ to WebODM's expected name; keep the .mtl and texture
+        # files under their original names so the OBJ's mtllib / the mtl's map_Kd
+        # references stay valid.
         link_or_copy(os.path.join(W, obj),
                      os.path.join(P, "odm_texturing", "odm_textured_model_geo.obj"))
         link_or_copy(os.path.join(W, base + ".mtl"),
                      os.path.join(P, "odm_texturing", base + ".mtl"))
-        for png in glob.glob(os.path.join(W, base + "*.png")):
-            link_or_copy(png, os.path.join(P, "odm_texturing", os.path.basename(png)))
+        for ext in (".png", ".jpg", ".jpeg"):
+            for tex in glob.glob(os.path.join(W, base + "*" + ext)):
+                link_or_copy(tex, os.path.join(P, "odm_texturing", os.path.basename(tex)))
 
-    # 2. dense point cloud -> odm_georeferencing (WebODM expects .laz here)
-    #    Convert scene_dense.ply -> laz with PDAL at build time; here we pass the ply
-    #    through and let postprocessing build EPT.
-    link_or_copy(os.path.join(W, "scene_dense.ply"),
-                 os.path.join(P, "odm_georeferencing", "odm_georeferenced_model.ply"))
+    # 2. dense point cloud -> odm_georeferencing (WebODM expects .laz here).
+    #    pointcloud_to_laz.py produces the georeferenced LAZ; fall back to the raw
+    #    PLY only if the LAZ step could not run (e.g. PDAL unavailable).
+    laz = os.path.join(W, "odm_georeferenced_model.laz")
+    if os.path.exists(laz):
+        link_or_copy(laz, os.path.join(P, "odm_georeferencing", "odm_georeferenced_model.laz"))
+    else:
+        print("[map] no LAZ found; passing the raw PLY through as a fallback")
+        link_or_copy(os.path.join(W, "scene_dense.ply"),
+                     os.path.join(P, "odm_georeferencing", "odm_georeferenced_model.ply"))
+
+    # 2b. EPT tileset -> entwine_pointcloud/ (for the Potree web viewer), if built.
+    ept_src = os.path.join(W, "entwine_pointcloud")
+    if os.path.isdir(ept_src):
+        ept_dst = os.path.join(P, "entwine_pointcloud")
+        if os.path.exists(ept_dst):
+            shutil.rmtree(ept_dst)
+        shutil.copytree(ept_src, ept_dst)
+        print(f"[map] {ept_src} -> {ept_dst}")
 
     # 3. report stub so the UI has a stats target
     os.makedirs(os.path.join(P, "odm_report"), exist_ok=True)

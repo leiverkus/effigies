@@ -13,7 +13,15 @@
     "value": "exhaustive",
     "domain": ["exhaustive", "sequential", "vocab_tree", "spatial"],
     "type": "enum",
-    "help": "Feature matching strategy (COLMAP only). 'exhaustive' is most robust for unordered object photos but scales O(n^2). 'spatial' uses GPS when present. Default: %(default)s"
+    "help": "Feature matching strategy (COLMAP only). 'exhaustive' is most robust for unordered object photos but scales O(n^2). 'sequential' for ordered/video frames. 'vocab_tree' scales to large sets (hundreds–thousands of images): each image retrieves its most similar images from a baked-in Flickr100K vocabulary tree instead of matching all pairs. 'spatial' uses GPS when present. Default: %(default)s"
+  },
+  {
+    "name": "mapper",
+    "title": "COLMAP Mapper",
+    "value": "incremental",
+    "domain": ["incremental", "global"],
+    "type": "enum",
+    "help": "Sparse SfM strategy (COLMAP only). 'incremental' is the robust default for close-range / convergent sets (objects, architecture). 'global' uses COLMAP 4's built-in GLOMAP global mapper — much faster on large, well-connected (e.g. aerial) blocks, but less robust on convergent close-range imagery; prefer it for big sets / ODM-comparison runs, not as the default. Default: %(default)s"
   },
   {
     "name": "camera-model",
@@ -58,7 +66,7 @@
     "name": "mesh-decimate",
     "title": "Mesh Decimation Factor",
     "value": "1.0",
-    "domain": "float > 0 and <= 1",
+    "domain": "float: 0 <= x <= 1",
     "type": "float",
     "help": "ReconstructMesh decimation. 1.0 = no decimation (full detail). 0.5 = halve faces. Default: %(default)s"
   },
