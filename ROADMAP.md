@@ -22,116 +22,67 @@ are targets, not promises. Items move to [CHANGELOG.md](CHANGELOG.md) as they sh
 Working NodeODM-compatible engine: COLMAP sparse → full OpenMVS chain → georef
 bridge → WebODM asset mapping, with unit tests and CI. See the changelog.
 
-## v0.2.0 — Reproducible & verifiable build *(in progress)*
+## v0.2.0 — Reproducible & verifiable build *(released — 2026-06-11)*
 
-Make the image trustworthy and the output cloud web-ready.
+Made the image trustworthy and the output cloud web-ready.
 
-- [x] **Source-built, pinned Dockerfile.** COLMAP `4.0.4` and OpenMVS `v2.4.0`
-      built from source (versions as build `ARG`s), with a build-time gate:
-      `which colmap DensifyPointCloud ReconstructMesh RefineMesh TextureMesh
-      InterfaceCOLMAP pdal` — the build fails loudly if any is missing.
+- [x] **Source-built, pinned Dockerfiles.** Both images build COLMAP `4.0.4` and
+      OpenMVS `v2.4.0` from source (versions as build `ARG`s) from identical pinned
+      sources — the production `Dockerfile` differs from `Dockerfile.cpu` only in
+      the CUDA base and the `-D*CUDA*` flags. A build-time gate
+      (`which colmap DensifyPointCloud ReconstructMesh RefineMesh TextureMesh
+      InterfaceCOLMAP pdal`) fails the build loudly if any binary is missing.
+- [x] **No `latest` tags.** Base image and engine versions are explicit `ARG`s;
+      VCGlib pinned to the validated commit (`658ba36`).
 - [x] **Point cloud → `.laz` + EPT.** `helpers/pointcloud_to_laz.py` applies the
       georef transform, writes `odm_georeferenced_model.laz` via PDAL, and builds
       an EPT tileset (entwine/untwine) for the Potree viewer.
-- [x] **No `latest` tags.** Base image and engine versions are explicit `ARG`s.
-- [x] **End-to-end smoke test (CPU image).** The full chain — COLMAP sparse →
-      `image_undistorter` → OpenMVS densify → reconstruct → refine → texture —
-      runs to completion on the CPU/arm64 image against a real 70-image dataset,
-      producing a textured OBJ. Getting there fixed a chain of CPU-path bugs (GPU
-      fallback, SIFT thread/match-block caps, the undistort workspace, the
-      `--cuda-device` probe) and required OpenMVS **v2.4.0** — v2.3.0 corrupts the
-      heap on arm64. STILL OPEN: drive it through NodeODM/WebODM to also exercise
-      the georef → LAZ/EPT → `map_outputs` tail, and the same on the CUDA image on
-      GPU hardware.
-- [x] **Production (CUDA) image bumped to COLMAP 4.0.4 + OpenMVS v2.4.0.** The
-      production `Dockerfile` now mirrors the CPU image's recipe exactly — the same
-      header-vendor approach (pinned nanoflann ≥1.5 + CGAL ≥6.0) and libjxl patch
-      on Ubuntu 22.04 — differing only in the CUDA base and the `-D*CUDA*` flags
-      (`CUDA_ENABLED=ON`, `OpenMVS_USE_CUDA=ON`, CUDA arch + stubs path). The two
-      images are now built from identical pinned sources; no image builds COLMAP 3.x.
-      Not yet exercised on GPU hardware (this dev box has no NVIDIA GPU).
-- [x] **Pin VCGlib to a verified commit SHA.** Both images are pinned to the
-      `cdcseacave/VCG` commit the engine was validated against (`658ba36`).
+- [x] **`matcher=vocab_tree` + `mapper=global`.** Working image-retrieval matching
+      (baked-in FAISS vocab tree) and the built-in GLOMAP global mapper as opt-in
+      COLMAP-4 choices, never the default.
+- [x] **End-to-end run (CPU image).** The full chain — COLMAP sparse →
+      `image_undistorter` → OpenMVS densify → reconstruct → refine → texture →
+      georef → LAZ — runs to completion on the CPU/arm64 image against a real
+      70-image dataset, producing a textured georeferenced OBJ + LAZ. Getting there
+      fixed a chain of CPU-path bugs (GPU fallback, SIFT thread/match-block caps,
+      the undistort workspace, the `--cuda-device` probe).
+
+**Carried forward** (v0.2.0 shipped without these; tracked for a later release):
+
+- [ ] **Validate the CUDA/production image on real GPU hardware.** Both images
+      build from identical pinned sources, but the CUDA build has only been
+      *statically* checked (`docker build --check`) — there is no NVIDIA GPU on the
+      dev box. A full GPU build + run is the remaining acceptance gate for the
+      production image.
 - [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
       builds and handle the variants.
 - [ ] Slim the image with a multi-stage (devel build → runtime copy) layout once
-      the single-stage build is confirmed working.
+      the single-stage build is confirmed working on GPU.
 
-## v0.2.x — COLMAP 4 + Ubuntu 24.04 base *(planned, after v0.2.0)*
+## COLMAP 4 migration *(done — folded into v0.2.0)*
 
-Move the engine onto the COLMAP-4 generation. Sequenced as three **isolated** steps
-so a toolchain break is never debugged together with a COLMAP-API break.
+Both images are now on **COLMAP 4.0.4 + OpenMVS 2.4.0**, built from identical pinned
+sources and run-verified end-to-end on the CPU image. The originally-planned
+three-step sequence (24.04 base → GPU OpenMVS 2.4.0 → COLMAP 3.13 → 4.0.x) collapsed:
+**the base bump to 24.04 was not needed** — COLMAP 4 builds on Ubuntu 22.04 once
+`libopenimageio-dev openimageio-tools libsuitesparse-dev` are added, so **PDAL is
+kept** (24.04 dropped it). Facts worth keeping:
 
-> **Run-verified update (this branch) — supersedes the 24.04 assumption below.**
-> **Both images are now on COLMAP 4.0.4 + OpenMVS 2.4.0**, built from identical
-> pinned sources (the production `Dockerfile` mirrors the CPU recipe with CUDA on).
-> A full real-dataset run completes on the CPU image (sparse → `InterfaceCOLMAP` →
-> densify → reconstruct → refine → texture → georef → LAZ). Key correction:
-> **COLMAP 4 builds and runs on Ubuntu 22.04 — the base bump to 24.04 (step 1) is
-> *not* required.** The 22.04 OpenImageIO "break" was only a broken CMake config in
-> the *tools* sub-package; adding `libopenimageio-dev openimageio-tools
-> libsuitesparse-dev` makes COLMAP 4 configure and compile on jammy, so **PDAL is
-> kept** (24.04 dropped it). The generic feature CLI options were renamed to
-> `Feature{Extraction,Matching}.*` (handled in `sparse_colmap.sh`). The production
-> image's CUDA build is not yet exercised on GPU hardware. The three-step plan
-> below is kept as the *source-level* analysis that informed the move.
-
-1. *(not needed — COLMAP 4 builds on 22.04, see banner.)* **Base image → Ubuntu
-   24.04 / CUDA 12.5.1, COLMAP still 3.13.** There is no
-   `12.4.1-devel-ubuntu24.04`; the lowest CUDA 12.x on 24.04 is `12.5.1`. The driver
-   for 24.04 is **OpenImageIO**, not CMake — COLMAP 4 needs only CMake 3.12 (the 3.28
-   floor was GLOMAP's *standalone* build, which is moot once GLOMAP ships inside
-   COLMAP 4). The real risk is the OpenMVS/VCGlib rebuild under GCC 13 + newer
-   Boost/CGAL — prove this with COLMAP unchanged before touching COLMAP.
-2. *(done — both images on v2.4.0.)* **GPU image OpenMVS `v2.3.0` → `v2.4.0`** — prerequisite for step 3; folds into
-   the existing v0.2.0 item above. 2.4.0's `InterfaceCOLMAP` adds the `SIMPLE_PINHOLE`
-   reader path (2.3.0 reads only `PINHOLE`). Lock the GPU VCG SHA together with this
-   bump (candidate: the CPU-validated `658ba36`, to be confirmed on GPU hardware).
-3. *(done — both images on COLMAP 4.0.4.)* **COLMAP `3.13` → `4.0.x`.** New required apt deps: `libopenimageio-dev` (replaces
-   FreeImage as COLMAP's image I/O — **keep** `libfreeimage-dev`, OpenMVS still needs
-   it) and `libsuitesparse-dev` (CHOLMOD is now `REQUIRED`). GLOMAP arrives built-in
-   via `colmap global_mapper` — wire it as an optional `mapper: global` choice, never
-   the default (incremental is more robust on close-range / convergent sets).
-
-**InterfaceCOLMAP ↔ COLMAP 4.0.4 — compatibility verified at the byte level.**
-COLMAP 4's rig/frame refactor is *additive*: `rigs.bin` / `frames.bin` are new,
-separate files that `InterfaceCOLMAP` ignores; `images.bin` is byte-identical to the
-classic format (pose stays per-image as `cam_from_world`; `frame_id` is *derived* on
-read, not stored in the image record). OpenMVS 2.4's `Image::ReadBIN` reads exactly
-that layout (`ID, q.wxyz, t.xyz, camera_id, name\0, num_points2D, [x,y,pt3D_id]…`).
-COLMAP-4's new camera models (FISHEYE / DIVISION) never reach OpenMVS because
-`image_undistorter` converts to PINHOLE first. Source-checked, and now
-**run-checked** on the CPU image (see the run-verified note above).
-
-- [x] **Acceptance gate: end-to-end smoke test against COLMAP 4.0.4 output.**
-      Done on the CPU/arm64 image: a real 71-image dataset runs through
-      `sparse_colmap.sh` (COLMAP 4 `image_undistorter`) → `InterfaceCOLMAP`
-      (reads COLMAP-4 output: "70 images, 34631 points") → `dense_openmvs.sh`,
-      producing `scene.mvs`, a textured georeferenced OBJ and a LAZ cloud. The
-      compat boundary holds in execution, as predicted. STILL OPEN: the same on
-      the CUDA/GPU image.
-
-**Runtime findings from the CPU/arm64 end-to-end validation (this branch).** These
-are *run-checked* on a 70-image dataset and refine the source-level plan above:
-
-- **PDAL is gone from Ubuntu 24.04's repos** (present in 22.04). The "base → 24.04"
-  step must solve PDAL (PPA / source / vendored) before moving, or LAZ/EPT breaks.
-  This is why the CPU image stays on 22.04 and vendors header-only nanoflann + CGAL.
-- **COLMAP 3.13 renamed the generic feature CLI options**: `SiftExtraction.use_gpu`
-  / `SiftMatching.use_gpu` (+ `num_threads`) → `FeatureExtraction.*` /
-  `FeatureMatching.*`; the SIFT-algorithm options (and `SiftMatching.cpu_brute_force_matcher`)
-  keep the `Sift*` prefix. `sparse_colmap.sh` was updated accordingly — a code change
-  the format/dep analysis did not surface, and one that recurs for the 4.0 step.
-- **The arm64 CPU matcher crash is NOT a version bug — 3.13's FLANN matcher still
-  segfaults** at default `block_size`, exactly as earlier COLMAP releases did. Three options measured:
-  default FLANN → segfault; `cpu_brute_force_matcher` (new in 3.13) → correct but
-  **~40× too slow** (≈5 h for this set vs. 7.5 min); FLANN at `block_size 10` →
-  completes cleanly. So the CPU path stays **FLANN + capped block size**, not
-  brute-force; this is a GPU-vs-arm64 runtime issue the GPU production image will not
-  hit. The acceptance gate's "it lives in execution" is correct — confirmed here.
-- **OpenMVS 2.4.0 is also a *runtime* fix, not only a feature add**: v2.3.0's
-  `DensifyPointCloud` heap-corrupts and aborts on arm64; 2.4.0 (FLANN → nanoflann)
-  runs the full dense+mesh chain. Step 2's GPU bump should treat this as load-bearing.
+- **InterfaceCOLMAP ↔ COLMAP 4 is byte-compatible.** COLMAP 4's rig/frame refactor
+  is additive — `rigs.bin` / `frames.bin` are new files `InterfaceCOLMAP` ignores;
+  `images.bin` is byte-identical (pose stays per-image as `cam_from_world`). New
+  camera models never reach OpenMVS because `image_undistorter` converts to PINHOLE
+  first. Source- and run-checked.
+- **Generic CLI options renamed** in COLMAP 3.13: `SiftExtraction/SiftMatching.*`
+  → `Feature{Extraction,Matching}.*` (the SIFT-*algorithm* options keep `Sift*`).
+  `sparse_colmap.sh` probes the binary and falls back to the legacy names, so a
+  pre-4 `COLMAP_VERSION` override still works.
+- **arm64 CPU matcher**: COLMAP's FLANN matcher segfaults at the default
+  `block_size` regardless of version; `cpu_brute_force_matcher` is correct but ~40×
+  slower. The CPU path stays **FLANN + capped block size**
+  (`EFFIGIES_CPU_MATCH_BLOCK`). A GPU-vs-arm64 runtime issue the GPU image won't hit.
+- **OpenMVS 2.4.0 is a runtime fix, not just a feature**: 2.3.0's `DensifyPointCloud`
+  heap-corrupts on arm64; 2.4.0 (FLANN → nanoflann) runs the full dense+mesh chain.
 
 ## v0.3.0 — Georeferencing accuracy
 
