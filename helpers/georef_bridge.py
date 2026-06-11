@@ -37,6 +37,12 @@ import sys
 import glob
 import numpy as np
 
+# Shared OpenMVS mesh-name lookup (kept in one place so the georef bridge and the
+# output mapper can never disagree on which OBJ to act on). Resolve relative to
+# this file so the import works both as a script and when imported by the tests.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from openmvs_mesh import find_mesh_obj  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Umeyama similarity
@@ -333,18 +339,11 @@ def exif_correspondences(model_dir, images_dir, target_crs):
 # Apply transform to the textured OBJ (offset-subtracted to keep float precision)
 # ---------------------------------------------------------------------------
 def apply_to_obj(work, s, R, t, offset):
-    obj = None
-    # TextureMesh appends "_texture" to the input mesh name; prefer the textured
-    # OBJ (refined first), falling back to the untextured mesh names.
-    for cand in ("scene_dense_mesh_refine_texture.obj", "scene_dense_mesh_texture.obj",
-                 "scene_dense_mesh_refine.obj", "scene_dense_mesh.obj"):
-        p = os.path.join(work, cand)
-        if os.path.exists(p):
-            obj = p
-            break
-    if not obj:
+    name = find_mesh_obj(work)
+    if not name:
         print("[georef] no OBJ to transform (mesh disabled?)", file=sys.stderr)
         return
+    obj = os.path.join(work, name)
     tmp = obj + ".tmp"
     R = np.asarray(R); t = np.asarray(t); offset = np.asarray(offset)
     with open(obj) as fin, open(tmp, "w") as fout:

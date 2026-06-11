@@ -14,8 +14,15 @@ We symlink/copy from the OpenMVS workdir into these locations.
 """
 import argparse
 import os
+import sys
 import shutil
 import glob
+
+# Shared OpenMVS mesh-name lookup — the SAME ordered candidate list the georef
+# bridge uses, so the OBJ this maps into the WebODM asset path is exactly the one
+# georef_bridge transformed (see helpers/openmvs_mesh.py).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from openmvs_mesh import find_mesh_obj  # noqa: E402
 
 
 def link_or_copy(src, dst):
@@ -43,12 +50,7 @@ def main():
     # 1. textured model -> odm_texturing
     #    TextureMesh appends "_texture" to the input mesh name and emits the OBJ
     #    plus a .mtl and texture maps (jpg or png depending on the build).
-    obj = None
-    for cand in ("scene_dense_mesh_refine_texture.obj", "scene_dense_mesh_texture.obj",
-                 "scene_dense_mesh_refine.obj", "scene_dense_mesh.obj"):
-        if os.path.exists(os.path.join(W, cand)):
-            obj = cand
-            break
+    obj = find_mesh_obj(W)
     if obj:
         base = obj[:-4]
         # Rename only the OBJ to WebODM's expected name; keep the .mtl and texture
