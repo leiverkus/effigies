@@ -7,6 +7,22 @@ IMAGES="$1"; WORK="$2"; MATCHER="$3"; CAMERA_MODEL="$4"; GPU="$5"; MAPPER="${6:-
 DB="$WORK/database.db"
 mkdir -p "$WORK/sparse"
 
+# COLMAP CLI option naming differs between the two pinned images. COLMAP 3.13
+# renamed the generic feature options SiftExtraction/SiftMatching.{use_gpu,
+# num_threads} -> Feature{Extraction,Matching}.* (the SIFT-*algorithm* options
+# keep the Sift* prefix). The GPU/production image is COLMAP 3.11.1 (old names);
+# the CPU image is 4.0.4 (new names). Probe the actual binary's help so one
+# script drives both: passing an option the installed COLMAP does not know aborts
+# the run, and that surfaces upstream only as the opaque NodeODM "Cannot process
+# dataset". (See ROADMAP "v0.2.x — COLMAP 4".)
+if colmap feature_extractor --help 2>&1 | grep -q -- '--FeatureExtraction.use_gpu'; then
+  FEAT_EXTRACT=FeatureExtraction
+  FEAT_MATCH=FeatureMatching
+else
+  FEAT_EXTRACT=SiftExtraction
+  FEAT_MATCH=SiftMatching
+fi
+
 # CPU memory guards. Two distinct failure modes appear only on the CPU path and
 # both surface upstream as the opaque NodeODM "Cannot process dataset":
 #
@@ -26,10 +42,10 @@ MATCH_THREADS=()
 EXHAUSTIVE_CPU=()
 if [[ "$GPU" != "1" ]]; then
   CPU_THREADS="${EFFIGIES_CPU_THREADS:-4}"
-  # COLMAP 4 renamed the generic feature options to Feature{Extraction,Matching}.*
-  # (use_gpu, num_threads); ExhaustiveMatching.block_size is unchanged.
-  EXTRACT_THREADS=(--FeatureExtraction.num_threads "$CPU_THREADS")
-  MATCH_THREADS=(--FeatureMatching.num_threads "$CPU_THREADS")
+  # num_threads lives under the same renamed prefix detected above;
+  # ExhaustiveMatching.block_size is unchanged across versions.
+  EXTRACT_THREADS=(--${FEAT_EXTRACT}.num_threads "$CPU_THREADS")
+  MATCH_THREADS=(--${FEAT_MATCH}.num_threads "$CPU_THREADS")
   EXHAUSTIVE_CPU=(--ExhaustiveMatching.block_size "${EFFIGIES_CPU_MATCH_BLOCK:-10}")
 fi
 
@@ -39,15 +55,15 @@ colmap feature_extractor \
   --image_path "$IMAGES" \
   --ImageReader.camera_model "$CAMERA_MODEL" \
   --ImageReader.single_camera_per_folder 1 \
-  --FeatureExtraction.use_gpu "$GPU" \
+  --${FEAT_EXTRACT}.use_gpu "$GPU" \
   "${EXTRACT_THREADS[@]}"
 
 echo "[colmap] ${MATCHER}_matcher"
 case "$MATCHER" in
-  exhaustive) colmap exhaustive_matcher --database_path "$DB" --FeatureMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" "${EXHAUSTIVE_CPU[@]}" ;;
-  sequential) colmap sequential_matcher --database_path "$DB" --FeatureMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
-  spatial)    colmap spatial_matcher    --database_path "$DB" --FeatureMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
-  vocab_tree) colmap vocab_tree_matcher --database_path "$DB" --FeatureMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+  exhaustive) colmap exhaustive_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" "${EXHAUSTIVE_CPU[@]}" ;;
+  sequential) colmap sequential_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+  spatial)    colmap spatial_matcher    --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+  vocab_tree) colmap vocab_tree_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
   *) echo "[colmap] unknown matcher $MATCHER" >&2; exit 1 ;;
 esac
 
@@ -56,6 +72,15 @@ if [[ "$MAPPER" == "global" ]]; then
   # the default: incremental is more robust on close-range / convergent sets;
   # global is much faster on large, well-connected (e.g. aerial) blocks. Same
   # database/output contract as the incremental mapper (writes sparse/0).
+  #
+  # GLOMAP ships built into COLMAP 4 only; COLMAP 3.x (the current GPU/production
+  # image) has no global_mapper subcommand. Probe for it and fail clearly rather
+  # than letting COLMAP abort with an opaque "command not recognized" that
+  # surfaces as the generic NodeODM "Cannot process dataset".
+  if ! colmap global_mapper --help >/dev/null 2>&1; then
+    echo "[colmap] mapper=global requires COLMAP 4 (built-in GLOMAP); this image's COLMAP has no global_mapper subcommand. Use the default incremental mapper, or build the COLMAP 4 image." >&2
+    exit 1
+  fi
   echo "[colmap] global_mapper (GLOMAP global SfM)"
   GLOBAL_THREADS=()
   [[ "$GPU" != "1" ]] && GLOBAL_THREADS=(--GlobalMapper.num_threads "${EFFIGIES_CPU_THREADS:-4}")
