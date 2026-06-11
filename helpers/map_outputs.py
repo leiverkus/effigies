@@ -64,6 +64,11 @@ def main():
             for tex in glob.glob(os.path.join(W, base + "*" + ext)):
                 link_or_copy(tex, os.path.join(P, "odm_texturing", os.path.basename(tex)))
 
+    # glTF model -> odm_texturing/odm_textured_model_geo.glb ("Struktur-Modell (glTF)")
+    glb = os.path.join(W, "odm_textured_model_geo.glb")
+    if os.path.exists(glb):
+        link_or_copy(glb, os.path.join(P, "odm_texturing", "odm_textured_model_geo.glb"))
+
     # 2. dense point cloud -> odm_georeferencing (WebODM expects .laz here).
     #    pointcloud_to_laz.py produces the georeferenced LAZ; fall back to the raw
     #    PLY only if the LAZ step could not run (e.g. PDAL unavailable).

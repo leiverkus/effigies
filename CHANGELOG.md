@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **glTF model (`helpers/mesh_to_gltf.py`) — "Struktur-Modell (glTF)".** A
+  self-contained binary glTF (`odm_texturing/odm_textured_model_geo.glb`) of the
+  refined textured mesh, with the texture atlas embedded. Written by a dependency-
+  free Python GLB writer (the image's node is too old for current obj2gltf), so
+  the .glb matches the .obj asset.
 - **Camera assets (`helpers/camera_exports.py`) — ODM-parity downloads.**
   `cameras.json` (intrinsics, OpenSfM-normalised, in the project root) and
   `odm_report/shots.geojson` (one WGS84 point per image — camera positions on the

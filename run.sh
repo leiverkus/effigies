@@ -149,6 +149,14 @@ if ! python3 "$(dirname "$0")/helpers/camera_exports.py" --work "$WORK"; then
 fi
 
 # ---------------------------------------------------------------------------
+# 5d. glTF model — WebODM's "Struktur-Modell (glTF)" (odm_textured_model_geo.glb),
+#     a self-contained .glb of the same textured mesh. Non-fatal.
+# ---------------------------------------------------------------------------
+if ! python3 "$(dirname "$0")/helpers/mesh_to_gltf.py" --work "$WORK"; then
+  echo "[effigies] WARN: glTF export failed; continuing without it" >&2
+fi
+
+# ---------------------------------------------------------------------------
 # 6. Map outputs onto the WebODM asset contract
 # ---------------------------------------------------------------------------
 python3 "$(dirname "$0")/helpers/map_outputs.py" --proj "$PROJ" --work "$WORK"
