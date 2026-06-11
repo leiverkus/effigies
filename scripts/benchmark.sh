@@ -362,43 +362,57 @@ def load_xyz(path, n_target):
         arr = arr.reshape(1, -1)
     return arr[:, :3], c, step
 
-icp_meta = None
-aligned = out_path
+# Load each cloud SEPARATELY and cleanly. Do NOT read a written ICP output:
+# filters.icp emits one point view PER INPUT, so any writer merges the reference
+# INTO the output and the reference points would contaminate the distance
+# (deflating it toward 0). Instead we run ICP only to get the rigid transform
+# (metadata) and apply it to the output points in numpy.
+out_xyz, out_n, out_step = load_xyz(out_path, sample)
+ref_xyz, ref_n, ref_step = load_xyz(ref_path, sample)
+
+icp_meta = "skipped"
 if do_icp:
-    al = tempfile.mktemp(suffix=".las"); pj = tempfile.mktemp(suffix=".json")
-    mj = tempfile.mktemp(suffix=".json"); tmp.extend([al, pj, mj])
-    # filters.icp registers the moving (2nd) cloud onto the fixed (1st) cloud.
+    pj = tempfile.mktemp(suffix=".json"); mj = tempfile.mktemp(suffix=".json")
+    tmp.extend([pj, mj])
+    # filters.icp registers the moving (2nd) cloud onto the fixed (1st) and reports
+    # the rigid transform; writers.null keeps the pipeline valid without emitting
+    # the (merged) cloud.
     pipe = {"pipeline": [ref_path, out_path,
             {"type": "filters.icp"},
-            {"type": "writers.las", "filename": al}]}
+            {"type": "writers.null"}]}
     open(pj, "w").write(json.dumps(pipe))
     try:
         subprocess.check_call(["pdal", "pipeline", pj, "--metadata", mj],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        aligned = al
+        def find_icp(o):
+            if isinstance(o, dict):
+                if "composed" in o or "transform" in o or "converged" in o:
+                    return o
+                for v in o.values():
+                    r = find_icp(v)
+                    if r: return r
+            elif isinstance(o, list):
+                for v in o:
+                    r = find_icp(v)
+                    if r: return r
+            return None
         try:
-            m = json.loads(open(mj).read())
-            def find_icp(o):
-                if isinstance(o, dict):
-                    if "converged" in o or "fitness" in o:
-                        return {"converged": o.get("converged"), "fitness": o.get("fitness")}
-                    for v in o.values():
-                        r = find_icp(v)
-                        if r: return r
-                elif isinstance(o, list):
-                    for v in o:
-                        r = find_icp(v)
-                        if r: return r
-                return None
-            icp_meta = find_icp(m)
+            st = find_icp(json.loads(open(mj).read())) or {}
         except Exception:
-            icp_meta = {"converged": None}
+            st = {}
+        icp_meta = {"converged": st.get("converged"), "fitness": st.get("fitness")}
+        tstr = st.get("composed") or st.get("transform")
+        T = None
+        if tstr:
+            vals = [float(x) for x in str(tstr).replace(",", " ").split()]
+            if len(vals) == 16:
+                T = np.asarray(vals, dtype=np.float64).reshape(4, 4)
+        if T is not None:
+            out_xyz = out_xyz @ T[:3, :3].T + T[:3, 3]   # align moving -> fixed
+        else:
+            icp_meta["note"] = "no transform in ICP metadata; raw (unaligned) distance"
     except subprocess.CalledProcessError:
-        icp_meta = {"error": "icp failed; using raw (unaligned) distance"}
-        aligned = out_path
-
-out_xyz, out_n, out_step = load_xyz(aligned, sample)
-ref_xyz, ref_n, ref_step = load_xyz(ref_path, sample)
+        icp_meta = {"error": "icp failed; raw (unaligned) distance"}
 
 # nearest-neighbour distance: each output point to the reference cloud
 d, _ = cKDTree(ref_xyz).query(out_xyz, k=1)

@@ -108,6 +108,28 @@ def test_compare_identical_clouds():
     print("ok  compare gives ~0 distance for identical clouds")
 
 
+def test_compare_measures_output_only():
+    """Regression: the distance must be measured on the OUTPUT cloud only, not on
+    the reference that filters.icp emits as a second point view. With
+    differently-sized clouds the sampled output_points must reflect the output
+    (2000), not output+reference (7000)."""
+    if not _have_compare_deps():
+        print("skip compare-contamination (needs pdal + scipy)")
+        return
+    d = tempfile.mkdtemp()
+    ref = os.path.join(d, "ref.las")
+    out = os.path.join(d, "out.las")
+    _faux_cloud(ref, 5000)
+    _faux_cloud(out, 2000)
+    try:
+        r = _run("compare", out, ref, "--eps", "0.001")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    assert r["sampled"]["output_points"] == 2000, r        # output only, not 7000
+    assert r["sampled"]["reference_points"] == 5000, r
+    print("ok  compare measures the output cloud only (no reference contamination)")
+
+
 def _have_scipy():
     try:
         import scipy.spatial  # noqa: F401
@@ -178,6 +200,7 @@ if __name__ == "__main__":
     test_cprmse_known_offset()
     test_cprmse_ignores_label_columns()
     test_compare_identical_clouds()
+    test_compare_measures_output_only()
     test_roughness_flat_plane_is_zero()
     test_roughness_scales_with_noise()
     print("\nall benchmark tests passed")
