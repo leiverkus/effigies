@@ -7,14 +7,14 @@ IMAGES="$1"; WORK="$2"; MATCHER="$3"; CAMERA_MODEL="$4"; GPU="$5"; MAPPER="${6:-
 DB="$WORK/database.db"
 mkdir -p "$WORK/sparse"
 
-# COLMAP CLI option naming differs between the two pinned images. COLMAP 3.13
-# renamed the generic feature options SiftExtraction/SiftMatching.{use_gpu,
-# num_threads} -> Feature{Extraction,Matching}.* (the SIFT-*algorithm* options
-# keep the Sift* prefix). The GPU/production image is COLMAP 3.11.1 (old names);
-# the CPU image is 4.0.4 (new names). Probe the actual binary's help so one
-# script drives both: passing an option the installed COLMAP does not know aborts
-# the run, and that surfaces upstream only as the opaque NodeODM "Cannot process
-# dataset". (See ROADMAP "v0.2.x — COLMAP 4".)
+# COLMAP CLI option naming changed across versions. COLMAP 3.13 renamed the
+# generic feature options SiftExtraction/SiftMatching.{use_gpu,num_threads} ->
+# Feature{Extraction,Matching}.* (the SIFT-*algorithm* options keep the Sift*
+# prefix). Both Effigies images now build COLMAP 4.0.4 (the new Feature* names),
+# but we still probe the actual binary's help and fall back to the legacy Sift*
+# names so the script keeps working if COLMAP_VERSION is overridden to a pre-4
+# build: passing an option the installed COLMAP does not know aborts the run, and
+# that surfaces upstream only as the opaque NodeODM "Cannot process dataset".
 if colmap feature_extractor --help 2>&1 | grep -q -- '--FeatureExtraction.use_gpu'; then
   FEAT_EXTRACT=FeatureExtraction
   FEAT_MATCH=FeatureMatching

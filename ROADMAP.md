@@ -26,7 +26,7 @@ bridge → WebODM asset mapping, with unit tests and CI. See the changelog.
 
 Make the image trustworthy and the output cloud web-ready.
 
-- [x] **Source-built, pinned Dockerfile.** COLMAP `3.11.1` and OpenMVS `v2.3.0`
+- [x] **Source-built, pinned Dockerfile.** COLMAP `4.0.4` and OpenMVS `v2.4.0`
       built from source (versions as build `ARG`s), with a build-time gate:
       `which colmap DensifyPointCloud ReconstructMesh RefineMesh TextureMesh
       InterfaceCOLMAP pdal` — the build fails loudly if any is missing.
@@ -43,15 +43,15 @@ Make the image trustworthy and the output cloud web-ready.
       heap on arm64. STILL OPEN: drive it through NodeODM/WebODM to also exercise
       the georef → LAZ/EPT → `map_outputs` tail, and the same on the CUDA image on
       GPU hardware.
-- [ ] **Bump the production (CUDA) image to OpenMVS v2.4.0.** The CPU image vendors
-      pinned header-only nanoflann ≥1.5 + CGAL ≥6.0 and patches out the libjxl
-      requirement to build 2.4.0 on Ubuntu 22.04. For the CUDA/production image,
-      decide between the same header-vendor recipe and OpenMVS' own vcpkg build
-      (exact upstream dep versions, no source patches, but a much heavier build).
-- [~] **Pin VCGlib to a verified commit SHA.** The CPU image is pinned to the
-      `cdcseacave/VCG` commit it was built and validated against (`658ba36`); the
-      production (CUDA) image still tracks `master` and is pinned together with its
-      OpenMVS 2.4.0 bump. Both must be locked before tagging a release image.
+- [x] **Production (CUDA) image bumped to COLMAP 4.0.4 + OpenMVS v2.4.0.** The
+      production `Dockerfile` now mirrors the CPU image's recipe exactly — the same
+      header-vendor approach (pinned nanoflann ≥1.5 + CGAL ≥6.0) and libjxl patch
+      on Ubuntu 22.04 — differing only in the CUDA base and the `-D*CUDA*` flags
+      (`CUDA_ENABLED=ON`, `OpenMVS_USE_CUDA=ON`, CUDA arch + stubs path). The two
+      images are now built from identical pinned sources; no image builds COLMAP 3.x.
+      Not yet exercised on GPU hardware (this dev box has no NVIDIA GPU).
+- [x] **Pin VCGlib to a verified commit SHA.** Both images are pinned to the
+      `cdcseacave/VCG` commit the engine was validated against (`658ba36`).
 - [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
       builds and handle the variants.
 - [ ] Slim the image with a multi-stage (devel build → runtime copy) layout once
@@ -63,28 +63,31 @@ Move the engine onto the COLMAP-4 generation. Sequenced as three **isolated** st
 so a toolchain break is never debugged together with a COLMAP-API break.
 
 > **Run-verified update (this branch) — supersedes the 24.04 assumption below.**
-> The CPU image is now on **COLMAP 4.0.4 + OpenMVS 2.4.0** and a full real-dataset
-> run completes (sparse → `InterfaceCOLMAP` → densify → reconstruct → refine →
-> texture → georef → LAZ). Key correction: **COLMAP 4 builds and runs on Ubuntu
-> 22.04 — the base bump to 24.04 (step 1) is *not* required.** The 22.04
-> OpenImageIO "break" was only a broken CMake config in the *tools* sub-package;
-> adding `libopenimageio-dev openimageio-tools libsuitesparse-dev` makes COLMAP 4
-> configure and compile on jammy, so **PDAL is kept** (24.04 dropped it). The
-> generic feature CLI options were renamed to `Feature{Extraction,Matching}.*`
-> (handled in `sparse_colmap.sh`). The GPU/production bump is still pending GPU
-> hardware. The three-step plan below stands as the *source-level* analysis.
+> **Both images are now on COLMAP 4.0.4 + OpenMVS 2.4.0**, built from identical
+> pinned sources (the production `Dockerfile` mirrors the CPU recipe with CUDA on).
+> A full real-dataset run completes on the CPU image (sparse → `InterfaceCOLMAP` →
+> densify → reconstruct → refine → texture → georef → LAZ). Key correction:
+> **COLMAP 4 builds and runs on Ubuntu 22.04 — the base bump to 24.04 (step 1) is
+> *not* required.** The 22.04 OpenImageIO "break" was only a broken CMake config in
+> the *tools* sub-package; adding `libopenimageio-dev openimageio-tools
+> libsuitesparse-dev` makes COLMAP 4 configure and compile on jammy, so **PDAL is
+> kept** (24.04 dropped it). The generic feature CLI options were renamed to
+> `Feature{Extraction,Matching}.*` (handled in `sparse_colmap.sh`). The production
+> image's CUDA build is not yet exercised on GPU hardware. The three-step plan
+> below is kept as the *source-level* analysis that informed the move.
 
-1. **Base image → Ubuntu 24.04 / CUDA 12.5.1, COLMAP still 3.13.** There is no
+1. *(not needed — COLMAP 4 builds on 22.04, see banner.)* **Base image → Ubuntu
+   24.04 / CUDA 12.5.1, COLMAP still 3.13.** There is no
    `12.4.1-devel-ubuntu24.04`; the lowest CUDA 12.x on 24.04 is `12.5.1`. The driver
    for 24.04 is **OpenImageIO**, not CMake — COLMAP 4 needs only CMake 3.12 (the 3.28
    floor was GLOMAP's *standalone* build, which is moot once GLOMAP ships inside
    COLMAP 4). The real risk is the OpenMVS/VCGlib rebuild under GCC 13 + newer
    Boost/CGAL — prove this with COLMAP unchanged before touching COLMAP.
-2. **GPU image OpenMVS `v2.3.0` → `v2.4.0`** — prerequisite for step 3; folds into
+2. *(done — both images on v2.4.0.)* **GPU image OpenMVS `v2.3.0` → `v2.4.0`** — prerequisite for step 3; folds into
    the existing v0.2.0 item above. 2.4.0's `InterfaceCOLMAP` adds the `SIMPLE_PINHOLE`
    reader path (2.3.0 reads only `PINHOLE`). Lock the GPU VCG SHA together with this
    bump (candidate: the CPU-validated `658ba36`, to be confirmed on GPU hardware).
-3. **COLMAP `3.13` → `4.0.x`.** New required apt deps: `libopenimageio-dev` (replaces
+3. *(done — both images on COLMAP 4.0.4.)* **COLMAP `3.13` → `4.0.x`.** New required apt deps: `libopenimageio-dev` (replaces
    FreeImage as COLMAP's image I/O — **keep** `libfreeimage-dev`, OpenMVS still needs
    it) and `libsuitesparse-dev` (CHOLMOD is now `REQUIRED`). GLOMAP arrives built-in
    via `colmap global_mapper` — wire it as an optional `mapper: global` choice, never
@@ -120,7 +123,7 @@ are *run-checked* on a 70-image dataset and refine the source-level plan above:
   keep the `Sift*` prefix. `sparse_colmap.sh` was updated accordingly — a code change
   the format/dep analysis did not surface, and one that recurs for the 4.0 step.
 - **The arm64 CPU matcher crash is NOT a version bug — 3.13's FLANN matcher still
-  segfaults** at default `block_size`, exactly as 3.11.1 did. Three options measured:
+  segfaults** at default `block_size`, exactly as earlier COLMAP releases did. Three options measured:
   default FLANN → segfault; `cpu_brute_force_matcher` (new in 3.13) → correct but
   **~40× too slow** (≈5 h for this set vs. 7.5 min); FLANN at `block_size 10` →
   completes cleanly. So the CPU path stays **FLANN + capped block size**, not

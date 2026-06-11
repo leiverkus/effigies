@@ -13,15 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   → `RefineMesh` → `TextureMesh` — now runs to completion on the CPU/arm64 image
   against a real 70-image dataset, producing a textured OBJ. This closes the main
   open 0.2.0 validation item (the engine had never been run through on a dataset).
-- **OpenMVS bumped to v2.4.0 on the CPU image.** v2.3.0's `DensifyPointCloud`
+- **Both images unified on COLMAP 4.0.4 + OpenMVS v2.4.0.** The CUDA/production
+  `Dockerfile` and the CPU `Dockerfile.cpu` now build the identical engine from
+  the identical pinned sources and recipe — the only differences are the CUDA
+  base image and the three `-D*CUDA*` flags. No image builds COLMAP 3.x any more.
+- **OpenMVS bumped to v2.4.0 (both images).** v2.3.0's `DensifyPointCloud`
   corrupts the heap and aborts on arm64 (it falls back off SSE); v2.4.0 swaps the
   FLANN nearest-neighbour code for nanoflann and runs the full dense+mesh chain
   cleanly. 2.4.0 needs two libs newer than Ubuntu 22.04 ships — nanoflann ≥1.5
-  and CGAL ≥6.0 — both header-only, so `Dockerfile.cpu` vendors pinned releases
+  and CGAL ≥6.0 — both header-only, so both Dockerfiles vendor pinned releases
   (`NANOFLANN_VERSION`, `CGAL_VERSION`) rather than bumping the base off 22.04
   (which would lose PDAL, dropped from 24.04). Two small source patches keep it
   building against jammy's OpenCV (disable the hard libjxl requirement; map the
   one OpenCV-4.7-only JXL write constant to the JPEG one — we emit no JPEG-XL).
+- **`matcher=vocab_tree` now works.** Image-retrieval matching for large sets:
+  each image bakes in a SHA256-pinned vocabulary tree in the format its COLMAP
+  expects (FAISS for COLMAP 4). Previously the option was selectable but always
+  aborted with the opaque "Cannot process dataset".
 
 ### Fixed
 - **CPU pipeline could not start: opaque "Cannot process dataset".** A chain of
@@ -41,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `InterfaceCOLMAP` reads `$WORK/dense` with the correct `--image-folder`.
   - `dense_openmvs.sh` passed `--cuda-device` unconditionally; the CPU OpenMVS
     build rejects it. The flag is now probed and passed only on CUDA builds.
-- **Source-built, pinned Dockerfile.** COLMAP (`3.11.1`) and OpenMVS (`v2.3.0`)
+- **Source-built, pinned Dockerfile.** COLMAP (`4.0.4`) and OpenMVS (`v2.4.0`)
   are now compiled from upstream source with CUDA, replacing the distro packages;
   Eigen/CGAL/Boost/OpenCV come from Ubuntu 22.04. Versions are declared as build
   `ARG`s and a build-time `which` gate fails the build loudly if `colmap`,

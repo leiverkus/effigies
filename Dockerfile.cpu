@@ -24,12 +24,12 @@
 ARG UBUNTU_VERSION=22.04
 FROM ubuntu:${UBUNTU_VERSION} AS engine
 
-# --- Pinned upstream versions ---
-# OpenMVS is ahead of the CUDA Dockerfile (v2.3.0): v2.4.0 swaps the FLANN-based
-# nearest-neighbour code for nanoflann and brings dense-stage stability fixes.
-# This matters specifically on the CPU/arm64 build, where v2.3.0's
-# DensifyPointCloud corrupts the heap and aborts; v2.4.0 runs the full
-# Densify -> ReconstructMesh -> RefineMesh -> TextureMesh chain cleanly.
+# --- Pinned upstream versions (identical to the CUDA Dockerfile; bump both) ---
+# OpenMVS 2.4.0 swaps the FLANN-based nearest-neighbour code for nanoflann and
+# brings dense-stage stability fixes over 2.3.0 — it matters specifically on the
+# CPU/arm64 build, where 2.3.0's DensifyPointCloud corrupts the heap and aborts;
+# 2.4.0 runs the full Densify -> ReconstructMesh -> RefineMesh -> TextureMesh
+# chain cleanly. COLMAP 4.0.4 is the shared baseline.
 ARG COLMAP_VERSION=4.0.4
 ARG OPENMVS_VERSION=v2.4.0
 # VCGlib has no release tags aligned to OpenMVS. Pinned to the cdcseacave/VCG
@@ -46,8 +46,8 @@ ARG JOBS=4
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Same dependency set as the CUDA image, minus Qt (we build COLMAP CLI-only) —
-# CUDA itself came from the base image there, so the apt list is otherwise identical.
+# Dependency set identical to the CUDA image (both build COLMAP CLI-only, GUI off,
+# so neither installs Qt; CUDA there comes from the base image, not apt).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git cmake ninja-build build-essential ca-certificates \
       libeigen3-dev libcgal-dev libgmp-dev libmpfr-dev \
@@ -86,8 +86,8 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
 # COLMAP-4 image needs the *FAISS* tree (vocab_tree_faiss_*). The classic
 # FLANN-format trees from demuc.de make COLMAP 4 abort with std::invalid_argument
 # in IndexImages(). This is exactly the tree COLMAP 4 auto-downloads when no path
-# is given; we pin it here. (The CUDA/production image runs COLMAP 3.11.1 and
-# bakes the FLANN tree instead — keep the two in sync with their COLMAP version.)
+# is given; we pin it here. (The "3.11.1" in the URL is the GitHub *release tag*
+# that hosts the asset, not the COLMAP version — both images build COLMAP 4.0.4.)
 # Flickr100K, 256K words (~72 MB). Override with --build-arg VOCAB_TREE_URL=/SHA256=.
 ARG VOCAB_TREE_URL=https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
 ARG VOCAB_TREE_SHA256=96ca8ec8ea60b1f73465aaf2c401fd3b3ca75cdba2d3c50d6a2f6f760f275ddc

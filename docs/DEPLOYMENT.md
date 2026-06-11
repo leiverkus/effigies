@@ -67,7 +67,7 @@ On a Linux machine with an NVIDIA GPU and the
 installed (`docker info | grep -i nvidia` should list the runtime):
 
 ```bash
-# build (compiles COLMAP 3.11.1 + OpenMVS v2.3.0 with CUDA; this takes a while)
+# build (compiles COLMAP 4.0.4 + OpenMVS v2.4.0 with CUDA; this takes a while)
 docker build -t effigies:gpu .
 
 # optionally narrow the GPU arch to speed the build, e.g. for a single card:
