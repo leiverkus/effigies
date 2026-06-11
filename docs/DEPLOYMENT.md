@@ -91,6 +91,40 @@ need to be on the WebODM machine — only on the machine running Effigies.
 
 ---
 
+## Hardware sizing (production)
+
+Effigies' resource profile differs from stock ODM precisely because of the steps
+it adds. The two peaks to size for:
+
+- **System RAM → `ReconstructMesh`.** The Delaunay tetrahedralization holds the
+  *entire* dense cloud at once (stock ODM skips this step, so it never pays this
+  cost). `TextureMesh`'s atlas and the incremental mapper's bundle adjustment are
+  next. These run **host-side even in the CUDA image** — system RAM is not
+  substitutable by VRAM.
+- **GPU VRAM → `DensifyPointCloud` and `RefineMesh`.** Depth-map estimation
+  (CUDA PatchMatch) and mesh refinement scale with *image resolution ×
+  `number-views-fuse`* and mesh size respectively.
+
+Anchored on a measured run (71 × 12 MP images → 1.3 M dense points, 890 k mesh
+vertices, a 585 MB textured OBJ):
+
+| | Minimum | Recommended | Heavy |
+|---|---|---|---|
+| **System RAM** | 32 GB | **64 GB** | 128 GB |
+| **GPU VRAM** | 8 GB | **12–16 GB** | 24 GB |
+| Fits | ≤ ~150 imgs @ 12–24 MP | object / architecture sets, full-res | 300+ imgs, hi-res architecture |
+| Example GPU | RTX 3060/4060, A2000 | RTX 4070 Ti/4080, A4000/A5000 | RTX 4090, A5000/A6000 |
+
+**Recommended production box: 64 GB RAM + 16 GB VRAM** (RTX 4080 / A4000–A5000
+class) — covers full 12–24 MP densification without downscaling and the
+`ReconstructMesh` peak with headroom. On 8 GB VRAM you must downscale via
+`--densify-resolution-level`, which works against the detail Effigies exists to
+produce. If you also run **large drone sets** for the stock-ODM benchmark (many
+images, GLOMAP `mapper=global`), prefer **128 GB RAM** — global bundle adjustment
+and tetrahedralization of big sets are the bottleneck there, not the GPU.
+
+---
+
 ## Verifying a build
 
 Both Dockerfiles end with a `which` gate that fails the build loudly if `colmap`,
