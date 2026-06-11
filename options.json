@@ -60,7 +60,39 @@
     "value": "3",
     "domain": "positive integer",
     "type": "int",
-    "help": "OpenMVS RefineMesh iterations (photometric mesh refinement against source images). 0 disables. This is the main quality lever vs. commercial tools. Default: %(default)s"
+    "help": "OpenMVS RefineMesh multi-scale refinement iterations (passed to RefineMesh --scales: photometric mesh optimisation against the source images, repeated over image scales). 0 disables RefineMesh entirely. This is the main quality lever vs. commercial tools. Default: %(default)s"
+  },
+  {
+    "name": "refine-max-face-area",
+    "title": "Refine: Max Face Area (px)",
+    "value": "16",
+    "domain": "positive integer",
+    "type": "int",
+    "help": "RefineMesh subdivision threshold: maximum projected face area in pixels before a triangle is split. Smaller = finer mesh and more detail recovered, at higher cost (try 8 for maximum detail, 32 for speed). Default: %(default)s"
+  },
+  {
+    "name": "refine-gradient-step",
+    "title": "Refine: Gradient Step",
+    "value": "25.05",
+    "domain": "float > 0.0",
+    "type": "float",
+    "help": "RefineMesh gradient descent step size. Larger = more aggressive surface movement per iteration (risk of artefacts), smaller = conservative refinement. Default: %(default)s"
+  },
+  {
+    "name": "cpu-threads",
+    "title": "CPU Threads (SIFT/Match)",
+    "value": "4",
+    "domain": "positive integer",
+    "type": "int",
+    "help": "Worker threads for COLMAP CPU feature extraction/matching. Capped low by default because the CPU SIFT extractor spikes RAM per thread (OOM risk on large images); raise on hosts with plenty of RAM. Ignored on GPU. Default: %(default)s"
+  },
+  {
+    "name": "cpu-match-block",
+    "title": "CPU Matcher Block Size",
+    "value": "10",
+    "domain": "positive integer",
+    "type": "int",
+    "help": "COLMAP exhaustive-matcher block size on the CPU path. The default FLANN matcher segfaults at large blocks on some hosts (arm64); 10 is safe. Raise cautiously for speed on x86. Ignored on GPU. Default: %(default)s"
   },
   {
     "name": "mesh-decimate",

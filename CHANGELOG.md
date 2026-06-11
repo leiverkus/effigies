@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`refine-mesh-iters` was advertised but did nothing.** The log claimed
+  "RefineMesh x3", yet no iteration flag was passed — `--scales` was hardcoded
+  to 1 and the option only gated the stage on/off. OpenMVS 2.4 has no
+  `--max-iters`; its iteration lever IS `--scales` ("how many iterations to run
+  mesh optimization on multi-scale images"). The option now actually drives
+  `RefineMesh --scales` (default 3 = more multi-scale refinement than the old
+  hardcoded 1 — quality-first default for the engine's main lever).
+
 ### Added
+- **All engine tuning parameters exposed as task options** — nothing hidden:
+  `refine-max-face-area` (RefineMesh subdivision threshold, was hardcoded 16),
+  `refine-gradient-step` (refinement step size, was hardcoded 25.05),
+  `cpu-threads` and `cpu-match-block` (the CPU stability caps, previously
+  env-only `EFFIGIES_CPU_THREADS`/`EFFIGIES_CPU_MATCH_BLOCK`; an explicitly set
+  env var still wins as an ops override).
 - **Full ODM output parity.** Effigies now fills every WebODM download slot the
   stock ODM nodes do — orthophoto, point cloud, textured model, **glTF model**,
   **camera parameters** (`cameras.json`), **camera shots** (`shots.geojson`), and a

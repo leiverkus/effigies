@@ -19,8 +19,12 @@ declare -A OPT=(
   [number-views-fuse]=3
   [reconstruct-mesh]=true
   [refine-mesh-iters]=3
+  [refine-max-face-area]=16
+  [refine-gradient-step]=25.05
   [mesh-decimate]=1.0
   [texture-resolution]=8192
+  [cpu-threads]=4
+  [cpu-match-block]=10
   [crs]=auto
   [georeference]=auto
   [gcp]=""
@@ -58,6 +62,10 @@ echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} map
 # OpenGL support") rather than degrading, which would surface to WebODM only as
 # the opaque "Cannot process dataset". A documented CPU fallback beats a cryptic
 # failure (the CPU image has no CUDA at all, and a GPU image may run without one).
+# CPU tuning caps as task options; an explicitly set env var still wins (ops override)
+export EFFIGIES_CPU_THREADS="${EFFIGIES_CPU_THREADS:-${OPT[cpu-threads]}}"
+export EFFIGIES_CPU_MATCH_BLOCK="${EFFIGIES_CPU_MATCH_BLOCK:-${OPT[cpu-match-block]}}"
+
 GPU_FLAG=0
 if [[ "${OPT[use-gpu]}" == "true" ]]; then
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
@@ -98,7 +106,9 @@ bash "$(dirname "$0")/pipeline/dense_openmvs.sh" \
      "${OPT[refine-mesh-iters]}" \
      "${OPT[mesh-decimate]}" \
      "${OPT[texture-resolution]}" \
-     "$GPU_FLAG"
+     "$GPU_FLAG" \
+     "${OPT[refine-max-face-area]}" \
+     "${OPT[refine-gradient-step]}"
 
 # ---------------------------------------------------------------------------
 # 4. Georeferencing bridge  (local SfM frame -> projected CRS)

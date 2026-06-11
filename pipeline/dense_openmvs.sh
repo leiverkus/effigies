@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # OpenMVS dense reconstruction + the steps ODM skips.
 # args: WORK RES_LEVEL VIEWS_FUSE RECONSTRUCT_MESH REFINE_ITERS DECIMATE TEX_RES GPU_FLAG
+#       [MAX_FACE_AREA] [GRADIENT_STEP]   (RefineMesh quality levers)
 set -euo pipefail
 WORK="$1"; RES_LEVEL="$2"; VIEWS_FUSE="$3"; RECONSTRUCT_MESH="$4"
 REFINE_ITERS="$5"; DECIMATE="$6"; TEX_RES="$7"; GPU="$8"
+MAX_FACE_AREA="${9:-16}"; GRADIENT_STEP="${10:-25.05}"
 
 cd "$WORK"
 
@@ -37,11 +39,14 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
   MESH_MVS="scene_dense_mesh.mvs"
 
   if [[ "${REFINE_ITERS}" != "0" ]]; then
-    echo "[openmvs] RefineMesh x${REFINE_ITERS}  (ODM skips this - main quality lever)"
+    # OpenMVS 2.4 has no --max-iters; its "iterations" lever IS --scales ("how many
+    # iterations to run mesh optimization on multi-scale images"). Previously this
+    # was hardcoded to 1 and refine-mesh-iters only gated the stage — now it drives it.
+    echo "[openmvs] RefineMesh (scales=${REFINE_ITERS})  (ODM skips this - main quality lever)"
     RefineMesh "$MESH_MVS" \
-      --max-face-area 16 \
-      --scales 1 \
-      --gradient-step 25.05 \
+      --max-face-area "$MAX_FACE_AREA" \
+      --scales "$REFINE_ITERS" \
+      --gradient-step "$GRADIENT_STEP" \
       --resolution-level "$RES_LEVEL" \
       "${CUDA_ARGS[@]}" \
       -w "$WORK"

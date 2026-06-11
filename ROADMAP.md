@@ -93,8 +93,11 @@ kept** (24.04 dropped it). Facts worth keeping:
 
 - [ ] **Capture profiles** that preset sensible parameters: *object/turntable*,
       *architecture*, *macro/find*. Calibrate `RefineMesh` parameters per profile.
-- [ ] Expose key OpenMVS refine parameters (`--max-face-area`, `--scales`,
-      `--gradient-step`) as task options with documented effects.
+- [x] Expose key OpenMVS refine parameters as task options with documented
+      effects: `refine-max-face-area`, `refine-gradient-step`, and
+      `refine-mesh-iters` now genuinely driving `RefineMesh --scales` (it was
+      hardcoded to 1 — the advertised option did nothing). The CPU stability caps
+      (`cpu-threads`, `cpu-match-block`) are options too; env vars still override.
 - [~] **Orthophoto from the textured mesh.** `helpers/orthophoto.py` nadir-
       rasterises the refined textured mesh into a georeferenced GeoTIFF
       (`odm_orthophoto/odm_orthophoto.tif`), so the ortho inherits RefineMesh
