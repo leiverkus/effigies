@@ -24,6 +24,8 @@ declare -A OPT=(
   [crs]=auto
   [georeference]=auto
   [gcp]=""
+  [orthophoto]=true
+  [orthophoto-resolution]=auto
   [use-gpu]=true
   [project-path]=""
 )
@@ -122,6 +124,20 @@ python3 "$(dirname "$0")/helpers/georef_bridge.py" \
 # ---------------------------------------------------------------------------
 if ! python3 "$(dirname "$0")/helpers/pointcloud_to_laz.py" --work "$WORK" --ept; then
   echo "[effigies] WARN: LAZ/EPT step failed; map_outputs will fall back to the raw PLY" >&2
+fi
+
+# ---------------------------------------------------------------------------
+# 5b. Orthophoto -> georeferenced GeoTIFF (nadir-rasterised from the textured mesh)
+#     ODM builds this from its DSM; we build a true orthophoto off the refined
+#     textured mesh so it inherits the RefineMesh detail. Self-skips when the
+#     result is not georeferenced (crs=local). Non-fatal: a failure here must not
+#     lose the 3D model + cloud that already succeeded.
+# ---------------------------------------------------------------------------
+if [[ "${OPT[orthophoto]}" == "true" ]]; then
+  if ! python3 "$(dirname "$0")/helpers/orthophoto.py" \
+       --work "$WORK" --resolution "${OPT[orthophoto-resolution]}"; then
+    echo "[effigies] WARN: orthophoto step failed; continuing without it" >&2
+  fi
 fi
 
 # ---------------------------------------------------------------------------

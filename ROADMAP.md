@@ -95,6 +95,12 @@ kept** (24.04 dropped it). Facts worth keeping:
       *architecture*, *macro/find*. Calibrate `RefineMesh` parameters per profile.
 - [ ] Expose key OpenMVS refine parameters (`--max-face-area`, `--scales`,
       `--gradient-step`) as task options with documented effects.
+- [~] **Orthophoto from the textured mesh.** `helpers/orthophoto.py` nadir-
+      rasterises the refined textured mesh into a georeferenced GeoTIFF
+      (`odm_orthophoto/odm_orthophoto.tif`), so the ortho inherits RefineMesh
+      detail. Open: vectorise the per-face rasteriser (a Python loop today — fine
+      for typical meshes, minutes for very large ones); optional DSM/DTM output
+      and true-ortho occlusion handling.
 - [~] **Benchmark suite** comparing Effigies output against stock ODM /
       Metashape / RealityCapture on shared datasets (mesh density, photometric
       error, runtime). Scaffolded: `scripts/benchmark.sh` (per-stage runtime +
@@ -130,9 +136,6 @@ kept** (24.04 dropped it). Facts worth keeping:
 
 ## Out of scope
 
-- **Orthophotos & 2D map products.** ODM's actual strength; Effigies does not
-  duplicate the orthomosaic / DEM / tiling pipeline. (3D *is* in scope for aerial:
-  ODM's drone meshes are weak too — Effigies is the better-3D engine near and far.)
 - **Modifying WebODM or NodeODM.** Effigies is an engine behind the existing
   NodeODM REST contract; it must not require patches to either.
 

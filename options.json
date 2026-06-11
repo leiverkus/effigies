@@ -103,6 +103,21 @@
     "help": "Optional path to a ground control points file (ODM gcp_list.txt format) used for the Helmert georeferencing bridge. Default: none"
   },
   {
+    "name": "orthophoto",
+    "title": "Orthophoto",
+    "value": true,
+    "type": "bool",
+    "help": "Generate a georeferenced orthophoto (GeoTIFF) by nadir-rasterising the refined textured mesh. Only produced when the result is georeferenced (GPS/GCP); skipped for local-frame / object captures. Default: %(default)s"
+  },
+  {
+    "name": "orthophoto-resolution",
+    "title": "Orthophoto Resolution (cm/px)",
+    "value": "auto",
+    "domain": "string",
+    "type": "string",
+    "help": "Orthophoto ground sample distance in cm/pixel. 'auto' targets ~4k px across the scene (clamped 1 cm .. 1 m). Smaller = sharper but larger file. Default: %(default)s"
+  },
+  {
     "name": "use-gpu",
     "title": "Use GPU",
     "value": true,

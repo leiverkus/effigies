@@ -12,13 +12,15 @@ than commercial tools (Metashape, RealityCapture): ODM runs OpenMVS only up to
 (Densify → ReconstructMesh → RefineMesh → TextureMesh) on top of a COLMAP sparse
 reconstruction, and bridges the result into the WebODM asset contract.
 
-Target use: high-quality 3D reconstruction **across the board** — close-range /
+Target use: a **complete, higher-quality engine across the board** — close-range /
 convergent capture (objects, finds, artefacts, architecture) AND drone / aerial
-sets. The stock ODM node produces weak 3D in BOTH regimes — its strength is the
-orthophoto, not the mesh — so Effigies is the better-3D engine for either, not a
-close-range niche. The node is region-agnostic; it was originally built for
-archaeological documentation in the Southern Levant, but nothing in the engine is
-specific to that region.
+sets. It produces the textured 3D mesh, the georeferenced point cloud, AND the
+orthophoto (nadir-rasterised from the refined textured mesh, so the ortho inherits
+the RefineMesh detail rather than being interpolated from a sparse cloud). Stock
+ODM produces weak 3D in both regimes; Effigies aims to beat it on **every** output,
+in one node — not a close-range niche. The node is region-agnostic; it was
+originally built for archaeological documentation in the Southern Levant, but
+nothing in the engine is specific to that region.
 
 > *effigies* (lat.) — „das plastische Abbild, die geformte Nachbildung".
 
@@ -28,8 +30,10 @@ specific to that region.
 WebODM ──HTTP──> NodeODM REST layer ──run.sh──> [ Effigies engine ]
    COLMAP (sparse) ─ InterfaceCOLMAP ─> scene.mvs
    OpenMVS: DensifyPointCloud → ReconstructMesh → RefineMesh → TextureMesh
-   georef_bridge.py  (local frame -> projected CRS, or local-only)
-   map_outputs.py    (-> WebODM asset paths)
+   georef_bridge.py   (local frame -> projected CRS, or local-only)
+   pointcloud_to_laz.py (dense cloud -> georeferenced LAZ + EPT)
+   orthophoto.py      (textured mesh -> georeferenced GeoTIFF orthophoto)
+   map_outputs.py     (-> WebODM asset paths)
 ```
 
 WebODM never talks to a binary directly. It talks to a NodeODM REST service. An

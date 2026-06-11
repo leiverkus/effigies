@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Orthophoto output (`helpers/orthophoto.py`).** Effigies now produces a
+  georeferenced orthophoto (`odm_orthophoto/odm_orthophoto.tif`, RGB + alpha),
+  nadir-rasterised from the refined textured mesh — so it inherits the RefineMesh
+  detail instead of being interpolated from a sparse DSM. z-buffered (topmost
+  surface wins), texture-sampled, written via GDAL in the model's CRS. New options
+  `orthophoto` (on by default) and `orthophoto-resolution` (cm/px, `auto` ≈ 4k px
+  wide). Skipped automatically for local-frame / un-georeferenced results. Effigies
+  is now a complete engine — 3D mesh, point cloud, AND orthophoto — in one node;
+  no need to also run stock ODM for the 2D product. (Adds the `python3-gdal`
+  dependency.)
 - **Mesh-to-reference distance in `benchmark.sh`.** `compare` now accepts an OBJ
   mesh on either side: it area-weighted surface-samples the mesh to a point cloud
   (deterministic) before the existing ICP + nearest-neighbour distance, so a

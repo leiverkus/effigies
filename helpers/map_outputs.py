@@ -84,6 +84,11 @@ def main():
         shutil.copytree(ept_src, ept_dst)
         print(f"[map] {ept_src} -> {ept_dst}")
 
+    # 2c. orthophoto -> odm_orthophoto/ (WebODM's 2D map asset)
+    ortho = os.path.join(W, "odm_orthophoto.tif")
+    if os.path.exists(ortho):
+        link_or_copy(ortho, os.path.join(P, "odm_orthophoto", "odm_orthophoto.tif"))
+
     # 3. report stub so the UI has a stats target
     os.makedirs(os.path.join(P, "odm_report"), exist_ok=True)
 
