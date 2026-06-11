@@ -132,8 +132,15 @@ are *run-checked* on a 70-image dataset and refine the source-level plan above:
       *architecture*, *macro/find*. Calibrate `RefineMesh` parameters per profile.
 - [ ] Expose key OpenMVS refine parameters (`--max-face-area`, `--scales`,
       `--gradient-step`) as task options with documented effects.
-- [ ] **Benchmark suite** comparing Effigies output against stock ODM on shared
-      datasets (mesh density, photometric error, runtime).
+- [~] **Benchmark suite** comparing Effigies output against stock ODM /
+      Metashape / RealityCapture on shared datasets (mesh density, photometric
+      error, runtime). Scaffolded: `scripts/benchmark.sh` (per-stage runtime +
+      mesh/cloud stats) and a prior-art review in
+      [docs/benchmark-literature.md](docs/benchmark-literature.md) (BibTeX in
+      `docs/references.bib`). Open: cloud-to-cloud / mesh-to-reference distance
+      and CP RMSE — the accuracy metrics the literature uses. No prior study
+      benchmarks COLMAP + OpenMVS *with RefineMesh* against the commercial
+      tools, so this is a publishable contribution, not just an internal check.
 
 ## v1.0.0 — Production
 
