@@ -21,10 +21,11 @@ Effigies runs the **full OpenMVS chain** (Densify → ReconstructMesh → Refine
 into the WebODM asset contract. It installs alongside the stock ODM node and
 shows up in WebODM as its own engine with its own task options.
 
-It is aimed at **close-range / convergent photogrammetry** — objects, finds,
-artefacts, statues, architecture — where mesh refinement matters most. For
-GPS-tagged aerial mapping the stock ODM node remains the right tool; run both
-nodes side by side.
+It targets **high-quality 3D across all scenarios** — close-range / convergent
+capture (objects, finds, artefacts, statues, architecture) *and* drone / aerial
+sets. Stock ODM produces weak 3D in both regimes; its real strength is the
+**orthophoto**, not the mesh. So run both nodes side by side: ODM for the
+orthophoto and 2D map products, Effigies for the 3D model.
 
 ## How it works (without touching WebODM)
 

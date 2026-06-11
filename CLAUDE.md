@@ -12,10 +12,13 @@ than commercial tools (Metashape, RealityCapture): ODM runs OpenMVS only up to
 (Densify → ReconstructMesh → RefineMesh → TextureMesh) on top of a COLMAP sparse
 reconstruction, and bridges the result into the WebODM asset contract.
 
-Target use: close-range / convergent photogrammetry of objects (finds, artefacts)
-and architecture, alongside the standard ODM node for GPS-tagged aerial work. The
-node is region-agnostic; it was originally built for archaeological documentation
-in the Southern Levant, but nothing in the engine is specific to that region.
+Target use: high-quality 3D reconstruction **across the board** — close-range /
+convergent capture (objects, finds, artefacts, architecture) AND drone / aerial
+sets. The stock ODM node produces weak 3D in BOTH regimes — its strength is the
+orthophoto, not the mesh — so Effigies is the better-3D engine for either, not a
+close-range niche. The node is region-agnostic; it was originally built for
+archaeological documentation in the Southern Levant, but nothing in the engine is
+specific to that region.
 
 > *effigies* (lat.) — „das plastische Abbild, die geformte Nachbildung".
 

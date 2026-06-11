@@ -130,8 +130,9 @@ kept** (24.04 dropped it). Facts worth keeping:
 
 ## Out of scope
 
-- **Aerial / GPS mapping.** Already served well by the stock ODM node; Effigies
-  targets the close-range refine-quality gap and should not duplicate ODM.
+- **Orthophotos & 2D map products.** ODM's actual strength; Effigies does not
+  duplicate the orthomosaic / DEM / tiling pipeline. (3D *is* in scope for aerial:
+  ODM's drone meshes are weak too — Effigies is the better-3D engine near and far.)
 - **Modifying WebODM or NodeODM.** Effigies is an engine behind the existing
   NodeODM REST contract; it must not require patches to either.
 
