@@ -72,8 +72,13 @@ if [[ "${OPT[sparse-engine]}" == "colmap" ]]; then
        "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG"
   # COLMAP -> OpenMVS scene. InterfaceCOLMAP reads the undistorted dense
   # workspace (dense/sparse model + dense/images), produced by image_undistorter
-  # in sparse_colmap.sh — not the raw sparse/0 model.
-  InterfaceCOLMAP -i "$WORK/dense" -o "$WORK/scene.mvs" -w "$WORK"
+  # in sparse_colmap.sh — not the raw sparse/0 model. --image-folder is given the
+  # absolute undistorted-images path; InterfaceCOLMAP records it relative to the
+  # working folder ($WORK) as "dense/images/...", which the OpenMVS dense stage
+  # (also run with -w $WORK) then resolves correctly. Without this it defaults to
+  # "images/" and DensifyPointCloud fails to find the images under $WORK/images.
+  InterfaceCOLMAP -i "$WORK/dense" --image-folder "$WORK/dense/images/" \
+                  -o "$WORK/scene.mvs" -w "$WORK"
 else
   bash "$(dirname "$0")/pipeline/sparse_opensfm.sh" "$IMAGES" "$WORK"
   InterfaceOpenSfM -i "$WORK/opensfm" -o "$WORK/scene.mvs" -w "$WORK"
