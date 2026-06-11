@@ -334,7 +334,10 @@ def exif_correspondences(model_dir, images_dir, target_crs):
 # ---------------------------------------------------------------------------
 def apply_to_obj(work, s, R, t, offset):
     obj = None
-    for cand in ("scene_dense_mesh_refine.obj", "scene_dense_mesh.obj"):
+    # TextureMesh appends "_texture" to the input mesh name; prefer the textured
+    # OBJ (refined first), falling back to the untextured mesh names.
+    for cand in ("scene_dense_mesh_refine_texture.obj", "scene_dense_mesh_texture.obj",
+                 "scene_dense_mesh_refine.obj", "scene_dense_mesh.obj"):
         p = os.path.join(work, cand)
         if os.path.exists(p):
             obj = p

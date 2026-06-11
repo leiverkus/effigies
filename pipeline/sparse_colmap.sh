@@ -62,6 +62,20 @@ if [[ ! -d "$WORK/sparse/0" ]]; then
 fi
 echo "[colmap] sparse model at $WORK/sparse/0"
 
+# Export a TEXT copy of the model alongside the binary one. The mapper writes
+# binary (cameras.bin/...), but georef_bridge.py reads the TEXT format
+# (cameras.txt/images.txt/points3D.txt); without this it finds no model and
+# silently degrades --georeference auto/exif/gcp to local-only.
+echo "[colmap] model_converter -> TXT (for georef_bridge)"
+colmap model_converter \
+  --input_path "$WORK/sparse/0" \
+  --output_path "$WORK/sparse/0" \
+  --output_type TXT
+if [[ ! -f "$WORK/sparse/0/images.txt" ]]; then
+  echo "[colmap] model_converter failed: no text model produced" >&2
+  exit 1
+fi
+
 # Undistort into the workspace layout OpenMVS' InterfaceCOLMAP expects:
 # <dense>/sparse/{cameras,images,points3D}.bin + <dense>/images/ (undistorted).
 # This is also required for correctness, not just layout: OpenMVS densifies on
