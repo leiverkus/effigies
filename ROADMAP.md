@@ -49,15 +49,9 @@ Made the image trustworthy and the output cloud web-ready.
 
 **Carried forward** (v0.2.0 shipped without these; tracked for a later release):
 
-- [ ] **Validate the CUDA/production image on real GPU hardware.** Both images
-      build from identical pinned sources, but the CUDA build has only been
-      *statically* checked (`docker build --check`) — there is no NVIDIA GPU on the
-      dev box. A full GPU build + run is the remaining acceptance gate for the
-      production image.
 - [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
       builds and handle the variants.
-- [ ] Slim the image with a multi-stage (devel build → runtime copy) layout once
-      the single-stage build is confirmed working on GPU.
+- [ ] Slim the image with a multi-stage (devel build → runtime copy) layout.
 
 ## COLMAP 4 migration *(done — folded into v0.2.0)*
 
@@ -120,6 +114,15 @@ kept** (24.04 dropped it). Facts worth keeping:
 - [ ] Documented, stable option set; no breaking changes without a major bump.
 - [ ] End-to-end coverage and a published reference dataset.
 - [ ] Installation / operations guide for adding Effigies to an existing WebODM.
+
+---
+
+## Parked (no hardware)
+
+- **CUDA/production image GPU build + run.** The image is built from the same
+  pinned sources as the validated CPU image and passes `docker build --check`, but
+  there is no NVIDIA machine available to compile and run it. Parked indefinitely;
+  revisit only if GPU hardware appears.
 
 ---
 

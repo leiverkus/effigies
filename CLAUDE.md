@@ -81,10 +81,14 @@ Do not break these without an explicit instruction to do so.
 
 ## Git
 
-- **Do not commit without asking.**
+- **Single trunk: `main`.** Solo developer — commit directly to `main`. No feature
+  branches, no per-change PRs, no develop/main split. Tag releases on `main`. Work
+  fast; don't stop for a commit-approval prompt on routine work (still confirm
+  genuinely destructive or outward-facing one-way actions).
 - Conventional commits: `type(scope): description`
   (e.g. `feat(georef): add EXIF-GPS fallback`).
-- Branch from `develop`, not `main`.
+- **Docs travel with the change.** Update CHANGELOG / ROADMAP / README in the *same*
+  commit as the work they describe — immediately, never piecemeal afterwards.
 
 ## Testing
 
