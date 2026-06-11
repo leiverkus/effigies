@@ -27,15 +27,26 @@ comparable metrics are:
 - **Processing time** — wall-clock per pipeline. *SolemNau2020* (RC ≫ faster
   than Metashape).
 
-`benchmark.sh` currently covers the **runtime** axis (per stage) and **output
-geometry** (vertices, faces, surface area, density, texture megapixels; point
-count + density). The two metrics it does **not** yet compute, and which the
-literature treats as the accuracy core, are:
+`benchmark.sh` covers the **runtime** axis (per stage), **output geometry**
+(`stats`: vertices, faces, surface area, density, texture megapixels; point
+count + density), and — the accuracy core the literature uses — the two metrics
+below:
 
-1. **GCP/CP RMSE** — needs marked control points; already a v0.3.0 georef item.
-2. **Cloud-to-cloud / mesh-to-reference distance** — needs a reference scan and
-   a registration step (PDAL `filters.icp` + a distance filter, or CloudCompare
-   `-c2c`). This is the natural next addition to `benchmark.sh`.
+1. **CP RMSE** (`benchmark.sh cprmse`) — surveyed control points vs. their
+   modelled position → RMSE per axis + 3D, mirroring the ChP-RMSE tables in
+   *GabaraSawicki2023* / *Cutugno2022*. The world↔model point pairing comes from
+   the engine's GCP report (full GCP support is a v0.3.0 item).
+2. **Cloud-to-reference distance** (`benchmark.sh compare`) — ICP-aligns the
+   output to a reference scan (PDAL `filters.icp`), then nearest-neighbour
+   distance (scipy cKDTree) → {mean, std, rms, p95, max} + completeness. This is
+   the PDAL/scipy equivalent of the CloudCompare C2C-vs-TLS workflow in
+   *GabaraSawicki2023* / *Cutugno2022*.
+3. **Surface roughness** (`benchmark.sh stats`, on mesh vertices and clouds) —
+   local plane-fit residual (PCA over k neighbours) → {mean, rms, p95}; the
+   detail-vs-noise signal behind H2 (recovered detail) and H5 (flat-region
+   noise). Suppress with `--no-roughness`.
+
+Still open: **mesh-to-reference** distance (sample the OBJ to points first).
 
 ## Findings relevant to Effigies' expected positioning
 

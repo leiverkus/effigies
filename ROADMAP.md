@@ -152,9 +152,12 @@ are *run-checked* on a 70-image dataset and refine the source-level plan above:
       error, runtime). Scaffolded: `scripts/benchmark.sh` (per-stage runtime +
       mesh/cloud stats) and a prior-art review in
       [docs/benchmark-literature.md](docs/benchmark-literature.md) (BibTeX in
-      `docs/references.bib`). Open: cloud-to-cloud / mesh-to-reference distance
-      and CP RMSE — the accuracy metrics the literature uses. No prior study
-      benchmarks COLMAP + OpenMVS *with RefineMesh* against the commercial
+      `docs/references.bib`). `benchmark.sh` now also computes the accuracy core:
+      `compare` (cloud-to-reference distance via PDAL ICP + scipy KD-tree, plus
+      completeness), `cprmse` (check-point RMSE), and `stats` surface roughness
+      (local plane-fit residual, detail-vs-noise). Open: mesh-to-reference
+      distance (sample the OBJ first). No prior
+      study benchmarks COLMAP + OpenMVS *with RefineMesh* against the commercial
       tools, so this is a publishable contribution, not just an internal check.
 
 ## v1.0.0 — Production

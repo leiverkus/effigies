@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libglew-dev libglfw3-dev libglu1-mesa-dev \
       qtbase5-dev libqt5opengl5-dev \
       libopencv-dev libpng-dev libjpeg-dev libtiff-dev \
-      python3 python3-dev python3-numpy python3-pip \
+      python3 python3-dev python3-numpy python3-scipy python3-pip \
       python3-pil python3-pyproj \
       pdal \
       nodejs npm \
