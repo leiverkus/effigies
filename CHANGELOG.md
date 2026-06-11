@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-11
+
 ### Added
 - **First full end-to-end run on the CPU image.** The complete chain — COLMAP
   sparse → `image_undistorter` → OpenMVS `DensifyPointCloud` → `ReconstructMesh`
@@ -141,5 +143,6 @@ First public release — a working, NodeODM-compatible engine scaffold for WebOD
   planned.
 - No end-to-end run against a real dataset is exercised in CI (no GPU runner).
 
-[Unreleased]: https://github.com/leiverkus/effigies/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/leiverkus/effigies/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/leiverkus/effigies/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/leiverkus/effigies/releases/tag/v0.1.0
