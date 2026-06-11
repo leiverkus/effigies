@@ -26,8 +26,10 @@ MATCH_THREADS=()
 EXHAUSTIVE_CPU=()
 if [[ "$GPU" != "1" ]]; then
   CPU_THREADS="${EFFIGIES_CPU_THREADS:-4}"
-  EXTRACT_THREADS=(--SiftExtraction.num_threads "$CPU_THREADS")
-  MATCH_THREADS=(--SiftMatching.num_threads "$CPU_THREADS")
+  # COLMAP 4 renamed the generic feature options to Feature{Extraction,Matching}.*
+  # (use_gpu, num_threads); ExhaustiveMatching.block_size is unchanged.
+  EXTRACT_THREADS=(--FeatureExtraction.num_threads "$CPU_THREADS")
+  MATCH_THREADS=(--FeatureMatching.num_threads "$CPU_THREADS")
   EXHAUSTIVE_CPU=(--ExhaustiveMatching.block_size "${EFFIGIES_CPU_MATCH_BLOCK:-10}")
 fi
 
@@ -37,15 +39,15 @@ colmap feature_extractor \
   --image_path "$IMAGES" \
   --ImageReader.camera_model "$CAMERA_MODEL" \
   --ImageReader.single_camera_per_folder 1 \
-  --SiftExtraction.use_gpu "$GPU" \
+  --FeatureExtraction.use_gpu "$GPU" \
   "${EXTRACT_THREADS[@]}"
 
 echo "[colmap] ${MATCHER}_matcher"
 case "$MATCHER" in
-  exhaustive) colmap exhaustive_matcher --database_path "$DB" --SiftMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" "${EXHAUSTIVE_CPU[@]}" ;;
-  sequential) colmap sequential_matcher --database_path "$DB" --SiftMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
-  spatial)    colmap spatial_matcher    --database_path "$DB" --SiftMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
-  vocab_tree) colmap vocab_tree_matcher --database_path "$DB" --SiftMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+  exhaustive) colmap exhaustive_matcher --database_path "$DB" --FeatureMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" "${EXHAUSTIVE_CPU[@]}" ;;
+  sequential) colmap sequential_matcher --database_path "$DB" --FeatureMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+  spatial)    colmap spatial_matcher    --database_path "$DB" --FeatureMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+  vocab_tree) colmap vocab_tree_matcher --database_path "$DB" --FeatureMatching.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
   *) echo "[colmap] unknown matcher $MATCHER" >&2; exit 1 ;;
 esac
 

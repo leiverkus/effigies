@@ -30,7 +30,7 @@ FROM ubuntu:${UBUNTU_VERSION} AS engine
 # This matters specifically on the CPU/arm64 build, where v2.3.0's
 # DensifyPointCloud corrupts the heap and aborts; v2.4.0 runs the full
 # Densify -> ReconstructMesh -> RefineMesh -> TextureMesh chain cleanly.
-ARG COLMAP_VERSION=3.11.1
+ARG COLMAP_VERSION=4.0.4
 ARG OPENMVS_VERSION=v2.4.0
 # VCGlib has no release tags aligned to OpenMVS. Pinned to the cdcseacave/VCG
 # master commit the 2.4.0 CPU image was built and validated end-to-end against.
@@ -54,6 +54,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libboost-program-options-dev libboost-graph-dev libboost-system-dev \
       libboost-iostreams-dev libboost-serialization-dev \
       libflann-dev libfreeimage-dev libmetis-dev libsqlite3-dev \
+      libopenimageio-dev openimageio-tools libsuitesparse-dev \
       libgoogle-glog-dev libgtest-dev libceres-dev libcurl4-openssl-dev \
       libglew-dev libglfw3-dev libglu1-mesa-dev \
       libopencv-dev libpng-dev libjpeg-dev libtiff-dev \
@@ -69,6 +70,8 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
       -DCMAKE_BUILD_TYPE=Release \
       -DCUDA_ENABLED=OFF \
       -DGUI_ENABLED=OFF \
+      -DONNX_ENABLED=OFF \
+      -DTESTS_ENABLED=OFF \
       -DCMAKE_INSTALL_PREFIX=/usr/local && \
     ninja -C /opt/colmap/build install && \
     rm -rf /opt/colmap

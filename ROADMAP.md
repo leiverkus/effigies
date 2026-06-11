@@ -62,6 +62,18 @@ Make the image trustworthy and the output cloud web-ready.
 Move the engine onto the COLMAP-4 generation. Sequenced as three **isolated** steps
 so a toolchain break is never debugged together with a COLMAP-API break.
 
+> **Run-verified update (this branch) — supersedes the 24.04 assumption below.**
+> The CPU image is now on **COLMAP 4.0.4 + OpenMVS 2.4.0** and a full real-dataset
+> run completes (sparse → `InterfaceCOLMAP` → densify → reconstruct → refine →
+> texture → georef → LAZ). Key correction: **COLMAP 4 builds and runs on Ubuntu
+> 22.04 — the base bump to 24.04 (step 1) is *not* required.** The 22.04
+> OpenImageIO "break" was only a broken CMake config in the *tools* sub-package;
+> adding `libopenimageio-dev openimageio-tools libsuitesparse-dev` makes COLMAP 4
+> configure and compile on jammy, so **PDAL is kept** (24.04 dropped it). The
+> generic feature CLI options were renamed to `Feature{Extraction,Matching}.*`
+> (handled in `sparse_colmap.sh`). The GPU/production bump is still pending GPU
+> hardware. The three-step plan below stands as the *source-level* analysis.
+
 1. **Base image → Ubuntu 24.04 / CUDA 12.5.1, COLMAP still 3.13.** There is no
    `12.4.1-devel-ubuntu24.04`; the lowest CUDA 12.x on 24.04 is `12.5.1`. The driver
    for 24.04 is **OpenImageIO**, not CMake — COLMAP 4 needs only CMake 3.12 (the 3.28
@@ -85,13 +97,16 @@ classic format (pose stays per-image as `cam_from_world`; `frame_id` is *derived
 read, not stored in the image record). OpenMVS 2.4's `Image::ReadBIN` reads exactly
 that layout (`ID, q.wxyz, t.xyz, camera_id, name\0, num_points2D, [x,y,pt3D_id]…`).
 COLMAP-4's new camera models (FISHEYE / DIVISION) never reach OpenMVS because
-`image_undistorter` converts to PINHOLE first. Source-checked, **not** run-checked.
+`image_undistorter` converts to PINHOLE first. Source-checked, and now
+**run-checked** on the CPU image (see the run-verified note above).
 
-- [ ] **Acceptance gate: end-to-end smoke test against COLMAP 4.0.4 output.** Drive a
-      real dataset through `sparse_colmap.sh` (COLMAP 4 `image_undistorter`) →
-      `InterfaceCOLMAP` → `dense_openmvs.sh` and assert `scene.mvs` is produced
-      (the compat boundary) and a textured OBJ comes out. This is the only remaining
-      unknown — it lives in execution, not in the format. Script: `scripts/smoke_e2e.sh`.
+- [x] **Acceptance gate: end-to-end smoke test against COLMAP 4.0.4 output.**
+      Done on the CPU/arm64 image: a real 71-image dataset runs through
+      `sparse_colmap.sh` (COLMAP 4 `image_undistorter`) → `InterfaceCOLMAP`
+      (reads COLMAP-4 output: "70 images, 34631 points") → `dense_openmvs.sh`,
+      producing `scene.mvs`, a textured georeferenced OBJ and a LAZ cloud. The
+      compat boundary holds in execution, as predicted. STILL OPEN: the same on
+      the CUDA/GPU image.
 
 **Runtime findings from the CPU/arm64 end-to-end validation (this branch).** These
 are *run-checked* on a 70-image dataset and refine the source-level plan above:
