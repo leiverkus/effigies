@@ -15,13 +15,29 @@
 #
 # See docs/DEPLOYMENT.md for the GPU production path.
 
+# Stays on Ubuntu 22.04 so PDAL is available (it was dropped from 24.04's repos)
+# and the rest of the dependency set is unchanged. OpenMVS 2.4.0 needs two libs
+# newer than jammy ships — nanoflann >=1.5 and CGAL >=6.0 — but both are
+# header-only, so we vendor pinned releases of them below rather than bumping the
+# whole base. (OpenMVS' own libjxl requirement is patched out in the build step;
+# we do not produce JPEG-XL output.)
 ARG UBUNTU_VERSION=22.04
 FROM ubuntu:${UBUNTU_VERSION} AS engine
 
-# --- Pinned upstream versions (kept in sync with the CUDA Dockerfile) ---
+# --- Pinned upstream versions ---
+# OpenMVS is ahead of the CUDA Dockerfile (v2.3.0): v2.4.0 swaps the FLANN-based
+# nearest-neighbour code for nanoflann and brings dense-stage stability fixes.
+# This matters specifically on the CPU/arm64 build, where v2.3.0's
+# DensifyPointCloud corrupts the heap and aborts; v2.4.0 runs the full
+# Densify -> ReconstructMesh -> RefineMesh -> TextureMesh chain cleanly.
 ARG COLMAP_VERSION=3.11.1
-ARG OPENMVS_VERSION=v2.3.0
+ARG OPENMVS_VERSION=v2.4.0
 ARG VCG_REF=master
+# Header-only deps vendored for OpenMVS 2.4.0 (jammy is too old: nanoflann 1.4.2,
+# CGAL 5.4). nanoflann 1.5 renamed SearchParams->SearchParameters; CGAL 6.0 added
+# the CGAL/AABB_traits_3.h header OpenMVS now includes.
+ARG NANOFLANN_VERSION=v1.5.5
+ARG CGAL_VERSION=6.0.1
 # Parallel build jobs. OpenMVS compilation is memory-hungry; keep this modest so
 # the build does not OOM on a default Docker Desktop VM. Raise if you have RAM.
 ARG JOBS=4
@@ -40,6 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libglew-dev libglfw3-dev libglu1-mesa-dev \
       libopencv-dev libpng-dev libjpeg-dev libtiff-dev \
       python3 python3-dev python3-numpy python3-pip \
+      python3-pil python3-pyproj \
       pdal \
       nodejs npm \
     && rm -rf /var/lib/apt/lists/*
@@ -54,18 +71,44 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
     ninja -C /opt/colmap/build install && \
     rm -rf /opt/colmap
 
+# --- Header-only deps newer than jammy ships (vendored, pinned) ---
+# nanoflann: jammy's libnanoflann-dev (1.4.2) supplies the CMake config OpenMVS'
+#   find_package(nanoflann) needs, but its header is too old (no SearchParameters).
+#   Install the package for the config, then overlay the pinned 1.5.x header.
+# CGAL: drop in the pinned 6.x header-only release (used via -DCGAL_DIR below).
+RUN apt-get update && apt-get install -y --no-install-recommends libnanoflann-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone --depth 1 --branch ${NANOFLANN_VERSION} https://github.com/jlblancoc/nanoflann.git /opt/nanoflann && \
+    cp /opt/nanoflann/include/nanoflann.hpp /usr/include/nanoflann.hpp && \
+    rm -rf /opt/nanoflann && \
+    python3 -c "import urllib.request; urllib.request.urlretrieve('https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}-library.tar.xz', '/tmp/cgal.tar.xz')" && \
+    tar -xf /tmp/cgal.tar.xz -C /opt && rm /tmp/cgal.tar.xz
+
 # --- OpenMVS from pinned source, CPU-only ---
+# Two source patches keep 2.4.0 building against jammy's OpenCV (4.5):
+#   1. libs/IO: the JXL pkg-config check is hard-REQUIRED via a macro, but jammy
+#      has no libjxl. Drop REQUIRED so JXL support self-disables (the surrounding
+#      code already guards on JPEGXL_FOUND); we never emit JPEG-XL.
+#   2. Types.inl references cv::IMWRITE_JPEGXL_QUALITY (OpenCV >= 4.7 only) on the
+#      .jxl write path we never take; map it to the JPEG constant so it compiles.
 RUN git clone https://github.com/cdcseacave/VCG.git /opt/vcglib && \
     git -C /opt/vcglib checkout ${VCG_REF} && \
     git clone --depth 1 --branch ${OPENMVS_VERSION} https://github.com/cdcseacave/openMVS.git /opt/openMVS && \
+    sed -i 's/pkg_check_modules(${PREFIX} REQUIRED IMPORTED_TARGET/pkg_check_modules(${PREFIX} IMPORTED_TARGET/' /opt/openMVS/libs/IO/CMakeLists.txt && \
+    sed -i 's/cv::IMWRITE_JPEGXL_QUALITY/cv::IMWRITE_JPEG_QUALITY/' /opt/openMVS/libs/Common/Types.inl && \
     cmake -S /opt/openMVS -B /opt/openMVS_build \
       -DCMAKE_BUILD_TYPE=Release \
       -DVCG_ROOT=/opt/vcglib \
+      -DCGAL_DIR=/opt/CGAL-${CGAL_VERSION} \
       -DOpenMVS_USE_CUDA=OFF \
+      -DOpenMVS_BUILD_VIEWER=OFF \
+      -DOpenMVS_USE_PYTHON=OFF \
+      -DOpenMVS_USE_BREAKPAD=OFF \
+      -DOpenMVS_ENABLE_TESTS=OFF \
       -DEIGEN3_INCLUDE_DIR=/usr/include/eigen3 \
       -DCMAKE_INSTALL_PREFIX=/usr/local && \
     cmake --build /opt/openMVS_build -j"${JOBS}" --target install && \
-    rm -rf /opt/openMVS /opt/openMVS_build /opt/vcglib
+    rm -rf /opt/openMVS /opt/openMVS_build /opt/vcglib /opt/CGAL-${CGAL_VERSION}
 
 ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
 

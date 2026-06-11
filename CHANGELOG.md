@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **First full end-to-end run on the CPU image.** The complete chain — COLMAP
+  sparse → `image_undistorter` → OpenMVS `DensifyPointCloud` → `ReconstructMesh`
+  → `RefineMesh` → `TextureMesh` — now runs to completion on the CPU/arm64 image
+  against a real 70-image dataset, producing a textured OBJ. This closes the main
+  open 0.2.0 validation item (the engine had never been run through on a dataset).
+- **OpenMVS bumped to v2.4.0 on the CPU image.** v2.3.0's `DensifyPointCloud`
+  corrupts the heap and aborts on arm64 (it falls back off SSE); v2.4.0 swaps the
+  FLANN nearest-neighbour code for nanoflann and runs the full dense+mesh chain
+  cleanly. 2.4.0 needs two libs newer than Ubuntu 22.04 ships — nanoflann ≥1.5
+  and CGAL ≥6.0 — both header-only, so `Dockerfile.cpu` vendors pinned releases
+  (`NANOFLANN_VERSION`, `CGAL_VERSION`) rather than bumping the base off 22.04
+  (which would lose PDAL, dropped from 24.04). Two small source patches keep it
+  building against jammy's OpenCV (disable the hard libjxl requirement; map the
+  one OpenCV-4.7-only JXL write constant to the JPEG one — we emit no JPEG-XL).
+
+### Fixed
+- **CPU pipeline could not start: opaque "Cannot process dataset".** A chain of
+  failures, each masking the next, all surfacing only as NodeODM's generic error:
+  - `run.sh` applied the default `use-gpu=true` even on the CUDA-less CPU image,
+    so COLMAP's SIFT aborted ("Cannot use Sift GPU without CUDA or OpenGL"). It
+    now probes for a usable GPU (`nvidia-smi -L`) and falls back to CPU with a
+    loud warning when none is present.
+  - COLMAP's CPU SIFT extractor OOM-killed itself fanning out over all cores on
+    large images; the CPU SIFT/match thread count is now capped
+    (`EFFIGIES_CPU_THREADS`, default 4).
+  - COLMAP's CPU FLANN matcher segfaulted holding a full match block in memory;
+    the exhaustive block size is capped on the CPU path
+    (`EFFIGIES_CPU_MATCH_BLOCK`, default 10).
+  - `InterfaceCOLMAP` was fed the raw `sparse/0` model instead of an undistorted
+    workspace; `sparse_colmap.sh` now runs `colmap image_undistorter` and
+    `InterfaceCOLMAP` reads `$WORK/dense` with the correct `--image-folder`.
+  - `dense_openmvs.sh` passed `--cuda-device` unconditionally; the CPU OpenMVS
+    build rejects it. The flag is now probed and passed only on CUDA builds.
 - **Source-built, pinned Dockerfile.** COLMAP (`3.11.1`) and OpenMVS (`v2.3.0`)
   are now compiled from upstream source with CUDA, replacing the distro packages;
   Eigen/CGAL/Boost/OpenCV come from Ubuntu 22.04. Versions are declared as build

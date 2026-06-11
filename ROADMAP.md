@@ -34,12 +34,20 @@ Make the image trustworthy and the output cloud web-ready.
       georef transform, writes `odm_georeferenced_model.laz` via PDAL, and builds
       an EPT tileset (entwine/untwine) for the Potree viewer.
 - [x] **No `latest` tags.** Base image and engine versions are explicit `ARG`s.
-- [~] **End-to-end smoke test.** The CPU image (`Dockerfile.cpu`) now builds the
-      pinned engine from source on arm64, the `which` gate passes, and the node
-      runs: NodeODM reports `engine=effigies`, serves all options correctly and is
-      reachable on the WebODM network. STILL OPEN: a full processing run on a real
-      dataset (sparse → densify → refine → texture → LAZ) to confirm the pipeline,
-      and the same on the CUDA image on GPU hardware.
+- [x] **End-to-end smoke test (CPU image).** The full chain — COLMAP sparse →
+      `image_undistorter` → OpenMVS densify → reconstruct → refine → texture —
+      runs to completion on the CPU/arm64 image against a real 70-image dataset,
+      producing a textured OBJ. Getting there fixed a chain of CPU-path bugs (GPU
+      fallback, SIFT thread/match-block caps, the undistort workspace, the
+      `--cuda-device` probe) and required OpenMVS **v2.4.0** — v2.3.0 corrupts the
+      heap on arm64. STILL OPEN: drive it through NodeODM/WebODM to also exercise
+      the georef → LAZ/EPT → `map_outputs` tail, and the same on the CUDA image on
+      GPU hardware.
+- [ ] **Bump the production (CUDA) image to OpenMVS v2.4.0.** The CPU image vendors
+      pinned header-only nanoflann ≥1.5 + CGAL ≥6.0 and patches out the libjxl
+      requirement to build 2.4.0 on Ubuntu 22.04. For the CUDA/production image,
+      decide between the same header-vendor recipe and OpenMVS' own vcpkg build
+      (exact upstream dep versions, no source patches, but a much heavier build).
 - [ ] **Pin VCGlib to a verified commit SHA** (currently tracks a branch via the
       `VCG_REF` arg; lock it before tagging a release image).
 - [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
