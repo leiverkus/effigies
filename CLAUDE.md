@@ -33,6 +33,7 @@ WebODM ──HTTP──> NodeODM REST layer ──run.sh──> [ Effigies engin
    georef_bridge.py   (local frame -> projected CRS, or local-only)
    pointcloud_to_laz.py (dense cloud -> georeferenced LAZ + EPT)
    orthophoto.py      (textured mesh -> georeferenced GeoTIFF orthophoto)
+   camera_exports.py  (-> cameras.json + odm_report/shots.geojson)
    map_outputs.py     (-> WebODM asset paths)
 ```
 

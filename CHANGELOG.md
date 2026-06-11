@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Camera assets (`helpers/camera_exports.py`) — ODM-parity downloads.**
+  `cameras.json` (intrinsics, OpenSfM-normalised, in the project root) and
+  `odm_report/shots.geojson` (one WGS84 point per image — camera positions on the
+  WebODM map, with filename / camera / focal / pose properties), derived from the
+  COLMAP model + the georef similarity. `shots.geojson` is skipped for a local-only
+  result; `cameras.json` is always written.
 - **Orthophoto output (`helpers/orthophoto.py`).** Effigies now produces a
   georeferenced orthophoto (`odm_orthophoto/odm_orthophoto.tif`, RGB + alpha),
   nadir-rasterised from the refined textured mesh — so it inherits the RefineMesh

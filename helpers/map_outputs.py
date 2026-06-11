@@ -89,6 +89,14 @@ def main():
     if os.path.exists(ortho):
         link_or_copy(ortho, os.path.join(P, "odm_orthophoto", "odm_orthophoto.tif"))
 
+    # 2d. camera assets — cameras.json (project root) + shots.geojson (odm_report/)
+    cams = os.path.join(W, "cameras.json")
+    if os.path.exists(cams):
+        link_or_copy(cams, os.path.join(P, "cameras.json"))
+    shots = os.path.join(W, "shots.geojson")
+    if os.path.exists(shots):
+        link_or_copy(shots, os.path.join(P, "odm_report", "shots.geojson"))
+
     # 3. report stub so the UI has a stats target
     os.makedirs(os.path.join(P, "odm_report"), exist_ok=True)
 

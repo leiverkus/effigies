@@ -141,6 +141,14 @@ if [[ "${OPT[orthophoto]}" == "true" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 5c. Camera assets — cameras.json (intrinsics) + shots.geojson (camera positions
+#     on the map). Matches the ODM downloadable assets. Non-fatal.
+# ---------------------------------------------------------------------------
+if ! python3 "$(dirname "$0")/helpers/camera_exports.py" --work "$WORK"; then
+  echo "[effigies] WARN: camera export step failed; continuing without it" >&2
+fi
+
+# ---------------------------------------------------------------------------
 # 6. Map outputs onto the WebODM asset contract
 # ---------------------------------------------------------------------------
 python3 "$(dirname "$0")/helpers/map_outputs.py" --proj "$PROJ" --work "$WORK"
