@@ -49,6 +49,11 @@ Made the image trustworthy and the output cloud web-ready.
 
 **Carried forward** (v0.2.0 shipped without these; tracked for a later release):
 
+- [x] ~~OpenMVS bump to fix seam leveling~~ — **tested and rejected**: master
+      (incl. the 2026-02 "global seam leveling corner case" fix) corrupts texture
+      patches exactly like v2.4.0 on this arm64/CPU build (24–47% near-black atlas
+      vs 0.4–2.9% with leveling off, same scene). Colour consistency stays our
+      job: per-image exposure harmonisation (`harmonize_exposure.py`).
 - [ ] **Drop the NodeODM `shQuote` hotfix** once upstream fixes the PR #268
       regression (numeric option values crash `s.replace()`); then bump
       `NODEODM_REF` to the fixed commit and remove the build-time sed. The repo

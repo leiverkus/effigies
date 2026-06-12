@@ -151,7 +151,7 @@
     "title": "Texture Seam Leveling",
     "value": false,
     "type": "bool",
-    "help": "OpenMVS global+local seam leveling (colour harmonisation between views). OFF by default: OpenMVS 2.4.0's seam leveling corrupts texture patches on this (arm64/CPU) build — black patches with saturated borders in the texture and orthophoto. Enable only on a build where this is verified fixed. Default: %(default)s"
+    "help": "OpenMVS global+local seam leveling (colour harmonisation between views). OFF by default: it corrupts texture patches on this (arm64/CPU) build — black patches with saturated borders — verified broken in BOTH v2.4.0 and master (2026-06). Use the default exposure harmonisation instead (skip-color-harmonize to disable). Default: %(default)s"
   },
   {
     "name": "georeference",
