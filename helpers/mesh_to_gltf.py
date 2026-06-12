@@ -84,7 +84,23 @@ def _pad(b, fill=b"\x00"):
     return b + fill * ((4 - len(b) % 4) % 4)
 
 
-def write_glb(out_path, pos, uv, idx, tex_path):
+def _rtc_center(work):
+    """CESIUM_RTC center from georef_transform.json — the (x, y) offset the OBJ
+    vertices were shifted by. WebODM's ModelView translates the glTF scene by this
+    center to place the model next to the full-coordinate point cloud (exactly how
+    ODM's glb behaves). None for local-frame results."""
+    p = os.path.join(work, "georef_transform.json")
+    if not os.path.exists(p):
+        return None
+    tr = json.load(open(p))
+    crs = tr.get("crs")
+    if not crs or str(crs).lower() == "local":
+        return None
+    off = tr.get("offset", [0, 0, 0])
+    return [float(off[0]), float(off[1]), 0.0]
+
+
+def write_glb(out_path, pos, uv, idx, tex_path, rtc_center=None):
     pos_b, uv_b, idx_b = pos.tobytes(), uv.tobytes(), idx.tobytes()
     img_b = open(tex_path, "rb").read()
     mime = "image/png" if tex_path.lower().endswith(".png") else "image/jpeg"
@@ -95,6 +111,9 @@ def write_glb(out_path, pos, uv, idx, tex_path):
     gltf = {
         "asset": {"version": "2.0", "generator": "effigies"},
         "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
+        **({"extensionsUsed": ["CESIUM_RTC"],
+            "extensions": {"CESIUM_RTC": {"center": rtc_center}}}
+           if rtc_center else {}),
         "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "TEXCOORD_0": 1},
                                     "indices": 2, "material": 0}]}],
         "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0},
@@ -139,10 +158,12 @@ def main():
         return
     V, VT, faces, tex = parsed
     pos, uv, idx = _deindex(V, VT, faces)
+    rtc = _rtc_center(args.work)
     out = os.path.join(args.work, "odm_textured_model_geo.glb")
-    write_glb(out, pos, uv, idx, tex)
+    write_glb(out, pos, uv, idx, tex, rtc_center=rtc)
     print(f"[gltf] wrote {os.path.basename(out)} "
-          f"({len(pos)} verts, {len(idx)//3} tris, texture {os.path.basename(tex)})")
+          f"({len(pos)} verts, {len(idx)//3} tris, texture {os.path.basename(tex)}"
+          f"{', CESIUM_RTC ' + str([round(c,1) for c in rtc]) if rtc else ''})")
 
 
 if __name__ == "__main__":

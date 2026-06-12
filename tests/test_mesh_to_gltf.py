@@ -83,6 +83,31 @@ def test_writes_valid_glb():
     print("ok  mesh_to_gltf writes a well-formed binary glTF with an embedded texture")
 
 
+def test_georeferenced_glb_carries_cesium_rtc():
+    """With a georeferenced result, the glb must carry the CESIUM_RTC extension
+    (center = the 2D vertex offset) — WebODM's ModelView translates the scene by
+    it; without it the model lands at the UTM origin, kilometres from the cloud,
+    and the viewer shows nothing."""
+    import json as _json
+    with tempfile.TemporaryDirectory() as work:
+        _textured_obj(work, side=4)
+        _json.dump({"source": "colmap-exif", "crs": "EPSG:32632",
+                    "offset": [415706.7, 5958530.4, 0.0]},
+                   open(os.path.join(work, "georef_transform.json"), "w"))
+        argv = sys.argv
+        try:
+            sys.argv = ["mesh_to_gltf.py", "--work", work]
+            mg.main()
+        finally:
+            sys.argv = argv
+        js, _ = _read_glb(os.path.join(work, "odm_textured_model_geo.glb"))
+    assert "CESIUM_RTC" in js.get("extensionsUsed", []), js.get("extensionsUsed")
+    c = js["extensions"]["CESIUM_RTC"]["center"]
+    assert c[0] == 415706.7 and c[1] == 5958530.4 and c[2] == 0.0, c
+    print("ok  georeferenced glb carries CESIUM_RTC (WebODM model placement)")
+
+
 if __name__ == "__main__":
     test_writes_valid_glb()
+    test_georeferenced_glb_carries_cesium_rtc()
     print("\nall mesh_to_gltf tests passed")

@@ -53,13 +53,22 @@ def main():
     obj = find_mesh_obj(W)
     if obj:
         base = obj[:-4]
-        # Rename only the OBJ to WebODM's expected name; keep the .mtl and texture
-        # files under their original names so the OBJ's mtllib / the mtl's map_Kd
-        # references stay valid.
-        link_or_copy(os.path.join(W, obj),
-                     os.path.join(P, "odm_texturing", "odm_textured_model_geo.obj"))
+        # WebODM's legacy 3D model path loads odm_textured_model_geo.obj AND a
+        # .mtl explicitly named odm_textured_model_geo.mtl — so the OBJ copy gets
+        # its mtllib line rewritten and the .mtl is provided under that name.
+        # Texture files keep their original names (the .mtl's map_Kd references).
+        dst_obj = os.path.join(P, "odm_texturing", "odm_textured_model_geo.obj")
+        os.makedirs(os.path.dirname(dst_obj), exist_ok=True)
+        with open(os.path.join(W, obj), "r", errors="ignore") as fin, \
+             open(dst_obj, "w") as fout:
+            for line in fin:
+                if line.startswith("mtllib"):
+                    fout.write("mtllib odm_textured_model_geo.mtl\n")
+                else:
+                    fout.write(line)
+        print(f"[map] {os.path.join(W, obj)} -> {dst_obj} (mtllib rewritten)")
         link_or_copy(os.path.join(W, base + ".mtl"),
-                     os.path.join(P, "odm_texturing", base + ".mtl"))
+                     os.path.join(P, "odm_texturing", "odm_textured_model_geo.mtl"))
         for ext in (".png", ".jpg", ".jpeg"):
             for tex in glob.glob(os.path.join(W, base + "*" + ext)):
                 link_or_copy(tex, os.path.join(P, "odm_texturing", os.path.basename(tex)))
@@ -93,6 +102,12 @@ def main():
     ortho = os.path.join(W, "odm_orthophoto.tif")
     if os.path.exists(ortho):
         link_or_copy(ortho, os.path.join(P, "odm_orthophoto", "odm_orthophoto.tif"))
+
+    # 2c2. coords.txt -> odm_georeferencing/ (WebODM's 3D viewer reads the offset
+    #      from line 2 to place the textured model next to the point cloud)
+    coords = os.path.join(W, "coords.txt")
+    if os.path.exists(coords):
+        link_or_copy(coords, os.path.join(P, "odm_georeferencing", "coords.txt"))
 
     # 2d. camera assets — cameras.json (project root) + shots.geojson (odm_report/)
     cams = os.path.join(W, "cameras.json")

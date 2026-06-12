@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `texture-color-harmonize` (on by default).
 
 ### Fixed
+- **3D model invisible in WebODM's viewer.** Three missing pieces of the ODM
+  contract, all fixed: (1) the glb now carries the **`CESIUM_RTC`** extension
+  (center = the vertex offset) — WebODM's ModelView translates the glTF scene by
+  it, and without it our model sat at the UTM origin, kilometres away from the
+  point cloud; (2) the georef float-precision offset is now **2D (x/y only, ODM's
+  convention)** so model Z stays absolute and aligns vertically with the
+  full-coordinate cloud (the viewer translates by x/y only); (3) ODM-compatible
+  **`odm_georeferencing/coords.txt`** is written (the viewer reads the offset from
+  line 2), and the legacy OBJ path works too (`odm_textured_model_geo.mtl`
+  provided under the exact name the viewer requests, OBJ `mtllib` rewritten).
 - **NodeODM crashed on numeric task options ("&lt;uuid&gt; not found" in WebODM).**
   Upstream NodeODM PR #268 (2026-04-30) introduced `shQuote()`, which calls
   `s.replace()` on every option value — numeric options (e.g. `cpu-threads: 12`)

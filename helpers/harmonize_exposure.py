@@ -91,10 +91,11 @@ def solve_gains(oi, op, oc, n_img, iters=25):
         logg = np.zeros((n_img, 3))
         np.add.at(logg, oi, logc - loga[op])
         logg /= img_cnt
-    # images with too few samples keep gain 1; normalise geometric mean to 1
+    # normalise geometric mean (over well-sampled images) to 1, THEN pin
+    # under-sampled images to exactly gain 1 — they must stay untouched.
     weak = (np.bincount(oi, minlength=n_img) < MIN_OBS_PER_IMAGE)
-    logg[weak] = 0.0
     logg -= logg[~weak].mean(0) if (~weak).any() else 0.0
+    logg[weak] = 0.0
     return np.clip(np.exp(logg), GAIN_MIN, GAIN_MAX)
 
 

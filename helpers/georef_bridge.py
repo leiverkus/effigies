@@ -333,6 +333,30 @@ def exif_correspondences(model_dir, images_dir, target_crs):
     return np.array(local_list), np.array(world_list), epsg
 
 
+def _xy_offset(world):
+    """2D (x, y, 0) float-precision offset — ODM's convention. Only easting and
+    northing are large enough to break float32 vertex precision; Z stays ABSOLUTE
+    in the OBJ/glTF so the model aligns vertically with the (full-coordinate)
+    point cloud in viewers that translate by x/y only (WebODM's ModelView)."""
+    off = world.mean(0).astype(float)
+    off[2] = 0.0
+    return off
+
+
+def write_coords_txt(work, offset, crs):
+    """ODM-compatible odm_georeferencing/coords.txt: line 1 a CRS description,
+    line 2 'easting northing'. WebODM's 3D viewer reads line 2 to place the
+    (offset-subtracted) textured model next to the full-coordinate point cloud."""
+    desc = str(crs)
+    m = str(crs).upper().replace("EPSG:", "")
+    if m.isdigit() and (m.startswith("326") or m.startswith("327")):
+        desc = f"WGS84 UTM {int(m[3:])}{'N' if m.startswith('326') else 'S'}"
+    p = os.path.join(work, "coords.txt")
+    with open(p, "w") as f:
+        f.write(f"{desc}\n{offset[0]:.6f} {offset[1]:.6f}\n")
+    print(f"[georef] wrote coords.txt ({desc}, offset {offset[0]:.1f} {offset[1]:.1f})")
+
+
 # ---------------------------------------------------------------------------
 # Apply transform to the textured OBJ (offset-subtracted to keep float precision)
 # ---------------------------------------------------------------------------
@@ -422,19 +446,21 @@ def main():
                 crs_header, entries = parse_gcp_list(args.gcp)
                 local, world = gcp_correspondences(model_dir, entries)
                 s, R, t = umeyama_similarity(local, world)
-                offset = world.mean(0)
+                offset = _xy_offset(world)
                 crs = args.crs if args.crs not in ("auto", "") else crs_header
                 apply_to_obj(args.work, s, R, t, offset)
                 write({"source": "colmap-gcp", "s": s, "R": R.tolist(),
                        "t": t.tolist(), "offset": offset.tolist(), "crs": crs})
+                write_coords_txt(args.work, offset, crs)
                 return
             else:  # exif
                 local, world, epsg = exif_correspondences(model_dir, args.images, args.crs)
                 s, R, t = umeyama_similarity(local, world)
-                offset = world.mean(0)
+                offset = _xy_offset(world)
                 apply_to_obj(args.work, s, R, t, offset)
                 write({"source": "colmap-exif", "s": s, "R": R.tolist(),
                        "t": t.tolist(), "offset": offset.tolist(), "crs": epsg})
+                write_coords_txt(args.work, offset, epsg)
                 return
         except Exception as e:
             last_err = e

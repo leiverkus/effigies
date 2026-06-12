@@ -117,6 +117,25 @@ def test_none_mode_keeps_local():
         print("ok  none mode keeps local frame")
 
 
+def test_xy_offset_and_coords_txt():
+    """The float-precision offset is 2D (ODM convention): x/y only, Z stays
+    absolute so the model aligns vertically with the full-coordinate cloud in
+    WebODM's viewer (it translates by x/y only). coords.txt carries the offset
+    on line 2 for the viewer."""
+    world = np.array([[415700.0, 5958500.0, 210.0],
+                      [415720.0, 5958540.0, 214.0]])
+    off = gb._xy_offset(world)
+    assert off[0] == 415710.0 and off[1] == 5958520.0, off
+    assert off[2] == 0.0, f"offset must be 2D (z=0), got {off}"
+    with tempfile.TemporaryDirectory() as d:
+        gb.write_coords_txt(d, off, "EPSG:32632")
+        lines = open(os.path.join(d, "coords.txt")).read().splitlines()
+    assert lines[0] == "WGS84 UTM 32N", lines
+    x, y = map(float, lines[1].split())
+    assert (x, y) == (415710.0, 5958520.0), lines
+    print("ok  2D offset (z=0) + ODM-compatible coords.txt")
+
+
 def test_camera_centers_survive_empty_points2d():
     """Regression: an image registered with NO observed 3D points has an EMPTY
     points2D line in images.txt. read_colmap_camera_centers must not drop blank
@@ -143,5 +162,6 @@ if __name__ == "__main__":
     test_quat_identity()
     test_gcp_path_recovers_scale()
     test_none_mode_keeps_local()
+    test_xy_offset_and_coords_txt()
     test_camera_centers_survive_empty_points2d()
     print("\nall georef tests passed")
