@@ -106,9 +106,10 @@ kept** (24.04 dropped it). Facts worth keeping:
 - [~] **Orthophoto from the textured mesh.** `helpers/orthophoto.py` nadir-
       rasterises the refined textured mesh into a georeferenced GeoTIFF
       (`odm_orthophoto/odm_orthophoto.tif`), so the ortho inherits RefineMesh
-      detail. Open: vectorise the per-face rasteriser (a Python loop today — fine
-      for typical meshes, minutes for very large ones); optional DSM/DTM output
-      and true-ortho occlusion handling.
+      detail. Rasteriser is batch-vectorised (small-triangle size classes in one
+      numpy pass each, z-buffer conflicts via lexsort; ~10x vs the per-face loop,
+      pixel-identical). Open: optional DSM/DTM output and true-ortho occlusion
+      handling.
 - [~] **Benchmark suite** comparing Effigies output against stock ODM /
       Metashape / RealityCapture on shared datasets (mesh density, photometric
       error, runtime). Scaffolded: `scripts/benchmark.sh` (per-stage runtime +

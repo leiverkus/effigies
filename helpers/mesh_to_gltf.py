@@ -89,10 +89,33 @@ def _parse_obj(path):
 def _deindex(V, VT, faces, n_mats):
     """OBJ has independent vertex/texcoord indices; glTF needs one index stream.
     Build unique (vertex, texcoord) pairs (shared across materials) and
-    fan-triangulate into ONE index array per material slot."""
+    fan-triangulate into ONE index array per material slot.
+
+    Fast path: OpenMVS emits pure triangles, so the unique-pair mapping is done
+    with one np.unique over packed (vertex, texcoord) keys instead of a Python
+    dict loop (the loop is kept as fallback for polygonal OBJs)."""
+    nv, nvt = len(V), len(VT)
+    if faces and all(len(f[0]) == 3 for f in faces):
+        FV = np.asarray([f[0] for f in faces], np.int64)
+        FVT = np.asarray([f[1] for f in faces], np.int64)
+        FM = np.asarray([f[2] for f in faces], np.int64)
+        FV = np.where(FV > 0, FV - 1, nv + FV)
+        FVT = np.where(FVT > 0, FVT - 1, np.where(FVT == 0, -1, nvt + FVT))
+        keys = FV * (nvt + 1) + (FVT + 1)         # unique (vi, vti) pairing
+        uniq, inv = np.unique(keys.reshape(-1), return_inverse=True)
+        uvi = uniq // (nvt + 1)
+        uvt = uniq % (nvt + 1) - 1
+        pos = V[uvi].astype(np.float32)
+        uv = np.zeros((len(uniq), 2), np.float32)
+        has = uvt >= 0
+        uv[has, 0] = VT[uvt[has], 0]
+        uv[has, 1] = 1.0 - VT[uvt[has], 1]        # glTF texcoord origin top-left
+        uv[~has, 1] = 1.0                          # matches the (0, 1-0) fallback
+        tri_idx = inv.reshape(-1, 3).astype(np.uint32)
+        return pos, uv, [tri_idx[FM == m].reshape(-1) for m in range(n_mats)]
+    # fallback: arbitrary polygons, dict-based
     pos, uv, seen = [], [], {}
     idx = [[] for _ in range(n_mats)]
-    nv, nvt = len(V), len(VT)
     for vi, vti, m in faces:
         vi = [(i - 1) if i > 0 else (nv + i) for i in vi]
         vti = [((i - 1) if i > 0 else (nvt + i)) if i != 0 else -1 for i in vti]

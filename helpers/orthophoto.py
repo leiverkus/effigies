@@ -18,8 +18,8 @@ How it works:
   3. Write a 4-band (RGB + alpha) GeoTIFF, georeferenced by adding the offset back.
 
 Dependencies: numpy, Pillow (texture), GDAL python bindings (osgeo) for the TIFF.
-Pure-CPU; one Python loop over faces (fine for typical meshes, minutes for very
-large ones — a later optimisation, noted in the ROADMAP).
+Pure-CPU; small triangles (the vast majority) are rasterised in batched numpy
+passes per size class, large ones in a fallback loop.
 """
 import argparse
 import glob
@@ -126,38 +126,123 @@ def rasterize(V, VT, TV, TVT, TM, textures, gsd):
     # vertex -> pixel-centre coordinates (north up: row grows southward)
     px = (V[:, 0] - xmin) / gsd
     py = (ymax - V[:, 1]) / gsd
-    for t in range(len(TV)):
-        a, b, c = TV[t]
-        x0, y0 = px[a], py[a]; x1, y1 = px[b], py[b]; x2, y2 = px[c], py[c]
-        c0, c1 = int(math.floor(min(x0, x1, x2))), int(math.ceil(max(x0, x1, x2)))
-        r0, r1 = int(math.floor(min(y0, y1, y2))), int(math.ceil(max(y0, y1, y2)))
-        c0 = max(c0, 0); r0 = max(r0, 0); c1 = min(c1, W); r1 = min(r1, H)
-        if c1 <= c0 or r1 <= r0:
-            continue
-        area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
-        if abs(area) < 1e-12:
-            continue
-        gx, gy = np.meshgrid(np.arange(c0, c1) + 0.5, np.arange(r0, r1) + 0.5)
+
+    # Per-triangle precomputation, fully vectorised: corner coords, bboxes,
+    # signed areas, validity cull. The per-triangle loop then runs only over
+    # surviving triangles and reads plain Python floats (lists) — numpy scalar
+    # indexing per iteration is what made the previous version ~3x slower.
+    X = px[TV]; Y = py[TV]                       # [T,3] pixel coords
+    Zt = V[:, 2][TV]                             # [T,3] heights
+    C0 = np.maximum(np.floor(X.min(1)).astype(np.int64), 0)
+    C1 = np.minimum(np.ceil(X.max(1)).astype(np.int64), W)
+    R0 = np.maximum(np.floor(Y.min(1)).astype(np.int64), 0)
+    R1 = np.minimum(np.ceil(Y.max(1)).astype(np.int64), H)
+    AREA = ((X[:, 1] - X[:, 0]) * (Y[:, 2] - Y[:, 0])
+            - (X[:, 2] - X[:, 0]) * (Y[:, 1] - Y[:, 0]))
+    valid = (C1 > C0) & (R1 > R0) & (np.abs(AREA) > 1e-12) & (TVT.min(1) >= 0)
+    survivors = np.nonzero(valid)[0]
+
+    # --- batched path for small triangles (the vast majority at any sane GSD) --
+    # Process all triangles whose bbox fits k x k in ONE vectorised pass per
+    # (texture page, size class): barycentrics for the whole batch, candidate
+    # pixels flattened, and the z-buffer conflict inside a batch resolved by a
+    # lexsort picking, per pixel, the max z (ties: lowest triangle index — the
+    # same winner the sequential loop produces with its strict z > test).
+    Usafe = VT[:, 0][np.where(TVT >= 0, TVT, 0)]
+    Vsafe = VT[:, 1][np.where(TVT >= 0, TVT, 0)]
+    BW = C1 - C0; BH = R1 - R0
+    zflat = zbuf.reshape(-1); rgbflat = rgb.reshape(-1, 3); aflat = alpha.reshape(-1)
+    done = np.zeros(len(TV), bool)
+    for k in (2, 4, 8, 16, 32):
+        chunk = max(2000, int(3e8 // (48 * k * k)))      # ~300 MB working set
+        sel_k = survivors[(BW[survivors] <= k) & (BH[survivors] <= k)
+                          & ~done[survivors]]
+        done[sel_k] = True
+        dr = np.arange(k)[None, :, None]                  # [1,k,1] row offsets
+        dc = np.arange(k)[None, None, :]                  # [1,1,k] col offsets
+        for m in range(len(textures)):
+            sel_m = sel_k[TM[sel_k] == m]
+            tex = textures[m]; Ht, Wt = tex.shape[:2]
+            for s in range(0, len(sel_m), chunk):
+                tt = sel_m[s:s + chunk]
+                if not len(tt):
+                    continue
+                r0 = R0[tt][:, None, None]; c0 = C0[tt][:, None, None]
+                rr = r0 + dr; cc = c0 + dc                # [B,k,k]
+                inwin = (rr < R1[tt][:, None, None]) & (cc < C1[tt][:, None, None])
+                gx = cc + 0.5; gy = rr + 0.5
+                x0 = X[tt, 0][:, None, None]; x1 = X[tt, 1][:, None, None]; x2 = X[tt, 2][:, None, None]
+                y0 = Y[tt, 0][:, None, None]; y1 = Y[tt, 1][:, None, None]; y2 = Y[tt, 2][:, None, None]
+                ar = AREA[tt][:, None, None]
+                l0 = ((x1 - gx) * (y2 - gy) - (x2 - gx) * (y1 - gy)) / ar
+                l1 = ((x2 - gx) * (y0 - gy) - (x0 - gx) * (y2 - gy)) / ar
+                l2 = 1.0 - l0 - l1
+                cand = inwin & (l0 >= 0) & (l1 >= 0) & (l2 >= 0)
+                if not cand.any():
+                    continue
+                z = (l0 * Zt[tt, 0][:, None, None] + l1 * Zt[tt, 1][:, None, None]
+                     + l2 * Zt[tt, 2][:, None, None])
+                u = (l0 * Usafe[tt, 0][:, None, None] + l1 * Usafe[tt, 1][:, None, None]
+                     + l2 * Usafe[tt, 2][:, None, None])
+                v = (l0 * Vsafe[tt, 0][:, None, None] + l1 * Vsafe[tt, 1][:, None, None]
+                     + l2 * Vsafe[tt, 2][:, None, None])
+                pix = (rr * W + cc)[cand]
+                zc = z[cand]
+                tric = np.broadcast_to(np.arange(len(tt))[:, None, None], cand.shape)[cand]
+                # per-pixel winner: sort by (pix, z asc, tri desc) -> last of each
+                # pix run = max z, ties resolved to the LOWEST triangle index
+                order = np.lexsort((-tric, zc, pix))
+                pix_o = pix[order]
+                last = np.r_[pix_o[1:] != pix_o[:-1], True]
+                wsel = order[last]
+                beats = zc[wsel] > zflat[pix[wsel]]
+                wsel = wsel[beats]
+                if not len(wsel):
+                    continue
+                p = pix[wsel]
+                tx = np.clip((u[cand][wsel] * (Wt - 1)).astype(np.int64), 0, Wt - 1)
+                ty = np.clip(((1.0 - v[cand][wsel]) * (Ht - 1)).astype(np.int64), 0, Ht - 1)
+                zflat[p] = zc[wsel]
+                rgbflat[p] = tex[ty, tx]
+                aflat[p] = 255
+    survivors = survivors[~done[survivors]]               # big triangles -> loop
+    # texcoords per corner (rows for invalid tris contain garbage; never read)
+    Usafe = VT[:, 0][np.where(TVT >= 0, TVT, 0)]
+    Vsafe = VT[:, 1][np.where(TVT >= 0, TVT, 0)]
+    Xl, Yl, Zl = X.tolist(), Y.tolist(), Zt.tolist()
+    Ul, Vl = Usafe.tolist(), Vsafe.tolist()
+    C0l, C1l, R0l, R1l = C0.tolist(), C1.tolist(), R0.tolist(), R1.tolist()
+    AREAl, TMl = AREA.tolist(), TM.tolist()
+    # pixel-centre coordinate axes, sliced per bbox instead of meshgrid-per-tri
+    colc = np.arange(W, dtype=np.float64) + 0.5
+    rowc = np.arange(H, dtype=np.float64) + 0.5
+    tex_dims = [(t.shape[0], t.shape[1]) for t in textures]
+
+    for t in survivors.tolist():
+        x0, x1, x2 = Xl[t]; y0, y1, y2 = Yl[t]
+        c0, c1, r0, r1 = C0l[t], C1l[t], R0l[t], R1l[t]
+        area = AREAl[t]
+        gx = colc[c0:c1][None, :]                # [1,w] broadcasts against [h,1]
+        gy = rowc[r0:r1][:, None]
         l0 = ((x1 - gx) * (y2 - gy) - (x2 - gx) * (y1 - gy)) / area
         l1 = ((x2 - gx) * (y0 - gy) - (x0 - gx) * (y2 - gy)) / area
         l2 = 1.0 - l0 - l1
         inside = (l0 >= 0) & (l1 >= 0) & (l2 >= 0)
         if not inside.any():
             continue
-        z = l0 * V[a, 2] + l1 * V[b, 2] + l2 * V[c, 2]
+        z0, z1, z2 = Zl[t]
+        z = l0 * z0 + l1 * z1 + l2 * z2
         sub = zbuf[r0:r1, c0:c1]
         win = inside & (z > sub)
         if not win.any():
             continue
-        tva, tvb, tvc = TVT[t]
-        if tva < 0 or tvb < 0 or tvc < 0:
-            continue
-        tex = textures[TM[t]]                 # this triangle's atlas page
-        Ht, Wt = tex.shape[:2]
-        u = l0 * VT[tva, 0] + l1 * VT[tvb, 0] + l2 * VT[tvc, 0]
-        v = l0 * VT[tva, 1] + l1 * VT[tvb, 1] + l2 * VT[tvc, 1]
+        tex = textures[TMl[t]]                   # this triangle's atlas page
+        Ht, Wt = tex_dims[TMl[t]]
+        u0, u1, u2 = Ul[t]; v0, v1, v2 = Vl[t]
+        u = l0 * u0 + l1 * u1 + l2 * u2
+        v = l0 * v0 + l1 * v1 + l2 * v2
         tx = np.clip((u * (Wt - 1)).astype(np.int64), 0, Wt - 1)
-        ty = np.clip(((1.0 - v) * (Ht - 1)).astype(np.int64), 0, Ht - 1)  # OBJ v is bottom-up
+        ty = np.clip(((1.0 - v) * (Ht - 1)).astype(np.int64), 0, Ht - 1)  # OBJ v bottom-up
         rr, cc = np.nonzero(win)
         rgb[r0 + rr, c0 + cc] = tex[ty[win], tx[win]]
         alpha[r0 + rr, c0 + cc] = 255
