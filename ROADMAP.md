@@ -144,7 +144,10 @@ kept** (24.04 dropped it). Facts worth keeping:
       comparison against stock ODM / Metashape / RealityCapture on shared datasets.
       No prior study benchmarks COLMAP + OpenMVS *with RefineMesh* against the
       commercial tools, so this is a publishable contribution, not just an internal
-      check.
+      check. Two queued single-variable experiments (watertightness via
+      `mesh-close-holes`, and densify-resolution vs. runtime) are specified
+      against a shared baseline run in
+      [docs/planned-experiments.md](docs/planned-experiments.md).
 
 ## v1.0.0 — Production
 
