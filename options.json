@@ -147,6 +147,13 @@
     "help": "Skip the per-image exposure/colour equalisation before texturing. By default one RGB gain per image (estimated from the sparse-point observations) is applied to the undistorted images, so the texture atlas and orthophoto are assembled from photometrically consistent photos — it replaces OpenMVS seam leveling, which is corrupted on this build. Default: %(default)s"
   },
   {
+    "name": "skip-seam-smoothing",
+    "title": "Skip Texture Seam Smoothing",
+    "value": false,
+    "type": "bool",
+    "help": "Skip Effigies' own seam leveling: by default, colours are equalised across texture-patch seams (sampled inset from each side, screened-Poisson diffusion into the patch interiors, baked into the atlas) — replaces OpenMVS's corrupted seam leveling. Default: %(default)s"
+  },
+  {
     "name": "texture-seam-leveling",
     "title": "Texture Seam Leveling",
     "value": false,

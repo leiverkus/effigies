@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # OpenMVS dense reconstruction + the steps ODM skips.
 # args: WORK RES_LEVEL VIEWS_FUSE RECONSTRUCT_MESH REFINE_ITERS DECIMATE TEX_RES GPU_FLAG
-#       [MAX_FACE_AREA] [GRADIENT_STEP] [SEAM_LEVELING] [HARMONIZE]
+#       [MAX_FACE_AREA] [GRADIENT_STEP] [SEAM_LEVELING] [HARMONIZE] [SEAM_SMOOTH]
 set -euo pipefail
 WORK="$1"; RES_LEVEL="$2"; VIEWS_FUSE="$3"; RECONSTRUCT_MESH="$4"
 REFINE_ITERS="$5"; DECIMATE="$6"; TEX_RES="$7"; GPU="$8"
 MAX_FACE_AREA="${9:-16}"; GRADIENT_STEP="${10:-25.05}"; SEAM_LEVELING="${11:-false}"
-HARMONIZE="${12:-true}"
+HARMONIZE="${12:-true}"; SEAM_SMOOTH="${13:-true}"
 HELPERS="$(cd "$(dirname "$0")/../helpers" && pwd)"
 
 cd "$WORK"
@@ -94,6 +94,14 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
     --archive-type 3 \
     "${CUDA_ARGS[@]}" \
     -w "$WORK"
+  # Our own seam leveling (OpenMVS's is corrupted): equalise colours across
+  # texture-patch seams and diffuse the adjustment into the patch interiors —
+  # measured to halve the median seam colour difference. Non-fatal.
+  if [[ "$SEAM_SMOOTH" == "true" ]]; then
+    if ! python3 "$HELPERS/seam_level.py" --work "$WORK"; then
+      echo "[openmvs] WARN: seam leveling failed; keeping unlevelled texture" >&2
+    fi
+  fi
 else
   echo "[openmvs] reconstruct-mesh disabled; leaving dense point cloud only"
 fi

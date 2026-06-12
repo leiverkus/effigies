@@ -40,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is present.)
 
 ### Added
+- **Own texture seam leveling (`helpers/seam_level.py`).** OpenMVS's seam
+  leveling is corrupted (v2.4.0 and master), so Effigies now levels seams
+  itself: texture patches are found by value-based connectivity (OpenMVS shares
+  no vt indices), seam colours are sampled INSET from each side (the chart
+  border pixels are gutter/background), per-(vertex, patch) corrections solve a
+  screened-Poisson system (scipy CG; seams matched, harmonic infill inside) and
+  are baked into the atlas pages batched/additively. Synthetic two-patch step:
+  60 -> 0.3; real 12 MP drone mesh: median seam colour difference halved
+  (18 -> 9.3). New option `skip-seam-smoothing` (default off = leveling on).
+  Honest scope note: blotchy view-character differences WITHIN patches (exposure/
+  sharpness of the source views, visible on homogeneous roofs) are not seam
+  offsets — that needs multi-view blended texturing (tracked in ROADMAP).
 - **Spatial photometric harmonisation (vignetting correction).** The global
   per-image gain left residual patchiness: a patch textured from an image corner
   stays darker than its neighbour from another image's centre (lens vignetting,

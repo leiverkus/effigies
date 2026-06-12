@@ -26,6 +26,7 @@ declare -A OPT=(
   [texture-resolution]=8192
   [texture-seam-leveling]=false
   [skip-color-harmonize]=false
+  [skip-seam-smoothing]=false
   [cpu-threads]=4
   [cpu-match-block]=10
   [crs]=auto
@@ -155,7 +156,8 @@ bash "$(dirname "$0")/pipeline/dense_openmvs.sh" \
      "${OPT[refine-max-face-area]}" \
      "${OPT[refine-gradient-step]}" \
      "${OPT[texture-seam-leveling]}" \
-     "$([[ "${OPT[skip-color-harmonize]}" == "true" ]] && echo false || echo true)"
+     "$([[ "${OPT[skip-color-harmonize]}" == "true" ]] && echo false || echo true)" \
+     "$([[ "${OPT[skip-seam-smoothing]}" == "true" ]] && echo false || echo true)"
 
 # ---------------------------------------------------------------------------
 # 4. Georeferencing bridge  (local SfM frame -> projected CRS)
