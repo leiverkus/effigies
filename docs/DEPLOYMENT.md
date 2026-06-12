@@ -34,11 +34,18 @@ WebODM reaches its processing nodes by **container name on its Docker network**
 (`webodm_default`). Start Effigies there with a stable name and the NodeODM port:
 
 ```bash
+docker volume create effigies_data   # once: persists NodeODM task state
 docker run -d --name effigies-1 \
   --network webodm_default \
   --restart unless-stopped \
+  -v effigies_data:/opt/NodeODM/data \
   effigies:cpu
 ```
+
+> The volume matters: NodeODM keeps its tasks in `/opt/NodeODM/data` **inside the
+> container**. Without it, every image update / container recreate wipes the task
+> store and WebODM's existing tasks fail with "`<uuid> not found`" on the node —
+> they must then be restarted (re-upload) as new tasks.
 
 Then in WebODM: **Processing Nodes → Add Node**
 - Hostname: `effigies-1`
