@@ -170,11 +170,15 @@ RealityScan out-of-core **components**, and ODM's own **split-merge**
       mechanism: `/options` is static, so the engine adapts at runtime, not the
       (un-modifiable) dialog. The deeper levers (`number-views-fuse`, tiling)
       remain manual / below.
-- [ ] **Blend/seams streaming refactor (precondition).** `helpers/texture_blend.py`
-      currently loads *all* undistorted images and renders one depth map per
-      image — a memory/time bottleneck of our own making at 900 images. Process
-      views in batches; cap the depth-map set regionally per face. Must land
-      before tiling, or our own texture-quality stage becomes the wall.
+- [ ] **Blend streaming refactor (precondition).** `helpers/texture_blend.py`
+      has three image-count-scaling memory consumers (dense `[faces×views]`
+      weight matrix ~29 GB, all source images in RAM ~32 GB, all depth maps held
+      at once) — a wall of our own making at 900 images. Fix: streaming top-K
+      view selection (depth maps rendered on the fly) + a view-major bake (one
+      image resident at a time). `seam_level.py` is *not* affected (it scales with
+      atlas + mesh, not image count). Full design with measured slopes and a
+      phased plan in [docs/blend-streaming-plan.md](docs/blend-streaming-plan.md).
+      Must land before tiling, or our own texture-quality stage becomes the wall.
 - [ ] **Split-merge tiling.** Spatially partition the images by GPS (with
       overlap), run the full Effigies chain per tile, and merge mesh / cloud /
       orthophoto in a shared coordinate frame. The open-source analogue of
