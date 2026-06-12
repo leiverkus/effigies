@@ -124,6 +124,21 @@
     "help": "COLMAP exhaustive-matcher block size on the CPU path. The default FLANN matcher segfaults at large blocks on some hosts (arm64); 10 is safe. Raise cautiously for speed on x86. Ignored on GPU. Default: %(default)s"
   },
   {
+    "name": "free-space-support",
+    "title": "Mesh: Free-Space Support",
+    "value": false,
+    "type": "bool",
+    "help": "OpenMVS ReconstructMesh --free-space-support: use visibility rays to recover weakly-supported surfaces (building walls seen only at grazing angles in nadir flights, textureless areas). Off by OpenMVS default; enable for facades. Default: %(default)s"
+  },
+  {
+    "name": "mesh-close-holes",
+    "title": "Mesh: Close Holes (faces)",
+    "value": "30",
+    "domain": "positive integer",
+    "type": "int",
+    "help": "OpenMVS ReconstructMesh --close-holes: maximum hole size (in faces) to close in the reconstructed mesh. The default 30 closes only small gaps; raise (e.g. 300) to bridge missing facades Metashape-style — bridged areas carry interpolated geometry, not real reconstruction. Default: %(default)s"
+  },
+  {
     "name": "mesh-decimate",
     "title": "Mesh Decimation Factor",
     "value": "1.0",

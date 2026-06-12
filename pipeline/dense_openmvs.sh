@@ -8,6 +8,7 @@ WORK="$1"; RES_LEVEL="$2"; VIEWS_FUSE="$3"; RECONSTRUCT_MESH="$4"
 REFINE_ITERS="$5"; DECIMATE="$6"; TEX_RES="$7"; GPU="$8"
 MAX_FACE_AREA="${9:-16}"; GRADIENT_STEP="${10:-25.05}"; SEAM_LEVELING="${11:-false}"
 HARMONIZE="${12:-true}"; SEAM_SMOOTH="${13:-true}"; VIEW_BLEND="${14:-true}"
+FREE_SPACE="${15:-false}"; CLOSE_HOLES="${16:-30}"
 HELPERS="$(cd "$(dirname "$0")/../helpers" && pwd)"
 
 cd "$WORK"
@@ -36,8 +37,11 @@ MESH_INPUT="scene_dense.mvs"
 
 if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
   echo "[openmvs] ReconstructMesh  (ODM skips this)"
+  FSS=0; [[ "$FREE_SPACE" == "true" ]] && FSS=1
   ReconstructMesh "$MESH_INPUT" \
     --decimate "$DECIMATE" \
+    --free-space-support "$FSS" \
+    --close-holes "$CLOSE_HOLES" \
     --archive-type 3 \
     "${CUDA_ARGS[@]}" \
     -w "$WORK"
