@@ -35,12 +35,21 @@ WebODM reaches its processing nodes by **container name on its Docker network**
 
 ```bash
 docker volume create effigies_data   # once: persists NodeODM task state
-docker run -d --name effigies-1 \
+docker run -d --name effigies-1 --init \
   --network webodm_default \
   --restart unless-stopped \
   -v effigies_data:/opt/NodeODM/data \
   effigies:cpu
 ```
+
+> `--init` matters: NodeODM (node as PID 1) does not reap child processes. Without
+> an init, a killed engine run leaves zombie processes and NodeODM may never
+> notice the task died — it hangs as "running" in WebODM.
+>
+> **Watch the Docker VM's disk.** A full-resolution run needs roughly 10–15 GB of
+> transient space (undistorted images, depth maps); image build caches eat tens of
+> GB more (`docker builder prune`). A full disk kills the engine mid-densify with
+> no clearer symptom than dead/zombie processes.
 
 > The volume matters: NodeODM keeps its tasks in `/opt/NodeODM/data` **inside the
 > container**. Without it, every image update / container recreate wipes the task
