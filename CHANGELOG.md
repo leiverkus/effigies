@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is present.)
 
 ### Added
+- **Workdir auto-cleanup after each run (`keep-workdir` to disable).** A full-res
+  run leaves ~6-8 GB of intermediates (depth maps, undistorted images, mesh
+  snapshots) in the task workdir; with the persistent task volume that exhausted
+  the Docker disk after a handful of runs and killed running tasks mid-densify
+  (observed twice). The engine now deletes its intermediates at the end of a
+  successful run; delivered assets (hard links/copies) and the small text
+  diagnostics (georef transform, coords, sparse text model) are kept.
 - **Facade/wall recovery levers exposed: `free-space-support` + `mesh-close-holes`.**
   Nadir flights see walls only at grazing angles; with few wall points OpenMVS'
   graph-cut carves facades away (holes), while Metashape's default interpolation

@@ -232,5 +232,12 @@
     "value": false,
     "type": "bool",
     "help": "Force CPU processing even when a CUDA GPU is available. Without this flag the engine uses the GPU when present and falls back to CPU automatically (with a warning) when not. Default: %(default)s"
+  },
+  {
+    "name": "keep-workdir",
+    "title": "Keep Workdir Intermediates",
+    "value": false,
+    "type": "bool",
+    "help": "Keep the engine's intermediate working data (depth maps, undistorted images, mesh snapshots, ~6-8 GB per full-res run) after the task finishes. By default they are cleaned at the end of the run — the delivered assets are unaffected — because a persistent task volume otherwise fills the disk after a few runs. Default: %(default)s"
   }
 ]

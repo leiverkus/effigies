@@ -38,6 +38,7 @@ declare -A OPT=(
   [skip-orthophoto]=false
   [orthophoto-resolution]=auto
   [no-gpu]=false
+  [keep-workdir]=false
   [project-path]=""
 )
 
@@ -242,5 +243,19 @@ fi
 progress 98
 python3 "$(dirname "$0")/helpers/map_outputs.py" --proj "$PROJ" --work "$WORK"
 progress 99
+
+# ---------------------------------------------------------------------------
+# 7. Clean the heavy intermediates. A full-res run leaves ~6-8 GB of depth maps,
+#    undistorted images and mesh snapshots in $WORK; with a persistent task
+#    volume that exhausts the disk after a handful of runs (observed twice).
+#    The mapped assets are hard links/copies under $PROJ and stay intact. Kept:
+#    the small text outputs (georef_transform.json, coords.txt, sparse/0 text
+#    model) for diagnostics/benchmarks. --keep-workdir disables the cleanup.
+# ---------------------------------------------------------------------------
+if [[ "${OPT[keep-workdir]}" != "true" ]]; then
+  echo "[effigies] cleaning intermediate workdir data (use --keep-workdir to keep)"
+  rm -rf "$WORK/dense" "$WORK/entwine_pointcloud_tmp" 2>/dev/null || true
+  rm -f "$WORK"/depth*.dmap "$WORK"/depth*.dmap.tmp "$WORK"/*.log         "$WORK"/scene.mvs "$WORK"/scene_dense.mvs "$WORK"/scene_dense.ply         "$WORK"/scene_dense_mesh.mvs "$WORK"/scene_dense_mesh.ply         "$WORK"/scene_dense_mesh_refine.mvs "$WORK"/scene_dense_mesh_refine.ply         "$WORK"/database.db "$WORK"/database.db-shm "$WORK"/database.db-wal         2>/dev/null || true
+fi
 
 echo "[effigies] done."
