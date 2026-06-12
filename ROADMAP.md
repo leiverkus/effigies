@@ -162,11 +162,14 @@ partitioning — Metashape **chunks** + tiled model + network processing,
 RealityScan out-of-core **components**, and ODM's own **split-merge**
 (`--split` / `--split-overlap` submodels merged via GPS/GCP).
 
-- [ ] **Mitigations available now (no new code), documented as the ≤~300 path:**
-      `matcher=vocab_tree` (baked FAISS tree, O(n·k)) or `spatial` (GPS) instead
-      of exhaustive; `mapper=global` (GLOMAP) for the large block;
-      `densify-resolution-level 1` and higher `number-views-fuse` to bound the
-      point cloud and the Delaunay RAM.
+- [x] **Auto-scaling for the ≤~300 path (`pipeline/autoscale.sh`).** `run.sh`
+      counts the images and, for options not set explicitly, adapts: > ~150
+      images switches `exhaustive` → `vocab_tree`; > ~500 also prefers
+      `mapper=global` and bounds full-res densify (0→1). Logged, overridable,
+      `--no-auto-scale` to disable, thresholds env-tunable. The honest WebODM-side
+      mechanism: `/options` is static, so the engine adapts at runtime, not the
+      (un-modifiable) dialog. The deeper levers (`number-views-fuse`, tiling)
+      remain manual / below.
 - [ ] **Blend/seams streaming refactor (precondition).** `helpers/texture_blend.py`
       currently loads *all* undistorted images and renders one depth map per
       image — a memory/time bottleneck of our own making at 900 images. Process

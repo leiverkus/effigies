@@ -93,6 +93,7 @@ Advertised in [`options.json`](options.json) and surfaced in the WebODM task UI:
 | `crs-preset` | `none` | Named regional grids filling `crs` (Israeli TM, Palestine 1923, ETRS89 UTM 32/33N = Germany's official grid, OSGB, LV95); an explicit `crs` always wins. |
 | `gcp` | — | Optional path to an ODM-format `gcp_list.txt`. |
 | `no-gpu` | `false` | Force CPU even when CUDA is available. |
+| `no-auto-scale` | `false` | Disable count-based adaptation of matcher/mapper/densify for large image sets (see below). |
 
 ## Georeferencing (`--georeference`)
 
@@ -126,6 +127,26 @@ block (RMS 3D / horizontal / vertical, max, correspondence count — for GCP
 solves also the per-method localization counts), echoed in the task log and the
 quality-report PDF. GCP residuals reflect marking + reconstruction quality;
 EXIF residuals are dominated by consumer-GPS noise.
+
+## Large image sets (auto-scaling)
+
+Single-machine reconstruction has two walls as the image count grows: the
+`exhaustive` matcher is O(n²) (fatal past a few hundred images) and memory (dense
+cloud + the `ReconstructMesh` Delaunay). Because the NodeODM `/options` contract
+is static — WebODM cannot ask the engine to adapt the options dialog to the image
+count — Effigies adapts **in the engine** ([`pipeline/autoscale.sh`](pipeline/autoscale.sh)),
+at runtime, for options you did not set explicitly:
+
+- **> ~150 images** — matcher `exhaustive` → `vocab_tree` (baked FAISS retrieval
+  tree, O(n·k)). A profile's already-scalable `spatial` is left as is.
+- **> ~500 images** — also mapper → `global` (GLOMAP), and full-res densify
+  bounded (`densify-resolution-level 0 → 1`).
+
+Every change is logged with its override flag; an explicit choice always wins (an
+explicit `--matcher exhaustive` is kept, with a warning). `--no-auto-scale` turns
+the whole mechanism off. Thresholds are env-tunable (`EFFIGIES_AUTOSCALE_MATCH`,
+`EFFIGIES_AUTOSCALE_LARGE`). Beyond the single-machine memory wall, split-merge
+tiling is the path (ROADMAP v0.5.0).
 
 ## Project status
 

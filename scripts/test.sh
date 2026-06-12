@@ -14,6 +14,7 @@ python3 -c "import json; n=len(json.load(open('options.json'))); print(f'  ok {n
 
 echo "== unit tests =="
 for t in tests/test_*.py; do echo "-- $t"; python3 "$t"; done
+for t in tests/test_*.sh; do echo "-- $t"; bash "$t"; done
 
 echo
 echo "all checks passed"

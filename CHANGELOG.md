@@ -18,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **Engine-side auto-scaling for large image sets (`pipeline/autoscale.sh`).**
+  `run.sh` now counts the images at runtime and, for options the caller did not
+  set explicitly, adapts to the count: above ~150 images it switches the COLMAP
+  matcher off the O(n²) `exhaustive` strategy to `vocab_tree` (the baked FAISS
+  retrieval tree); above ~500 it also prefers the `global` (GLOMAP) mapper and
+  bounds full-resolution densify (0→1). Every decision is logged with the
+  override flag, an explicit `--matcher exhaustive` is respected (with a warning),
+  and a profile's already-scale-safe choice (drone-3d's `spatial`) is left
+  untouched. Disable entirely with `--no-auto-scale`. This is the WebODM-side
+  "intervene at large counts" mechanism done correctly: the NodeODM `/options`
+  contract is static (no engine callback at form time), so the only honest place
+  to adapt is the engine itself, transparently and overridably. Thresholds are
+  env-tunable (`EFFIGIES_AUTOSCALE_MATCH`, `EFFIGIES_AUTOSCALE_LARGE`).
 - **Multi-view GCP triangulation with full lens-distortion handling
   (`helpers/georef_bridge.py`).** A GCP's local position is no longer the
   nearest observed sparse point to the marked pixel (a heuristic limited by

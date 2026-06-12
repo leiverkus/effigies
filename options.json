@@ -250,6 +250,13 @@
     "help": "Force CPU processing even when a CUDA GPU is available. Without this flag the engine uses the GPU when present and falls back to CPU automatically (with a warning) when not. Default: %(default)s"
   },
   {
+    "name": "no-auto-scale",
+    "title": "Disable Auto-Scaling",
+    "value": false,
+    "type": "bool",
+    "help": "Disable the engine's automatic adaptation to large image sets. By default, for options you did not set explicitly, Effigies adapts to the image count: above ~150 images it switches the COLMAP matcher away from the O(n^2) 'exhaustive' strategy to 'vocab_tree'; above ~500 it also prefers the global (GLOMAP) mapper and bounds full-resolution densify — each decision is logged and any explicit choice always wins. Check this to keep your selected options exactly as set, with no count-based adaptation. Default: %(default)s"
+  },
+  {
     "name": "keep-workdir",
     "title": "Keep Workdir Intermediates",
     "value": false,

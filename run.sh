@@ -39,6 +39,7 @@ declare -A OPT=(
   [skip-orthophoto]=false
   [orthophoto-resolution]=auto
   [no-gpu]=false
+  [no-auto-scale]=false
   [keep-workdir]=false
   [project-path]=""
 )
@@ -114,12 +115,22 @@ IMAGES="${PROJ}/images"
 WORK="${PROJ}/effigies"
 mkdir -p "$WORK"
 
+# ---------------------------------------------------------------------------
+# 1d. Auto-scaling for large image sets — fill scale-appropriate matcher/mapper/
+#     densify for options the caller did not set explicitly (explicit + profile
+#     choices win where already scale-safe). Logs every decision; --no-auto-scale
+#     disables it. See pipeline/autoscale.sh.
+# ---------------------------------------------------------------------------
+source "$(dirname "$0")/pipeline/autoscale.sh"
+N_IMAGES=$(find "$IMAGES" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
+effigies_autoscale "$N_IMAGES"
+
 # WebODM progress bar (UDP to NodeODM); see pipeline/progress.sh
 export EFFIGIES_TASK_UUID="$PROJECT_NAME"
 source "$(dirname "$0")/pipeline/progress.sh"
 progress 1
 
-echo "[effigies] project: $PROJ"
+echo "[effigies] project: $PROJ ($N_IMAGES images)"
 echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} mapper=${OPT[mapper]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
 
 # Resolve GPU usage. GPU is used by default when present (--no-gpu forces CPU);
