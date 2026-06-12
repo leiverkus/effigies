@@ -29,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was 0.59–1.77 (≈3× brightness) across 70 images. New option
   `texture-color-harmonize` (on by default).
 
+### Added
+- **Node-side EPT point-cloud tileset (Entwine).** The node now ships the same
+  Entwine fork+commit ODM pins and builds `entwine_pointcloud/` itself, so the
+  Potree viewer gets its tileset directly from the node instead of WebODM
+  regenerating it from the LAZ in post-processing. (untwine was evaluated and
+  rejected: since 1.x it emits a single COPC file only — it cannot produce the
+  `ept.json` directory layout the viewer reads. NodeODM's "PotreeConverter is not
+  installed" notice refers to the legacy potree format and is irrelevant once EPT
+  is present.)
+
 ### Fixed
 - **3D model invisible in WebODM's viewer.** Three missing pieces of the ODM
   contract, all fixed: (1) the glb now carries the **`CESIUM_RTC`** extension

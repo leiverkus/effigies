@@ -12,7 +12,7 @@ This step:
      (``georef_transform.json``: scale ``s``, rotation ``R``, translation ``t``,
      ``offset``, ``crs``),
   2. applies it to the dense cloud and writes a LAZ via PDAL,
-  3. optionally builds an EPT tileset (entwine / untwine) if a builder is present.
+  3. optionally builds an EPT tileset (entwine) if present.
 
 Coordinate convention (matches ODM):
   * The **point cloud** is written in FULL projected coordinates
@@ -27,7 +27,7 @@ External tools are invoked as separate programs; if PDAL is missing the step
 fails loudly (the LAZ is a required asset). EPT is best-effort: if no builder is
 found the LAZ is still produced and the missing EPT is reported, not hidden.
 
-Dependencies: numpy (required); PDAL + entwine/untwine are external binaries.
+Dependencies: numpy (required); PDAL + entwine are external binaries.
 """
 import argparse
 import json
@@ -104,16 +104,16 @@ def ply_to_laz(ply_path, laz_path, transform, srs=None):
 def build_ept(laz_path, ept_dir):
     """Best-effort EPT build for the Potree viewer. Returns True on success.
 
-    Tries ``entwine`` then ``untwine``; if neither is present, reports and returns
+    Needs ``entwine``; if absent, reports and returns
     False (the LAZ alone is still a usable asset)."""
-    if shutil.which("entwine"):
-        cmd = ["entwine", "build", "-i", laz_path, "-o", ept_dir]
-    elif shutil.which("untwine"):
-        cmd = ["untwine", "--files", laz_path, "--output_dir", ept_dir]
-    else:
-        print("[pointcloud] no EPT builder (entwine/untwine) found; "
+    # entwine only: untwine is NOT a substitute — since 1.x it writes a single
+    # COPC file and cannot produce the EPT directory WebODM's viewer reads
+    # (entwine_pointcloud/ept.json).
+    if not shutil.which("entwine"):
+        print("[pointcloud] entwine not found; "
               "skipping entwine_pointcloud (LAZ still written)", file=sys.stderr)
         return False
+    cmd = ["entwine", "build", "-i", laz_path, "-o", ept_dir]
     os.makedirs(ept_dir, exist_ok=True)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:

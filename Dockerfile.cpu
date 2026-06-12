@@ -156,6 +156,24 @@ RUN set -eux; \
     command -v pdal; \
     echo "[effigies] all required engine binaries present (CPU build)"
 
+# --- Entwine (EPT tileset builder for the Potree web viewer) ---
+# Builds entwine_pointcloud/ NODE-side (ODM parity) so WebODM does not have to
+# regenerate the viewer tileset from the LAZ in its own post-processing.
+# pointcloud_to_laz.py --ept picks it up automatically. Same fork + commit ODM
+# pins (untwine is no alternative: since 1.x it emits COPC only, no EPT).
+# WITH_ZSTD=OFF because our PDAL is built without zstd; CURL off as in ODM.
+# Placed after the engine layers to keep their build cache.
+ARG ENTWINE_REF=0cf957432f291e841ff1385085dadad933dcba8d
+RUN git clone https://github.com/OpenDroneMap/entwine.git /opt/entwine && \
+    git -C /opt/entwine checkout ${ENTWINE_REF} && \
+    cmake -S /opt/entwine -B /opt/entwine/build -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DWITH_CURL=OFF -DWITH_ZSTD=OFF -DWITH_TESTS=OFF \
+      -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    ninja -C /opt/entwine/build install && ldconfig && \
+    rm -rf /opt/entwine && \
+    command -v entwine
+
 # --- NodeODM REST layer (pinned upstream + one type-safety hotfix) ---
 # Pinned for reproducibility (same policy as every other component). The sed is a
 # minimal hotfix for an upstream regression introduced by NodeODM PR #268
