@@ -55,7 +55,69 @@ def test_weak_images_keep_unit_gain():
     print("ok  under-sampled images keep gain 1.0")
 
 
+def test_spatial_solver_recovers_vignetting():
+    """Synthetic vignetting: each image darkens quadratically toward the frame
+    edge (c = g_i * a_p * exp(v_i * r²), v_i < 0). The photometric solver must
+    recover both the global gains and the spatial field so that the corrected
+    observations of one point agree across images."""
+    rng = np.random.default_rng(3)
+    n_img, n_pt = 8, 500
+    true_g = np.exp(rng.normal(0, 0.2, n_img))
+    true_g /= np.exp(np.log(true_g).mean())
+    true_v = rng.uniform(-0.45, -0.15, n_img)             # vignetting strength
+    albedo = rng.uniform(40, 180, n_pt)
+    oi, op, oc, oxy = [], [], [], []
+    for p in range(n_pt):
+        for i in rng.choice(n_img, size=4, replace=False):
+            x, y = rng.uniform(-1, 1), rng.uniform(-1, 1)
+            c = true_g[i] * albedo[p] * np.exp(true_v[i] * (x * x + y * y))
+            c *= np.exp(rng.normal(0, 0.01))
+            if not (hx.CLIP_LO < c < hx.CLIP_HI):
+                continue
+            oi.append(i); op.append(p); oc.append([c, c, c]); oxy.append((x, y))
+    oi, op = np.asarray(oi), np.asarray(op)
+    oc, oxy = np.asarray(oc, float), np.asarray(oxy, float)
+    logg, coef, bmean = hx.solve_photometric(oi, op, oc, oxy, n_img)
+    # corrected observations: residual spread per point must collapse
+    B = hx._basis(oxy[:, 0], oxy[:, 1])
+    f = ((B - bmean[oi]) * coef[oi]).sum(1)
+    corrected = np.log(oc[:, 0]) - logg[oi, 0] - f
+    raw = np.log(oc[:, 0]) - np.log(np.exp(logg[oi, 0]))  # global-only correction
+    def spread(vals):
+        s = np.zeros(int(op.max()) + 1); c = np.zeros_like(s)
+        np.add.at(s, op, vals); np.add.at(c, op, 1)
+        mean = s / np.maximum(c, 1)
+        return float(np.sqrt(np.mean((vals - mean[op]) ** 2)))
+    sp_corr, sp_raw = spread(corrected), spread(raw)
+    assert sp_corr < 0.03, sp_corr                         # near-perfect agreement
+    assert sp_corr < 0.5 * sp_raw, (sp_corr, sp_raw)       # clearly beats global-only
+    print(f"ok  spatial solver removes synthetic vignetting "
+          f"(residual {sp_corr:.4f} vs global-only {sp_raw:.4f})")
+
+
+def test_spatial_field_zero_on_flat_data():
+    """Without any spatial effect the field coefficients must stay ~0 (the ridge
+    keeps the solver from inventing vignetting)."""
+    rng = np.random.default_rng(4)
+    n_img, n_pt = 5, 300
+    albedo = rng.uniform(40, 180, n_pt)
+    oi, op, oc, oxy = [], [], [], []
+    for p in range(n_pt):
+        for i in rng.choice(n_img, size=3, replace=False):
+            c = 1.2 * albedo[p] if i == 0 else albedo[p]
+            oi.append(i); op.append(p); oc.append([c] * 3)
+            oxy.append((rng.uniform(-1, 1), rng.uniform(-1, 1)))
+    logg, coef, bmean = hx.solve_photometric(
+        np.asarray(oi), np.asarray(op), np.asarray(oc, float),
+        np.asarray(oxy, float), n_img)
+    assert np.abs(coef).max() < 0.02, np.abs(coef).max()
+    assert np.exp(logg[0, 0]) > 1.1, np.exp(logg[0, 0])    # global gain still found
+    print("ok  spatial field stays ~0 on flat data (no invented vignetting)")
+
+
 if __name__ == "__main__":
     test_solver_recovers_known_gains()
     test_weak_images_keep_unit_gain()
+    test_spatial_solver_recovers_vignetting()
+    test_spatial_field_zero_on_flat_data()
     print("\nall harmonize tests passed")

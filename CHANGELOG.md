@@ -40,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is present.)
 
 ### Added
+- **Spatial photometric harmonisation (vignetting correction).** The global
+  per-image gain left residual patchiness: a patch textured from an image corner
+  stays darker than its neighbour from another image's centre (lens vignetting,
+  sky gradients). The harmoniser now also fits one smooth spatial field per image
+  (quadratic in normalised image coords, luminance-shared, ridge-regularised,
+  zero-mean so the constant stays in the gain) from the same sparse-point
+  observations, and divides it out of the undistorted images before texturing.
+  On the 12 MP drone set the recovered fields reach the ±60% cap (strong
+  vignetting); side-by-side orthos show uniform roof planes and smooth grass
+  where the global-only version had visible brightness bands. Solver verified on
+  synthetic vignetting (residual 0.009 vs 0.107 global-only) and against
+  inventing fields on flat data.
 - **WebODM progress bar is driven now.** NodeODM listens on UDP :6367 for ODM's
   `PGUP/<pid>/<uuid>/<percent>` datagrams; the engine never sent them, so tasks
   showed only a spinning "Processing". `pipeline/progress.sh` (sourced by run.sh
