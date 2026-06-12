@@ -27,10 +27,11 @@ def _quad_scene(gsd=0.05):
     VT = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], float)
     TV = np.array([[0, 1, 2], [0, 2, 3]])
     TVT = np.array([[0, 1, 2], [0, 2, 3]])
+    TM = np.array([0, 0])                     # both tris on texture page 0
     tex = np.zeros((256, 256, 3), np.uint8)
     tex[:128, :128] = (255, 0, 0); tex[:128, 128:] = (0, 255, 0)
     tex[128:, :128] = (0, 0, 255); tex[128:, 128:] = (255, 255, 0)
-    return op.rasterize(V, VT, TV, TVT, tex, gsd)
+    return op.rasterize(V, VT, TV, TVT, TM, [tex], gsd)
 
 
 def test_rasterize_orientation_and_coverage():
