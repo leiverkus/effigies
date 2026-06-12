@@ -35,25 +35,46 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from openmvs_mesh import find_mesh_obj  # noqa: E402
 
 
+def _parse_mtl(mtl_path):
+    """-> {material_name: map_Kd path} from an .mtl file."""
+    mats, cur = {}, None
+    base = os.path.dirname(mtl_path)
+    for ln in open(mtl_path, errors="ignore"):
+        t = ln.strip()
+        if t.lower().startswith("newmtl"):
+            cur = t.split(maxsplit=1)[1].strip()
+        elif t.lower().startswith("map_kd") and cur:
+            mats[cur] = os.path.join(base, t.split()[-1])
+    return mats
+
+
 def _load_textured_obj(obj_path):
-    """Parse an OBJ into (V[N,3], VT[M,2], faces[(vi,vti) x3], texture[H,W,3]).
-    Returns None if the OBJ has no texture coordinates (cannot make an RGB ortho)."""
+    """Parse an OBJ into (V[N,3], VT[M,2], TV, TVT, TM[per-tri material idx],
+    textures[list of H,W,3 arrays]). MULTI-MATERIAL: large inputs make OpenMVS
+    split the atlas into several pages (material_00, material_01, ...), each face
+    group bound via `usemtl` — sampling everything from page 0 scrambles the
+    output. Returns None if the OBJ has no texture coordinates."""
     from PIL import Image
     V, VT, faces = [], [], []
     mtllib = None
+    cur_mat = 0
+    mat_ids = {}                      # usemtl name -> texture slot
     with open(obj_path, "r", errors="ignore") as f:
         for line in f:
             if line.startswith("v "):
                 p = line.split(); V.append((float(p[1]), float(p[2]), float(p[3])))
             elif line.startswith("vt "):
                 p = line.split(); VT.append((float(p[1]), float(p[2])))
+            elif line.startswith("usemtl"):
+                name = line.split(maxsplit=1)[1].strip()
+                cur_mat = mat_ids.setdefault(name, len(mat_ids))
             elif line.startswith("f "):
                 vi, vti = [], []
                 for tok in line.split()[1:]:
                     a = tok.split("/")
                     vi.append(int(a[0]))
                     vti.append(int(a[1]) if len(a) > 1 and a[1] else 0)
-                faces.append((vi, vti))
+                faces.append((vi, vti, cur_mat))
             elif line.startswith("mtllib"):
                 mtllib = line.split(maxsplit=1)[1].strip()
     if not VT:
@@ -61,34 +82,39 @@ def _load_textured_obj(obj_path):
     V = np.asarray(V, dtype=np.float64)
     VT = np.asarray(VT, dtype=np.float64)
     base = os.path.dirname(obj_path)
-    # texture: from the .mtl's map_Kd, else the first *map_Kd* image beside the OBJ
-    tex_path = None
+    # resolve each material's atlas page from the .mtl; fall back to the sorted
+    # *map_Kd* files beside the OBJ (slot order == material_XX order)
     mtl = os.path.join(base, mtllib) if mtllib else None
-    if mtl and os.path.exists(mtl):
-        for ln in open(mtl, errors="ignore"):
-            if ln.strip().lower().startswith("map_kd"):
-                tex_path = os.path.join(base, ln.split()[-1]); break
-    if not tex_path or not os.path.exists(tex_path):
-        cands = sorted(glob.glob(os.path.join(base, "*map_Kd*")))
-        tex_path = cands[0] if cands else None
-    if not tex_path:
-        return None
-    tex = np.asarray(Image.open(tex_path).convert("RGB"))
+    mat_tex = _parse_mtl(mtl) if (mtl and os.path.exists(mtl)) else {}
+    fallback = sorted(glob.glob(os.path.join(base, "*map_Kd*")))
+    if not mat_ids:                    # OBJ without usemtl: single implicit slot
+        mat_ids = {"__default__": 0}
+    textures = [None] * len(mat_ids)
+    for name, slot in mat_ids.items():
+        path = mat_tex.get(name)
+        if (not path or not os.path.exists(path)) and slot < len(fallback):
+            path = fallback[slot]
+        if not path or not os.path.exists(path):
+            return None
+        textures[slot] = np.asarray(Image.open(path).convert("RGB"))
     # fan-triangulate any polygons into vertex/texcoord index triples
-    tris_v, tris_vt = [], []
+    tris_v, tris_vt, tris_m = [], [], []
     nv, nvt = len(V), len(VT)
-    for vi, vti in faces:
+    for vi, vti, m in faces:
         vi = [(i - 1) if i > 0 else (nv + i) for i in vi]
         vti = [((i - 1) if i > 0 else (nvt + i)) if i != 0 else -1 for i in vti]
         for k in range(1, len(vi) - 1):
             tris_v.append((vi[0], vi[k], vi[k + 1]))
             tris_vt.append((vti[0], vti[k], vti[k + 1]))
-    return V, VT, np.asarray(tris_v, np.int64), np.asarray(tris_vt, np.int64), tex
+            tris_m.append(m)
+    return (V, VT, np.asarray(tris_v, np.int64), np.asarray(tris_vt, np.int64),
+            np.asarray(tris_m, np.int64), textures)
 
 
-def rasterize(V, VT, TV, TVT, tex, gsd):
+def rasterize(V, VT, TV, TVT, TM, textures, gsd):
     """Nadir-rasterise the textured mesh at ground sample distance ``gsd`` (metres
-    per pixel). Returns (rgb[H,W,3] uint8, alpha[H,W] uint8, xmin, ymax)."""
+    per pixel). ``TM`` holds the per-triangle texture slot into ``textures``
+    (multi-page atlas). Returns (rgb[H,W,3] uint8, alpha[H,W] uint8, xmin, ymax)."""
     xmin, ymin = V[:, 0].min(), V[:, 1].min()
     xmax, ymax = V[:, 0].max(), V[:, 1].max()
     W = max(1, int(math.ceil((xmax - xmin) / gsd)))
@@ -96,7 +122,6 @@ def rasterize(V, VT, TV, TVT, tex, gsd):
     rgb = np.zeros((H, W, 3), np.uint8)
     alpha = np.zeros((H, W), np.uint8)
     zbuf = np.full((H, W), -np.inf, np.float64)
-    Ht, Wt = tex.shape[:2]
 
     # vertex -> pixel-centre coordinates (north up: row grows southward)
     px = (V[:, 0] - xmin) / gsd
@@ -127,6 +152,8 @@ def rasterize(V, VT, TV, TVT, tex, gsd):
         tva, tvb, tvc = TVT[t]
         if tva < 0 or tvb < 0 or tvc < 0:
             continue
+        tex = textures[TM[t]]                 # this triangle's atlas page
+        Ht, Wt = tex.shape[:2]
         u = l0 * VT[tva, 0] + l1 * VT[tvb, 0] + l2 * VT[tvc, 0]
         v = l0 * VT[tva, 1] + l1 * VT[tvb, 1] + l2 * VT[tvc, 1]
         tx = np.clip((u * (Wt - 1)).astype(np.int64), 0, Wt - 1)
@@ -181,7 +208,7 @@ def main():
     if parsed is None:
         print("[ortho] OBJ has no texture coordinates; skipping orthophoto", file=sys.stderr)
         return
-    V, VT, TV, TVT, tex = parsed
+    V, VT, TV, TVT, TM, textures = parsed
 
     # np.ptp as a function — the ndarray .ptp() METHOD was removed in numpy 2.x
     ext_x = float(np.ptp(V[:, 0])); ext_y = float(np.ptp(V[:, 1]))
@@ -194,7 +221,7 @@ def main():
     while (ext_x / gsd) * (ext_y / gsd) > 16000 * 16000:
         gsd *= 2.0
 
-    rgb, alpha, xmin, ymax = rasterize(V, VT, TV, TVT, tex, gsd)
+    rgb, alpha, xmin, ymax = rasterize(V, VT, TV, TVT, TM, textures, gsd)
     out = os.path.join(args.work, "odm_orthophoto.tif")
     write_geotiff(out, rgb, alpha, offset[0] + xmin, offset[1] + ymax, gsd, crs)
     cov = 100.0 * (alpha > 0).mean()
