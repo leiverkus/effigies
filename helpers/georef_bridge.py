@@ -32,6 +32,7 @@ Dependencies: numpy (required); pyproj and piexif/Pillow used only on the EXIF p
 """
 import argparse
 import json
+import math
 import os
 import sys
 import glob
@@ -196,66 +197,152 @@ def _read_images_full(model_dir):
     return out
 
 
+def _split_intrinsics(model, params):
+    """COLMAP camera params -> (fx, fy, cx, cy, [distortion...])."""
+    if model in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL"):
+        return params[0], params[0], params[1], params[2], list(params[3:])
+    # PINHOLE / OPENCV / FULL_OPENCV / OPENCV_FISHEYE: fx fy cx cy [dist...]
+    return params[0], params[1], params[2], params[3], list(params[4:])
+
+
+def _distort_normalized(model, dist, x, y):
+    """Apply the model's lens distortion to normalized camera coords (x, y)."""
+    if not dist or model in ("SIMPLE_PINHOLE", "PINHOLE"):
+        return x, y
+    if model == "SIMPLE_RADIAL":
+        r2 = x*x + y*y
+        f = 1 + dist[0]*r2
+        return x*f, y*f
+    if model == "RADIAL":
+        r2 = x*x + y*y
+        f = 1 + r2*(dist[0] + r2*dist[1])
+        return x*f, y*f
+    if model in ("OPENCV", "FULL_OPENCV"):
+        k1, k2, p1, p2 = dist[0:4]
+        k3, k4, k5, k6 = (dist + [0.0]*4)[4:8]
+        r2 = x*x + y*y
+        rad = (1 + r2*(k1 + r2*(k2 + r2*k3))) / (1 + r2*(k4 + r2*(k5 + r2*k6)))
+        return (x*rad + 2*p1*x*y + p2*(r2 + 2*x*x),
+                y*rad + p1*(r2 + 2*y*y) + 2*p2*x*y)
+    if model == "OPENCV_FISHEYE":
+        k1, k2, k3, k4 = dist[0:4]
+        r = math.sqrt(x*x + y*y)
+        if r < 1e-12:
+            return x, y
+        th = math.atan(r)
+        th2 = th*th
+        sc = th*(1 + th2*(k1 + th2*(k2 + th2*(k3 + th2*k4)))) / r
+        return x*sc, y*sc
+    raise RuntimeError(f"unsupported camera model for undistortion: {model}")
+
+
+def _undistort_pixel(model, params, u, v, iters=100, tol=1e-12):
+    """Marked pixel (u, v) in the ORIGINAL (distorted) image -> normalized camera
+    coords (x, y) with the lens distortion removed (fixed-point iteration), so the
+    viewing ray [x, y, 1] is geometrically exact."""
+    fx, fy, cx, cy, dist = _split_intrinsics(model, params)
+    x0, y0 = (u - cx) / fx, (v - cy) / fy
+    x, y = x0, y0
+    for _ in range(iters):
+        xd, yd = _distort_normalized(model, dist, x, y)
+        dx, dy = x0 - xd, y0 - yd
+        x, y = x + dx, y + dy
+        if dx*dx + dy*dy < tol*tol:
+            break
+    return x, y
+
+
+# Smallest eigenvalue of the summed ray projectors below which the rays are
+# treated as parallax-free (~0.6 deg between two rays) and triangulation refused.
+_MIN_RAY_EIG = 1e-4
+
+
+def _triangulate_rays(rays):
+    """Least-squares 3D point nearest all rays [(center, unit_dir), ...].
+    Returns None when the rays carry no usable parallax or the intersection
+    lies behind a camera (a bogus solve)."""
+    A = np.zeros((3, 3))
+    b = np.zeros(3)
+    for C, d in rays:
+        P = np.eye(3) - np.outer(d, d)
+        A += P
+        b += P @ C
+    if np.linalg.eigvalsh(A)[0] < _MIN_RAY_EIG:
+        return None
+    X = np.linalg.solve(A, b)
+    for C, d in rays:
+        if (X - C) @ d <= 0:
+            return None
+    return X
+
+
 def gcp_correspondences(model_dir, gcp_entries):
     """Build (local, world) correspondences from GCPs.
 
     A GCP's WORLD position comes from gcp_list.txt directly. Its LOCAL position is
-    recovered from COLMAP: for the image the GCP is marked in, we take the observed
-    sparse 3D point whose reprojected pixel is nearest the marked (px, py). That
-    point's 3D coordinate (already in the local frame) is the local correspondent.
-    Multiple markings of the same physical GCP are averaged.
-    """
+    triangulated from the marked pixels: every marking is undistorted (full lens
+    model) into a viewing ray from its camera center, and the rays of all images
+    the GCP is marked in are intersected in least squares. GCPs marked in a single
+    image only (or whose rays carry no parallax) fall back to the previous
+    heuristic — the observed sparse 3D point whose pixel is nearest the marking,
+    averaged over markings. Returns (local (N,3), world (N,3), info dict with the
+    per-method counts)."""
     points = read_colmap_points(model_dir)
-    if not points:
-        raise RuntimeError("COLMAP points3D.txt empty/missing; cannot localize GCPs")
     cams = _read_cameras(model_dir)
     images = _read_images_full(model_dir)
-
-    def project(img, X):
-        """Pinhole project local point X into image pixels (SIMPLE/RADIAL/OPENCV
-        share fx, cx, cy as first params; distortion ignored for nearest-match)."""
-        Xc = img["R"] @ X + img["t"]
-        if Xc[2] <= 0:
-            return None
-        x, y = Xc[0]/Xc[2], Xc[1]/Xc[2]
-        model, w, h, params = cams[img["cam_id"]]
-        f = params[0]
-        # cx, cy position depends on model; use principal point if present else center
-        if model in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL"):
-            cx, cy = params[1], params[2]
-        else:  # PINHOLE / OPENCV / FULL_OPENCV: fx, fy, cx, cy, ...
-            cx, cy = params[2], params[3]
-        return np.array([f*x + cx, f*y + cy])
+    if not images:
+        raise RuntimeError("COLMAP images.txt empty/missing; cannot localize GCPs")
 
     groups = {}
     for e in gcp_entries:
         groups.setdefault(tuple(np.round(e["world"], 4)), []).append(e)
 
     local_list, world_list = [], []
+    n_tri = n_near = 0
     for key, es in groups.items():
+        marked = [(e, images.get(e["image"]) or images.get(os.path.basename(e["image"])))
+                  for e in es]
+        marked = [(e, img) for e, img in marked if img is not None]
+
+        rays = []
+        for e, img in marked:
+            model, _, _, params = cams[img["cam_id"]]
+            x, y = _undistort_pixel(model, params, e["px"][0], e["px"][1])
+            d = img["R"].T @ np.array([x, y, 1.0])
+            rays.append((-img["R"].T @ img["t"], d / np.linalg.norm(d)))
+        X = _triangulate_rays(rays) if len(rays) >= 2 else None
+        if X is not None:
+            local_list.append(X)
+            world_list.append(np.array(key))
+            n_tri += 1
+            continue
+
+        # Fallback heuristic: nearest observed sparse point to the marked pixel
+        # (both in distorted image coords, so directly comparable).
         locs = []
-        for e in es:
-            img = images.get(e["image"]) or images.get(os.path.basename(e["image"]))
-            if img is None or not img["obs"]:
-                continue
+        for e, img in marked:
             best, best_d = None, float("inf")
             for (u, v, pid) in img["obs"]:
                 if pid not in points:
                     continue
-                # nearest observation pixel to the marked pixel
-                d = (u - e["px"][0])**2 + (v - e["px"][1])**2
-                if d < best_d:
-                    best_d, best = d, points[pid]
+                d2 = (u - e["px"][0])**2 + (v - e["px"][1])**2
+                if d2 < best_d:
+                    best_d, best = d2, points[pid]
             if best is not None:
                 locs.append(best)
         if locs:
             local_list.append(np.mean(locs, axis=0))
             world_list.append(np.array(key))
+            n_near += 1
+
     if len(local_list) < 3:
         raise RuntimeError(
             f"only {len(local_list)} GCPs could be localized in COLMAP "
             f"(need >=3 with matching observations)")
-    return np.array(local_list), np.array(world_list)
+    print(f"[georef] GCP localization: {n_tri} triangulated, "
+          f"{n_near} nearest-point fallback")
+    return (np.array(local_list), np.array(world_list),
+            {"triangulated": n_tri, "nearest_point": n_near})
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +418,28 @@ def exif_correspondences(model_dir, images_dir, target_crs):
         world_list.append([x, y, alt])
         local_list.append(centers[name])
     return np.array(local_list), np.array(world_list), epsg
+
+
+def solve_residuals(s, R, t, local, world):
+    """Residuals of the similarity solve in target-CRS units (metres for any
+    projected CRS): how far each correspondence lands from its surveyed/GPS
+    position after the transform. GCP residuals reflect marking + reconstruction
+    quality; EXIF residuals are dominated by consumer-GPS noise — both belong in
+    georef_transform.json so the solve quality is visible, not guessed."""
+    pred = (s * (np.asarray(R) @ np.asarray(local, float).T).T) + np.asarray(t, float)
+    res = pred - np.asarray(world, float)
+    d3 = np.linalg.norm(res, axis=1)
+    out = {
+        "count": int(d3.size),
+        "rms_3d": float(np.sqrt(np.mean(d3 ** 2))),
+        "rms_horizontal": float(np.sqrt(np.mean(np.sum(res[:, :2] ** 2, axis=1)))),
+        "rms_vertical": float(np.sqrt(np.mean(res[:, 2] ** 2))),
+        "max_3d": float(d3.max()),
+    }
+    print(f"[georef] solve residuals: RMS 3D {out['rms_3d']:.3f} "
+          f"(horiz {out['rms_horizontal']:.3f}, vert {out['rms_vertical']:.3f}), "
+          f"max {out['max_3d']:.3f} over {out['count']} correspondences")
+    return out
 
 
 def _xy_offset(world):
@@ -444,22 +553,27 @@ def main():
                 if not have_gcp:
                     raise RuntimeError(f"GCP mode requested but file not found: {args.gcp}")
                 crs_header, entries = parse_gcp_list(args.gcp)
-                local, world = gcp_correspondences(model_dir, entries)
+                local, world, gcp_info = gcp_correspondences(model_dir, entries)
                 s, R, t = umeyama_similarity(local, world)
+                residuals = solve_residuals(s, R, t, local, world)
+                residuals["gcp_localization"] = gcp_info
                 offset = _xy_offset(world)
                 crs = args.crs if args.crs not in ("auto", "") else crs_header
                 apply_to_obj(args.work, s, R, t, offset)
                 write({"source": "colmap-gcp", "s": s, "R": R.tolist(),
-                       "t": t.tolist(), "offset": offset.tolist(), "crs": crs})
+                       "t": t.tolist(), "offset": offset.tolist(), "crs": crs,
+                       "residuals": residuals})
                 write_coords_txt(args.work, offset, crs)
                 return
             else:  # exif
                 local, world, epsg = exif_correspondences(model_dir, args.images, args.crs)
                 s, R, t = umeyama_similarity(local, world)
+                residuals = solve_residuals(s, R, t, local, world)
                 offset = _xy_offset(world)
                 apply_to_obj(args.work, s, R, t, offset)
                 write({"source": "colmap-exif", "s": s, "R": R.tolist(),
-                       "t": t.tolist(), "offset": offset.tolist(), "crs": epsg})
+                       "t": t.tolist(), "offset": offset.tolist(), "crs": epsg,
+                       "residuals": residuals})
                 write_coords_txt(args.work, offset, epsg)
                 return
         except Exception as e:

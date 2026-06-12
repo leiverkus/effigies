@@ -109,8 +109,9 @@ Run `./scripts/test.sh`.
 
 ## Open points (state, not TODO-as-done)
 
-- GCP localization uses the nearest observed sparse point to the marked pixel;
-  multi-view triangulation of the marked pixel would be more precise.
+- GCP localization triangulates the marked pixel across its images (undistorted
+  viewing rays, least-squares intersection); single-view GCPs fall back to the
+  nearest observed sparse point. Solve residuals land in `georef_transform.json`.
 - COLMAP/OpenMVS should be built from pinned source in the Dockerfile; distro
   packages may lack `RefineMesh`.
 - Point cloud is passed through as `.ply`; convert to `.laz` + EPT (PDAL) for the

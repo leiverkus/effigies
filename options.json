@@ -204,6 +204,22 @@
     "help": "Target projected CRS for georeferencing, given as an EPSG code (e.g. 'EPSG:32633'). 'auto' derives the appropriate UTM zone automatically from the GPS/GCP coordinates. Any projected EPSG code is accepted, including regional grids. Default: %(default)s"
   },
   {
+    "name": "crs-preset",
+    "title": "CRS Preset",
+    "value": "none",
+    "domain": [
+      "none",
+      "israeli-tm",
+      "palestine-1923",
+      "etrs89-utm32n",
+      "etrs89-utm33n",
+      "british-ng",
+      "swiss-lv95"
+    ],
+    "type": "enum",
+    "help": "Named regional grid presets that fill Target CRS for you (an explicitly set Target CRS always wins): 'israeli-tm' = EPSG:6991 (Israeli TM Grid), 'palestine-1923' = EPSG:28191 (Palestine 1923 Grid), 'etrs89-utm32n' / 'etrs89-utm33n' = EPSG:25832/25833 (German official UTM), 'british-ng' = EPSG:27700 (OSGB National Grid), 'swiss-lv95' = EPSG:2056. 'none' keeps the Target CRS option (default: automatic WGS84 UTM zone). Default: %(default)s"
+  },
+  {
     "name": "gcp",
     "title": "GCP File",
     "value": "",

@@ -115,6 +115,12 @@ def main():
     if mf:
         rows.append(["Mesh", f"{mv:,} vertices, {mf:,} faces"])
     rows.append(["Georeferencing", f"{tr.get('source', 'n/a')} ({tr.get('crs', 'local')})"])
+    res = tr.get("residuals")
+    if res:
+        src = "GCP" if "gcp" in str(tr.get("source", "")) else "camera/GPS"
+        rows.append(["Georef RMS error",
+                     f"{res['rms_3d']:.2f} m 3D ({res['rms_horizontal']:.2f} horiz, "
+                     f"{res['rms_vertical']:.2f} vert; n={res['count']} {src})"])
     if ortho:
         Wpx, Hpx, gsd_cm, area, cov, _ = ortho
         rows.append(["Orthophoto", f"{Wpx} x {Hpx} px @ {gsd_cm:.1f} cm/px"])

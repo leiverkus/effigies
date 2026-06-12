@@ -84,14 +84,15 @@ Advertised in [`options.json`](options.json) and surfaced in the WebODM task UI:
 | `camera-model` | `OPENCV` | COLMAP self-calibration model. |
 | `densify-resolution-level` | `1` | OpenMVS densify downscale (`0` = full res). |
 | `number-views-fuse` | `3` | Min. agreeing views to fuse a point. |
-| `reconstruct-mesh` | `true` | Run OpenMVS `ReconstructMesh` (the step ODM skips). |
+| `skip-reconstruct-mesh` | `false` | Skip OpenMVS `ReconstructMesh`/`RefineMesh` (the steps ODM lacks run by default). |
 | `refine-mesh-iters` | `3` | `RefineMesh` iterations — the main quality lever. |
 | `mesh-decimate` | `1.0` | Mesh decimation (`1.0` = full detail). |
 | `texture-resolution` | `8192` | Texture atlas size in px. |
 | `georeference` | `auto` | `auto` / `gcp` / `exif` / `none` (see below). |
 | `crs` | `auto` | Target projected CRS (EPSG code, or `auto` UTM derivation). |
+| `crs-preset` | `none` | Named regional grids filling `crs` (Israeli TM, Palestine 1923, ETRS89 UTM 32/33N, OSGB, LV95); an explicit `crs` always wins. |
 | `gcp` | — | Optional path to an ODM-format `gcp_list.txt`. |
-| `use-gpu` | `true` | Use CUDA where available. |
+| `no-gpu` | `false` | Force CPU even when CUDA is available. |
 
 ## Georeferencing (`--georeference`)
 
@@ -103,8 +104,11 @@ correspondences:
   is auto-detected, ODM convention), else fall back to EXIF-GPS, else keep a
   metrically-scaled local frame.
 - **`gcp`** — require `gcp_list.txt`. World coordinates come from the file; each
-  GCP's local position is recovered from COLMAP by matching its marked pixel to
-  the nearest observed sparse point. Needs ≥3 localizable GCPs.
+  GCP's local position is **triangulated** from its marked pixels: every marking
+  is undistorted (full COLMAP lens model) into a viewing ray and the rays of all
+  images the GCP is marked in are intersected in least squares. GCPs marked in a
+  single image only fall back to the nearest observed sparse point (heuristic).
+  Needs ≥3 localizable GCPs; mark each GCP in **2+ images** for full accuracy.
 - **`exif`** — pair COLMAP camera centers with EXIF-GPS reprojected into the
   target CRS (UTM auto-derived when `crs=auto`). Needs ≥3 well-distributed fixes;
   collinear flight lines degrade the solve. Requires `Pillow` + `pyproj`.
@@ -113,9 +117,15 @@ correspondences:
   metrically consistent, only absolute world placement is omitted.
 
 The target CRS is any projected **EPSG** code, or `auto` to derive the UTM zone
-from the data. The textured OBJ is rewritten with a projected offset subtracted
-(offset stored in `georef_transform.json`) so large coordinates stay within float
-precision.
+from the data (`crs-preset` offers common regional grids by name). The textured
+OBJ is rewritten with a projected offset subtracted (offset stored in
+`georef_transform.json`) so large coordinates stay within float precision.
+
+Every solve reports its quality: `georef_transform.json` carries a `residuals`
+block (RMS 3D / horizontal / vertical, max, correspondence count — for GCP
+solves also the per-method localization counts), echoed in the task log and the
+quality-report PDF. GCP residuals reflect marking + reconstruction quality;
+EXIF residuals are dominated by consumer-GPS noise.
 
 ## Project status
 

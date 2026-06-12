@@ -33,6 +33,7 @@ declare -A OPT=(
   [cpu-threads]=4
   [cpu-match-block]=10
   [crs]=auto
+  [crs-preset]=none
   [georeference]=auto
   [gcp]=""
   [skip-orthophoto]=false
@@ -91,6 +92,22 @@ case "${OPT[profile]}" in
   none) ;;
   *) echo "[effigies] WARN: unknown profile '${OPT[profile]}' — using defaults" >&2 ;;
 esac
+
+# ---------------------------------------------------------------------------
+# 1c. Named CRS presets — fill crs only when the caller did not set it
+#     explicitly (an explicit --crs always wins over the preset).
+# ---------------------------------------------------------------------------
+if [[ "${OPT[crs-preset]}" != "none" && -z "${GIVEN[crs]:-}" ]]; then
+  case "${OPT[crs-preset]}" in
+    israeli-tm)     OPT[crs]="EPSG:6991"  ;;   # Israeli TM Grid
+    palestine-1923) OPT[crs]="EPSG:28191" ;;   # Palestine 1923 Grid
+    etrs89-utm32n)  OPT[crs]="EPSG:25832" ;;   # German official UTM 32N
+    etrs89-utm33n)  OPT[crs]="EPSG:25833" ;;   # German official UTM 33N
+    british-ng)     OPT[crs]="EPSG:27700" ;;   # OSGB National Grid
+    swiss-lv95)     OPT[crs]="EPSG:2056"  ;;   # Swiss LV95
+    *) echo "[effigies] WARN: unknown crs-preset '${OPT[crs-preset]}' — ignored" >&2 ;;
+  esac
+fi
 
 PROJ="${OPT[project-path]}/${PROJECT_NAME}"
 IMAGES="${PROJ}/images"

@@ -88,16 +88,22 @@ kept** (24.04 dropped it). Facts worth keeping:
 - **OpenMVS 2.4.0 is a runtime fix, not just a feature**: 2.3.0's `DensifyPointCloud`
   heap-corrupts on arm64; 2.4.0 (FLANN → nanoflann) runs the full dense+mesh chain.
 
-## v0.3.0 — Georeferencing accuracy
+## v0.3.0 — Georeferencing accuracy *(implemented — pending release tag)*
 
-- [ ] **Multi-view GCP triangulation.** Replace the nearest-sparse-point heuristic
-      with proper triangulation of the marked pixel across its images.
-- [ ] **Lens-distortion-aware EXIF projection** where it improves the camera-center
-      correspondence.
-- [ ] **Reprojection-error reporting** in `georef_transform.json` (RMS residual,
-      number of correspondences used) so the solve quality is visible.
-- [ ] Optional named CRS presets selectable in the UI (regional grids included as
-      presets, not as defaults).
+- [x] **Multi-view GCP triangulation.** Marked pixels are undistorted (full COLMAP
+      lens model, fixed-point inversion) into viewing rays and intersected in least
+      squares across all images the GCP is marked in (parallax + cheirality
+      checked). Single-view GCPs fall back to the nearest-sparse-point heuristic,
+      reported per method. Synthetic scene: ~2e-7 m vs ~1e-3 heuristically.
+- [x] **Lens-distortion-aware marked-pixel rays** — folded into the triangulation
+      (the distortion matters where pixels become geometry). The EXIF path pairs
+      camera *centers* with GPS; centers are distortion-independent, so there was
+      nothing to gain there.
+- [x] **Reprojection-error reporting** in `georef_transform.json` (`residuals`:
+      count, RMS 3D/horizontal/vertical, max), echoed in the log and the
+      quality-report PDF.
+- [x] Named CRS presets (`crs-preset`): Israeli TM, Palestine 1923, ETRS89 UTM
+      32N/33N, OSGB, Swiss LV95 — presets, not defaults; explicit `crs` wins.
 
 ## v0.4.0 — Quality profiles & tuning
 

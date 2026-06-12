@@ -18,6 +18,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **Multi-view GCP triangulation with full lens-distortion handling
+  (`helpers/georef_bridge.py`).** A GCP's local position is no longer the
+  nearest observed sparse point to the marked pixel (a heuristic limited by
+  sparse-point density): every marking is undistorted into a viewing ray —
+  supporting all advertised COLMAP camera models (SIMPLE_RADIAL, RADIAL, OPENCV,
+  FULL_OPENCV, OPENCV_FISHEYE) via fixed-point inversion of the distortion —
+  and the rays of all images the GCP is marked in are intersected in least
+  squares, with parallax and cheirality checks. Single-view GCPs fall back to
+  the previous heuristic; the per-method counts are reported. On the synthetic
+  test scene the triangulated solve is exact to ~2e-7 m where the heuristic
+  needed a 1e-3 tolerance.
+- **Georeferencing solve-quality reporting.** `georef_transform.json` now
+  carries a `residuals` block (count, RMS 3D / horizontal / vertical, max 3D —
+  for GCP solves also the triangulated-vs-fallback counts), echoed in the task
+  log and as a "Georef RMS error" row in the quality-report PDF. No more
+  guessing whether a solve was survey-grade or GPS-noise-grade.
+- **Named CRS presets (`crs-preset`).** Regional grids selectable by name in
+  the task UI — Israeli TM (EPSG:6991), Palestine 1923 (EPSG:28191), ETRS89 UTM
+  32N/33N (EPSG:25832/25833), OSGB (EPSG:27700), Swiss LV95 (EPSG:2056) —
+  filling `crs` only when it was not set explicitly (presets, not defaults; the
+  engine stays region-agnostic).
 - **Exposure/colour harmonisation before texturing
   (`helpers/harmonize_exposure.py`).** With OpenMVS seam leveling disabled (it is
   corrupted on this build), texture patches showed the raw exposure differences

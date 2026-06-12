@@ -37,7 +37,13 @@ def test_quat_identity():
 
 
 def _build_synthetic_colmap(root, s_true=0.5, ang=0.3):
-    """Write a consistent synthetic COLMAP text model + gcp_list.txt + OBJ."""
+    """Write a consistent synthetic COLMAP text model + gcp_list.txt + OBJ.
+
+    Two cameras: img1 is a clean PINHOLE at (0,0,-500); img2 is a SIMPLE_RADIAL
+    with strong distortion (k=0.1) translated sideways, so each GCP is marked in
+    two views with real parallax — exercising both the multi-view triangulation
+    and the pixel undistortion. Marked/observed pixels are written in DISTORTED
+    image coords, exactly as COLMAP stores them."""
     model = os.path.join(root, "work", "sparse", "0")
     os.makedirs(model, exist_ok=True)
     os.makedirs(os.path.join(root, "images"), exist_ok=True)
@@ -58,29 +64,42 @@ def _build_synthetic_colmap(root, s_true=0.5, ang=0.3):
             f.write(f"{i} {p[0]} {p[1]} {p[2]} 0 0 0 0.5\n")
 
     cam_f, cx, cy = 1000., 320., 240.
+    f2, k2 = 900., 0.1
     with open(os.path.join(model, "cameras.txt"), "w") as f:
         f.write("# cam\n")
         f.write(f"1 PINHOLE 640 480 {cam_f} {cam_f} {cx} {cy}\n")
+        f.write(f"2 SIMPLE_RADIAL 640 480 {f2} {cx} {cy} {k2}\n")
 
-    cam_t = np.array([0, 0, 500.])
+    cam1_t = np.array([0, 0, 500.])
+    cam2_t = np.array([150., 0, 450.])
+
+    def proj1(p):
+        Xc = p + cam1_t
+        return cam_f * Xc[0] / Xc[2] + cx, cam_f * Xc[1] / Xc[2] + cy
+
+    def proj2(p):  # SIMPLE_RADIAL: distortion applied to normalized coords
+        Xc = p + cam2_t
+        x, y = Xc[0] / Xc[2], Xc[1] / Xc[2]
+        fct = 1 + k2 * (x * x + y * y)
+        return f2 * x * fct + cx, f2 * y * fct + cy
+
     with open(os.path.join(model, "images.txt"), "w") as f:
-        f.write("# images\n1 1 0 0 0 0 0 500 1 img1.jpg\n")
-        obs = []
-        for i, p in enumerate(local, 1):
-            Xc = p + cam_t
-            u = cam_f * Xc[0] / Xc[2] + cx
-            v = cam_f * Xc[1] / Xc[2] + cy
-            obs.append(f"{u} {v} {i}")
-        f.write(" ".join(obs) + "\n")
+        f.write("# images\n")
+        f.write(f"1 1 0 0 0 {cam1_t[0]} {cam1_t[1]} {cam1_t[2]} 1 img1.jpg\n")
+        f.write(" ".join(f"{u} {v} {i}" for i, p in enumerate(local, 1)
+                         for u, v in [proj1(p)]) + "\n")
+        f.write(f"2 1 0 0 0 {cam2_t[0]} {cam2_t[1]} {cam2_t[2]} 2 img2.jpg\n")
+        f.write(" ".join(f"{u} {v} {i}" for i, p in enumerate(local, 1)
+                         for u, v in [proj2(p)]) + "\n")
 
     with open(os.path.join(root, "gcp_list.txt"), "w") as f:
         f.write("EPSG:32637\n")
         for i, p in enumerate(local, 1):
-            Xc = p + cam_t
-            u = cam_f * Xc[0] / Xc[2] + cx
-            v = cam_f * Xc[1] / Xc[2] + cy
             w = world[i - 1]
-            f.write(f"{w[0]} {w[1]} {w[2]} {u:.2f} {v:.2f} img1.jpg\n")
+            u1, v1 = proj1(p)
+            u2, v2 = proj2(p)
+            f.write(f"{w[0]} {w[1]} {w[2]} {u1:.6f} {v1:.6f} img1.jpg\n")
+            f.write(f"{w[0]} {w[1]} {w[2]} {u2:.6f} {v2:.6f} img2.jpg\n")
 
     with open(os.path.join(root, "work", "scene_dense_mesh_refine.obj"), "w") as f:
         f.write("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
@@ -92,10 +111,89 @@ def test_gcp_path_recovers_scale():
         s_true = _build_synthetic_colmap(root)
         model = gb._find_colmap_model(os.path.join(root, "work"))
         _, entries = gb.parse_gcp_list(os.path.join(root, "gcp_list.txt"))
-        local, world = gb.gcp_correspondences(model, entries)
+        local, world, _ = gb.gcp_correspondences(model, entries)
         s, R, t = gb.umeyama_similarity(local, world)
         assert abs(s - s_true) < 1e-3, f"gcp scale off: {s} vs {s_true}"
         print(f"ok  gcp path recovers scale ({s:.4f} ~ {s_true})")
+
+
+def test_undistort_pixel_roundtrip():
+    """distort -> pixel -> _undistort_pixel must recover the normalized coords
+    for every camera model the engine advertises (plus the pinhole bases)."""
+    cases = [
+        ("PINHOLE", [900., 920., 320., 240.]),
+        ("SIMPLE_RADIAL", [900., 320., 240., 0.1]),
+        ("RADIAL", [900., 320., 240., 0.1, -0.03]),
+        ("OPENCV", [900., 920., 320., 240., 0.1, -0.05, 0.001, -0.002]),
+        ("FULL_OPENCV", [900., 920., 320., 240., 0.1, -0.05, 0.001, -0.002,
+                         0.01, 0.02, -0.01, 0.005]),
+        ("OPENCV_FISHEYE", [900., 920., 320., 240., 0.05, -0.01, 0.002, -0.001]),
+    ]
+    for model, params in cases:
+        fx, fy, cx, cy, dist = gb._split_intrinsics(model, params)
+        for (x, y) in [(0.05, -0.1), (0.3, 0.2), (-0.25, 0.15), (0.0, 0.0)]:
+            xd, yd = gb._distort_normalized(model, dist, x, y)
+            xr, yr = gb._undistort_pixel(model, params, fx * xd + cx, fy * yd + cy)
+            assert abs(xr - x) < 1e-9 and abs(yr - y) < 1e-9, \
+                f"{model}: ({x},{y}) -> ({xr},{yr})"
+    print("ok  pixel undistortion roundtrip (6 camera models)")
+
+
+def test_gcp_triangulation_is_exact():
+    """With every GCP marked in two views the marked pixels must be triangulated
+    (no nearest-point fallback) and — pixels being exact, distortion included —
+    recover the similarity to numerical precision, far beyond the heuristic."""
+    with tempfile.TemporaryDirectory() as root:
+        s_true = _build_synthetic_colmap(root)
+        model = gb._find_colmap_model(os.path.join(root, "work"))
+        _, entries = gb.parse_gcp_list(os.path.join(root, "gcp_list.txt"))
+        local, world, info = gb.gcp_correspondences(model, entries)
+        assert info["triangulated"] == len(local) == 6, info
+        assert info["nearest_point"] == 0, info
+        s, R, t = gb.umeyama_similarity(local, world)
+        assert abs(s - s_true) < 1e-7, f"triangulated scale off: {s} vs {s_true}"
+        res = gb.solve_residuals(s, R, t, local, world)
+        assert res["rms_3d"] < 1e-5, res
+        assert res["count"] == 6
+    print(f"ok  gcp multi-view triangulation exact (rms {res['rms_3d']:.2e} m)")
+
+
+def test_gcp_single_view_falls_back():
+    """A GCP marked in only one image has no parallax: triangulation must refuse
+    and the nearest-sparse-point heuristic must take over per GCP."""
+    with tempfile.TemporaryDirectory() as root:
+        s_true = _build_synthetic_colmap(root)
+        model = gb._find_colmap_model(os.path.join(root, "work"))
+        _, entries = gb.parse_gcp_list(os.path.join(root, "gcp_list.txt"))
+        only_img1 = [e for e in entries if e["image"] == "img1.jpg"]
+        local, world, info = gb.gcp_correspondences(model, only_img1)
+        assert info["triangulated"] == 0 and info["nearest_point"] == 6, info
+        s, _, _ = gb.umeyama_similarity(local, world)
+        assert abs(s - s_true) < 1e-3, f"fallback scale off: {s} vs {s_true}"
+    print("ok  single-view gcp falls back to nearest-point heuristic")
+
+
+def test_residuals_written_to_transform():
+    """main() in gcp mode must report the solve quality in georef_transform.json:
+    residual RMS values plus the per-method GCP localization counts."""
+    with tempfile.TemporaryDirectory() as root:
+        _build_synthetic_colmap(root)
+        work = os.path.join(root, "work")
+        argv = sys.argv
+        sys.argv = ["georef", "--work", work, "--images",
+                    os.path.join(root, "images"), "--sparse-engine", "colmap",
+                    "--georeference", "gcp", "--crs", "auto",
+                    "--gcp", os.path.join(root, "gcp_list.txt")]
+        try:
+            gb.main()
+        finally:
+            sys.argv = argv
+        tr = json.load(open(os.path.join(work, "georef_transform.json")))
+        res = tr["residuals"]
+        assert res["count"] == 6 and res["rms_3d"] < 1e-5, res
+        assert {"rms_horizontal", "rms_vertical", "max_3d"} <= set(res)
+        assert res["gcp_localization"] == {"triangulated": 6, "nearest_point": 0}
+    print("ok  residuals + localization counts written to georef_transform.json")
 
 
 def test_none_mode_keeps_local():
@@ -161,6 +259,10 @@ if __name__ == "__main__":
     test_umeyama_recovers_known_similarity()
     test_quat_identity()
     test_gcp_path_recovers_scale()
+    test_undistort_pixel_roundtrip()
+    test_gcp_triangulation_is_exact()
+    test_gcp_single_view_falls_back()
+    test_residuals_written_to_transform()
     test_none_mode_keeps_local()
     test_xy_offset_and_coords_txt()
     test_camera_centers_survive_empty_points2d()
