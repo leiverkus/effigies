@@ -183,13 +183,15 @@ def main():
         return
     V, VT, TV, TVT, tex = parsed
 
-    diag = math.hypot(V[:, 0].ptp(), V[:, 1].ptp())
+    # np.ptp as a function — the ndarray .ptp() METHOD was removed in numpy 2.x
+    ext_x = float(np.ptp(V[:, 0])); ext_y = float(np.ptp(V[:, 1]))
+    diag = math.hypot(ext_x, ext_y)
     if str(args.resolution).lower() == "auto":
         gsd = min(max(diag / 4096.0, 0.01), 1.0)     # ~4k px wide, clamped 1cm..1m
     else:
         gsd = float(args.resolution) / 100.0          # cm/px -> m/px
     # cap raster size so a bad GSD cannot blow memory
-    while (V[:, 0].ptp() / gsd) * (V[:, 1].ptp() / gsd) > 16000 * 16000:
+    while (ext_x / gsd) * (ext_y / gsd) > 16000 * 16000:
         gsd *= 2.0
 
     rgb, alpha, xmin, ymax = rasterize(V, VT, TV, TVT, tex, gsd)

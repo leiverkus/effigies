@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # OpenMVS dense reconstruction + the steps ODM skips.
 # args: WORK RES_LEVEL VIEWS_FUSE RECONSTRUCT_MESH REFINE_ITERS DECIMATE TEX_RES GPU_FLAG
-#       [MAX_FACE_AREA] [GRADIENT_STEP]   (RefineMesh quality levers)
+#       [MAX_FACE_AREA] [GRADIENT_STEP] [SEAM_LEVELING]
 set -euo pipefail
 WORK="$1"; RES_LEVEL="$2"; VIEWS_FUSE="$3"; RECONSTRUCT_MESH="$4"
 REFINE_ITERS="$5"; DECIMATE="$6"; TEX_RES="$7"; GPU="$8"
-MAX_FACE_AREA="${9:-16}"; GRADIENT_STEP="${10:-25.05}"
+MAX_FACE_AREA="${9:-16}"; GRADIENT_STEP="${10:-25.05}"; SEAM_LEVELING="${11:-false}"
 
 cd "$WORK"
 
@@ -54,9 +54,29 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
   fi
 
   echo "[openmvs] TextureMesh"
-  TextureMesh "$MESH_MVS" \
+  # Texture at FULL image resolution: RefineMesh (run with a resolution-level)
+  # saves its scene with downscaled image references, so texturing the refine
+  # output .mvs would sample half-res images. Instead texture the full-res
+  # pre-refine scene and inject the refined geometry via --mesh-file; -o keeps
+  # the canonical scene_dense_mesh_refine_texture.* names.
+  #
+  # Seam leveling DEFAULTS OFF: OpenMVS 2.4.0's global+local seam leveling
+  # corrupts texture patches on this (arm64/CPU) build — patch interiors clamp
+  # to black, borders to saturated colors — which wrecks both the model texture
+  # and the orthophoto. Re-enable via --texture-seam-leveling once a build
+  # without the defect is validated.
+  SEAM=0; [[ "$SEAM_LEVELING" == "true" ]] && SEAM=1
+  TEX_IN="$MESH_MVS"; TEX_ARGS=()
+  if [[ "$MESH_MVS" == "scene_dense_mesh_refine.mvs" ]]; then
+    TEX_IN="scene_dense_mesh.mvs"
+    TEX_ARGS=(--mesh-file scene_dense_mesh_refine.ply -o scene_dense_mesh_refine_texture.obj)
+  fi
+  TextureMesh "$TEX_IN" \
+    "${TEX_ARGS[@]}" \
     --export-type obj \
     --texture-size "$TEX_RES" \
+    --global-seam-leveling "$SEAM" \
+    --local-seam-leveling "$SEAM" \
     --archive-type 3 \
     "${CUDA_ARGS[@]}" \
     -w "$WORK"

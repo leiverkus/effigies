@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Fixed
+- **Texture (and therefore orthophoto + 3D model) corrupted by OpenMVS seam
+  leveling.** On the arm64/CPU build, OpenMVS 2.4.0's global+local seam leveling
+  clamps texture-patch interiors to black and their borders to saturated colours —
+  the model texture and the orthophoto came out as black shapes with coloured
+  outlines. Seam leveling is now OFF by default (new option
+  `texture-seam-leveling` to re-enable on a verified build). Diagnosed on the real
+  drone task by re-texturing the same mesh: leveling on → 38% black atlas;
+  off → clean photographic patches.
+- **Texturing ran at half resolution.** RefineMesh (run with a resolution-level)
+  saves its scene with downscaled image references, so TextureMesh sampled 0.75
+  MP instead of the full 2.99 MP images. TextureMesh now textures the full-res
+  pre-refine scene and injects the refined geometry via `--mesh-file` (output
+  names preserved via `-o`) — refine speed kept, texture sharpness doubled.
+- **`orthophoto.py` crashed under numpy 2.x** (`ndarray.ptp()` was removed);
+  uses the `np.ptp()` function now.
 - **`refine-mesh-iters` was advertised but did nothing.** The log claimed
   "RefineMesh x3", yet no iteration flag was passed — `--scales` was hardcoded
   to 1 and the option only gated the stage on/off. OpenMVS 2.4 has no

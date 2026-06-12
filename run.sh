@@ -23,6 +23,7 @@ declare -A OPT=(
   [refine-gradient-step]=25.05
   [mesh-decimate]=1.0
   [texture-resolution]=8192
+  [texture-seam-leveling]=false
   [cpu-threads]=4
   [cpu-match-block]=10
   [crs]=auto
@@ -108,7 +109,8 @@ bash "$(dirname "$0")/pipeline/dense_openmvs.sh" \
      "${OPT[texture-resolution]}" \
      "$GPU_FLAG" \
      "${OPT[refine-max-face-area]}" \
-     "${OPT[refine-gradient-step]}"
+     "${OPT[refine-gradient-step]}" \
+     "${OPT[texture-seam-leveling]}"
 
 # ---------------------------------------------------------------------------
 # 4. Georeferencing bridge  (local SfM frame -> projected CRS)
