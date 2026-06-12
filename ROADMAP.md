@@ -96,8 +96,12 @@ kept** (24.04 dropped it). Facts worth keeping:
 
 ## v0.4.0 — Quality profiles & tuning
 
-- [ ] **Capture profiles** that preset sensible parameters: *object/turntable*,
-      *architecture*, *macro/find*. Calibrate `RefineMesh` parameters per profile.
+- [~] **Capture profiles** as an engine option (`profile`: `drone-3d` / `object` /
+      `architecture`): versioned parameter bundles applied for options the user
+      did not set explicitly (explicit choices win). Lives in the engine instead
+      of WebODM's preset JSON — those are per-install data keyed to ODM's option
+      names and useless for Effigies. Open: calibrate the bundles (esp.
+      `RefineMesh`) per profile against benchmark runs.
 - [x] Expose key OpenMVS refine parameters as task options with documented
       effects: `refine-max-face-area`, `refine-gradient-step`, and
       `refine-mesh-iters` now genuinely driving `RefineMesh --scales` (it was

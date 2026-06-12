@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installed" notice refers to the legacy potree format and is irrelevant once EPT
   is present.)
 
+### Added
+- **Capture profiles (`profile` option): `drone-3d`, `object`, `architecture`.**
+  Versioned parameter bundles inside the engine — applied only for options the
+  user did not set explicitly, so individual choices always win. This replaces
+  WebODM "presets" as the mechanism for sensible defaults: those are per-install
+  JSON keyed to ODM's option names (useless against Effigies), edited in a raw
+  admin dialog. A WebODM preset for Effigies now only needs
+  `[{"name": "profile", "value": "drone-3d"}]`.
+
 ### Changed
 - **Boolean options follow the ODM flag convention (default-false `skip-`/`no-`
   flags).** WebODM checkboxes can only *send* a flag (checked) or omit it — a

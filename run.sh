@@ -11,6 +11,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Defaults mirror options.json
 declare -A OPT=(
+  [profile]=none
   [sparse-engine]=colmap
   [matcher]=exhaustive
   [mapper]=incremental
@@ -37,9 +38,11 @@ declare -A OPT=(
 )
 
 PROJECT_NAME=""
+declare -A GIVEN=()           # keys the caller set explicitly (beat the profile)
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == --* ]]; then
     key="${1#--}"
+    GIVEN[$key]=1
     # boolean flags (no following value) vs. valued options
     if [[ $# -ge 2 && "$2" != --* ]]; then
       OPT[$key]="$2"; shift 2
@@ -50,6 +53,39 @@ while [[ $# -gt 0 ]]; do
     PROJECT_NAME="$1"; shift 1
   fi
 done
+
+# ---------------------------------------------------------------------------
+# 1b. Capture profile — a parameter bundle for options the caller did NOT set
+#     explicitly (explicit options always win). Profiles live here, versioned
+#     with the engine, instead of in WebODM's preset JSON (those are per-install
+#     data keyed to ODM's option names).
+# ---------------------------------------------------------------------------
+profile_set() { [[ -n "${GIVEN[$1]:-}" ]] || OPT[$1]="$2"; }
+case "${OPT[profile]}" in
+  drone-3d)      # aerial survey: GPS neighbourhood matching, balanced resolution
+    profile_set matcher spatial
+    profile_set mapper incremental
+    profile_set densify-resolution-level 1
+    profile_set number-views-fuse 3
+    profile_set refine-mesh-iters 3
+    ;;
+  object)        # finds / artefacts / turntable: max detail, local frame
+    profile_set matcher exhaustive
+    profile_set georeference none
+    profile_set densify-resolution-level 0
+    profile_set number-views-fuse 3
+    profile_set refine-mesh-iters 3
+    profile_set refine-max-face-area 8
+    ;;
+  architecture)  # buildings / facades: convergent sets, balanced resolution
+    profile_set matcher exhaustive
+    profile_set densify-resolution-level 1
+    profile_set number-views-fuse 3
+    profile_set refine-mesh-iters 3
+    ;;
+  none) ;;
+  *) echo "[effigies] WARN: unknown profile '${OPT[profile]}' — using defaults" >&2 ;;
+esac
 
 PROJ="${OPT[project-path]}/${PROJECT_NAME}"
 IMAGES="${PROJ}/images"

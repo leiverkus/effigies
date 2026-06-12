@@ -1,5 +1,18 @@
 [
   {
+    "name": "profile",
+    "title": "Profile",
+    "value": "none",
+    "domain": [
+      "none",
+      "drone-3d",
+      "object",
+      "architecture"
+    ],
+    "type": "enum",
+    "help": "Capture profile: a sensible parameter bundle applied for options you did not set explicitly (your explicit choices always win). 'drone-3d': aerial survey (spatial matching, balanced resolution). 'object': finds/artefacts/turntable (exhaustive matching, full-resolution densify, finest refine, local frame). 'architecture': buildings/facades (exhaustive matching, balanced resolution). 'none': defaults only. Default: %(default)s"
+  },
+  {
     "name": "sparse-engine",
     "title": "Sparse Engine",
     "value": "colmap",
