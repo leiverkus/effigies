@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installed" notice refers to the legacy potree format and is irrelevant once EPT
   is present.)
 
+### Changed
+- **Boolean options follow the ODM flag convention (default-false `skip-`/`no-`
+  flags).** WebODM checkboxes can only *send* a flag (checked) or omit it — a
+  default-true boolean is impossible to disable from the UI (the tooltip said
+  "Default: true" while the box sat unchecked, and checking it could only confirm
+  the default). Renamed/inverted: `reconstruct-mesh` → `skip-reconstruct-mesh`,
+  `orthophoto` → `skip-orthophoto` (ODM's own name), `texture-color-harmonize` →
+  `skip-color-harmonize`, `use-gpu` → `no-gpu`. Unchecked now genuinely means the
+  default, checked genuinely disables. (`texture-seam-leveling`, default false,
+  was already expressible.)
+
 ### Fixed
 - **3D model invisible in WebODM's viewer.** Three missing pieces of the ODM
   contract, all fixed: (1) the glb now carries the **`CESIUM_RTC`** extension

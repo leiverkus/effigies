@@ -3,7 +3,10 @@
     "name": "sparse-engine",
     "title": "Sparse Engine",
     "value": "colmap",
-    "domain": ["colmap", "opensfm"],
+    "domain": [
+      "colmap",
+      "opensfm"
+    ],
     "type": "enum",
     "help": "Structure-from-Motion backend for the sparse reconstruction. 'colmap' is recommended for close-range / convergent imagery (objects, architecture); 'opensfm' for GPS-tagged aerial sets. Default: %(default)s"
   },
@@ -11,7 +14,12 @@
     "name": "matcher",
     "title": "COLMAP Matcher",
     "value": "exhaustive",
-    "domain": ["exhaustive", "sequential", "vocab_tree", "spatial"],
+    "domain": [
+      "exhaustive",
+      "sequential",
+      "vocab_tree",
+      "spatial"
+    ],
     "type": "enum",
     "help": "Feature matching strategy (COLMAP only). 'exhaustive' is most robust for unordered object photos but scales O(n^2). 'sequential' for ordered/video frames. 'vocab_tree' scales to large sets (hundreds–thousands of images): each image retrieves its most similar images from a baked-in Flickr100K vocabulary tree instead of matching all pairs. 'spatial' uses GPS when present. Default: %(default)s"
   },
@@ -19,7 +27,10 @@
     "name": "mapper",
     "title": "COLMAP Mapper",
     "value": "incremental",
-    "domain": ["incremental", "global"],
+    "domain": [
+      "incremental",
+      "global"
+    ],
     "type": "enum",
     "help": "Sparse SfM strategy (COLMAP only). 'incremental' is the robust default for close-range / convergent sets (objects, architecture). 'global' uses COLMAP 4's built-in GLOMAP global mapper — much faster on large, well-connected (e.g. aerial) blocks, but less robust on convergent close-range imagery; prefer it for big sets / ODM-comparison runs, not as the default. Default: %(default)s"
   },
@@ -27,7 +38,12 @@
     "name": "camera-model",
     "title": "Camera Model",
     "value": "OPENCV",
-    "domain": ["SIMPLE_RADIAL", "OPENCV", "FULL_OPENCV", "OPENCV_FISHEYE"],
+    "domain": [
+      "SIMPLE_RADIAL",
+      "OPENCV",
+      "FULL_OPENCV",
+      "OPENCV_FISHEYE"
+    ],
     "type": "enum",
     "help": "COLMAP camera model used for self-calibration. FULL_OPENCV for high-distortion / macro lenses. Default: %(default)s"
   },
@@ -48,11 +64,11 @@
     "help": "Minimum number of views that must agree to fuse a 3D point. Higher = cleaner but sparser. ODM uses 2; 3-4 improves close-range quality. Default: %(default)s"
   },
   {
-    "name": "reconstruct-mesh",
-    "title": "Reconstruct Mesh (OpenMVS)",
-    "value": true,
+    "name": "skip-reconstruct-mesh",
+    "title": "Skip Mesh Reconstruction",
+    "value": false,
     "type": "bool",
-    "help": "Run OpenMVS ReconstructMesh instead of Screened Poisson. This is the step ODM skips. Default: %(default)s"
+    "help": "Skip OpenMVS ReconstructMesh/RefineMesh/TextureMesh and stop after the dense point cloud. The full mesh chain is the point of this engine and runs by default; check only when you need a cloud-only fast run. Default: %(default)s"
   },
   {
     "name": "refine-mesh-iters",
@@ -111,11 +127,11 @@
     "help": "TextureMesh output texture atlas size in px. Default: %(default)s"
   },
   {
-    "name": "texture-color-harmonize",
-    "title": "Texture Color Harmonization",
-    "value": true,
+    "name": "skip-color-harmonize",
+    "title": "Skip Texture Color Harmonization",
+    "value": false,
     "type": "bool",
-    "help": "Equalise per-image exposure/colour before texturing: one RGB gain per image, estimated from the sparse-point observations and applied to the undistorted images, so the texture atlas (and orthophoto) is assembled from photometrically consistent photos. Replaces OpenMVS seam leveling, which is corrupted on this build. Default: %(default)s"
+    "help": "Skip the per-image exposure/colour equalisation before texturing. By default one RGB gain per image (estimated from the sparse-point observations) is applied to the undistorted images, so the texture atlas and orthophoto are assembled from photometrically consistent photos — it replaces OpenMVS seam leveling, which is corrupted on this build. Default: %(default)s"
   },
   {
     "name": "texture-seam-leveling",
@@ -128,7 +144,12 @@
     "name": "georeference",
     "title": "Georeferencing",
     "value": "auto",
-    "domain": ["auto", "gcp", "exif", "none"],
+    "domain": [
+      "auto",
+      "gcp",
+      "exif",
+      "none"
+    ],
     "type": "enum",
     "help": "Georeferencing strategy. 'auto': use gcp-file if present, else EXIF-GPS, else fall back to a metrically-scaled local model. 'gcp': require a GCP file. 'exif': require EXIF-GPS. 'none': skip georeferencing entirely and keep a local (object-centric) frame - recommended for turntable / close-range objects. Default: %(default)s"
   },
@@ -149,11 +170,11 @@
     "help": "Optional path to a ground control points file (ODM gcp_list.txt format) used for the Helmert georeferencing bridge. Default: none"
   },
   {
-    "name": "orthophoto",
-    "title": "Orthophoto",
-    "value": true,
+    "name": "skip-orthophoto",
+    "title": "Skip Orthophoto",
+    "value": false,
     "type": "bool",
-    "help": "Generate a georeferenced orthophoto (GeoTIFF) by nadir-rasterising the refined textured mesh. Only produced when the result is georeferenced (GPS/GCP); skipped for local-frame / object captures. Default: %(default)s"
+    "help": "Skip generating the orthophoto GeoTIFF. By default a georeferenced orthophoto is nadir-rasterised from the refined textured mesh (odm_orthophoto/odm_orthophoto.tif); it is skipped automatically for non-georeferenced (local-frame) results. Default: %(default)s"
   },
   {
     "name": "orthophoto-resolution",
@@ -164,10 +185,10 @@
     "help": "Orthophoto ground sample distance in cm/pixel. 'auto' targets ~4k px across the scene (clamped 1 cm .. 1 m). Smaller = sharper but larger file. Default: %(default)s"
   },
   {
-    "name": "use-gpu",
-    "title": "Use GPU",
-    "value": true,
+    "name": "no-gpu",
+    "title": "No GPU",
+    "value": false,
     "type": "bool",
-    "help": "Use CUDA for COLMAP feature extraction/matching and OpenMVS densification when available. Default: %(default)s"
+    "help": "Force CPU processing even when a CUDA GPU is available. Without this flag the engine uses the GPU when present and falls back to CPU automatically (with a warning) when not. Default: %(default)s"
   }
 ]

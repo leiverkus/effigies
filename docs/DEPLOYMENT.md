@@ -66,7 +66,8 @@ and show the Effigies options.
 
 ### Running a task against the CPU node
 
-This build has **no CUDA**, so in the task options set **Use GPU = OFF**. Keep the
+This build has **no CUDA**; the engine detects that and falls back to CPU on its
+own (optionally check **no-gpu** to silence the warning). Keep the
 dataset small (e.g. 20–40 close-range photos) — CPU `RefineMesh` is slow. A good
 first run: `sparse-engine=colmap`, `refine-mesh-iters=1`, `georeference=none`.
 

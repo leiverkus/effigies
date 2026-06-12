@@ -17,22 +17,22 @@ declare -A OPT=(
   [camera-model]=OPENCV
   [densify-resolution-level]=1
   [number-views-fuse]=3
-  [reconstruct-mesh]=true
+  [skip-reconstruct-mesh]=false
   [refine-mesh-iters]=3
   [refine-max-face-area]=16
   [refine-gradient-step]=25.05
   [mesh-decimate]=1.0
   [texture-resolution]=8192
   [texture-seam-leveling]=false
-  [texture-color-harmonize]=true
+  [skip-color-harmonize]=false
   [cpu-threads]=4
   [cpu-match-block]=10
   [crs]=auto
   [georeference]=auto
   [gcp]=""
-  [orthophoto]=true
+  [skip-orthophoto]=false
   [orthophoto-resolution]=auto
-  [use-gpu]=true
+  [no-gpu]=false
   [project-path]=""
 )
 
@@ -59,7 +59,8 @@ mkdir -p "$WORK"
 echo "[effigies] project: $PROJ"
 echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} mapper=${OPT[mapper]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
 
-# Resolve GPU usage. Honour --use-gpu, but fall back to CPU when no usable CUDA
+# Resolve GPU usage. GPU is used by default when present (--no-gpu forces CPU);
+# we still probe and fall back to CPU when no usable CUDA
 # GPU is present: COLMAP's SIFT aborts hard ("Cannot use Sift GPU without CUDA or
 # OpenGL support") rather than degrading, which would surface to WebODM only as
 # the opaque "Cannot process dataset". A documented CPU fallback beats a cryptic
@@ -69,11 +70,11 @@ export EFFIGIES_CPU_THREADS="${EFFIGIES_CPU_THREADS:-${OPT[cpu-threads]}}"
 export EFFIGIES_CPU_MATCH_BLOCK="${EFFIGIES_CPU_MATCH_BLOCK:-${OPT[cpu-match-block]}}"
 
 GPU_FLAG=0
-if [[ "${OPT[use-gpu]}" == "true" ]]; then
+if [[ "${OPT[no-gpu]}" != "true" ]]; then
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
     GPU_FLAG=1
   else
-    echo "[effigies] WARN: --use-gpu requested but no usable CUDA GPU detected; falling back to CPU" >&2
+    echo "[effigies] WARN: no usable CUDA GPU detected; falling back to CPU (use --no-gpu to silence)" >&2
   fi
 fi
 
@@ -104,7 +105,7 @@ bash "$(dirname "$0")/pipeline/dense_openmvs.sh" \
      "$WORK" \
      "${OPT[densify-resolution-level]}" \
      "${OPT[number-views-fuse]}" \
-     "${OPT[reconstruct-mesh]}" \
+     "$([[ "${OPT[skip-reconstruct-mesh]}" == "true" ]] && echo false || echo true)" \
      "${OPT[refine-mesh-iters]}" \
      "${OPT[mesh-decimate]}" \
      "${OPT[texture-resolution]}" \
@@ -112,7 +113,7 @@ bash "$(dirname "$0")/pipeline/dense_openmvs.sh" \
      "${OPT[refine-max-face-area]}" \
      "${OPT[refine-gradient-step]}" \
      "${OPT[texture-seam-leveling]}" \
-     "${OPT[texture-color-harmonize]}"
+     "$([[ "${OPT[skip-color-harmonize]}" == "true" ]] && echo false || echo true)"
 
 # ---------------------------------------------------------------------------
 # 4. Georeferencing bridge  (local SfM frame -> projected CRS)
@@ -147,7 +148,7 @@ fi
 #     result is not georeferenced (crs=local). Non-fatal: a failure here must not
 #     lose the 3D model + cloud that already succeeded.
 # ---------------------------------------------------------------------------
-if [[ "${OPT[orthophoto]}" == "true" ]]; then
+if [[ "${OPT[skip-orthophoto]}" != "true" ]]; then
   if ! python3 "$(dirname "$0")/helpers/orthophoto.py" \
        --work "$WORK" --resolution "${OPT[orthophoto-resolution]}"; then
     echo "[effigies] WARN: orthophoto step failed; continuing without it" >&2
