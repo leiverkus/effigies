@@ -46,6 +46,11 @@ docker run -d --name effigies-1 \
 > container**. Without it, every image update / container recreate wipes the task
 > store and WebODM's existing tasks fail with "`<uuid> not found`" on the node —
 > they must then be restarted (re-upload) as new tasks.
+>
+> **Stop gracefully before recreating:** `docker stop effigies-1 && docker rm
+> effigies-1`. A hard `docker rm -f` SIGKILLs NodeODM before it writes its tasks
+> dump — on the next start it treats every task directory as orphaned and
+> **deletes it from the volume**.
 
 Then in WebODM: **Processing Nodes → Add Node**
 - Hostname: `effigies-1`
