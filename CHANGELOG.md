@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is present.)
 
 ### Added
+- **Facade/wall recovery levers exposed: `free-space-support` + `mesh-close-holes`.**
+  Nadir flights see walls only at grazing angles; with few wall points OpenMVS'
+  graph-cut carves facades away (holes), while Metashape's default interpolation
+  bridges them closed. `free-space-support` (OpenMVS default off) recovers weakly
+  supported surfaces via visibility rays; `mesh-close-holes` raised (e.g. 300)
+  bridges remaining holes Metashape-style — interpolated geometry, documented as
+  such. Recommended wall test: `number-views-fuse: 2`,
+  `densify-resolution-level: 0`, `free-space-support` on.
 - **Multi-view blended texturing (`helpers/texture_blend.py`) — Metashape-class
   texture.** TextureMesh's atlas LAYOUT is kept, the CONTENT is re-baked: every
   texel is projected through its 3D position into its best views (top-4, weights
