@@ -149,6 +149,36 @@ kept** (24.04 dropped it). Facts worth keeping:
       against a shared baseline run in
       [docs/planned-experiments.md](docs/planned-experiments.md).
 
+## v0.5.0 — Scaling to large image sets (split-merge tiling)
+
+Single-machine reconstruction has two hard walls as image count grows toward
+300 / 600 / 900+: the COLMAP matcher (`exhaustive` is O(n²) — dead above ~150)
+and, more fundamentally, **memory** — the dense cloud and the `ReconstructMesh`
+Delaunay tetrahedralization (70 images → 15.5 M points → 87 M tetrahedra; 900
+would be tens of GB). The time cost grows on CPU, but the RAM wall is the real
+limit and it is **GPU-independent**, so it bites this (no-NVIDIA) setup
+regardless. The commercial tools all solve it the same way: spatial
+partitioning — Metashape **chunks** + tiled model + network processing,
+RealityScan out-of-core **components**, and ODM's own **split-merge**
+(`--split` / `--split-overlap` submodels merged via GPS/GCP).
+
+- [ ] **Mitigations available now (no new code), documented as the ≤~300 path:**
+      `matcher=vocab_tree` (baked FAISS tree, O(n·k)) or `spatial` (GPS) instead
+      of exhaustive; `mapper=global` (GLOMAP) for the large block;
+      `densify-resolution-level 1` and higher `number-views-fuse` to bound the
+      point cloud and the Delaunay RAM.
+- [ ] **Blend/seams streaming refactor (precondition).** `helpers/texture_blend.py`
+      currently loads *all* undistorted images and renders one depth map per
+      image — a memory/time bottleneck of our own making at 900 images. Process
+      views in batches; cap the depth-map set regionally per face. Must land
+      before tiling, or our own texture-quality stage becomes the wall.
+- [ ] **Split-merge tiling.** Spatially partition the images by GPS (with
+      overlap), run the full Effigies chain per tile, and merge mesh / cloud /
+      orthophoto in a shared coordinate frame. The open-source analogue of
+      Metashape chunks; the only clean path past the single-machine memory wall.
+- [ ] Optional: out-of-core / cache-to-disk for the dense + Delaunay stages
+      (the RealityScan approach) as an alternative to tiling for mid-size sets.
+
 ## v1.0.0 — Production
 
 - [ ] A reproducible, source-pinned image with verified binaries as the default.
