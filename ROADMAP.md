@@ -49,6 +49,11 @@ Made the image trustworthy and the output cloud web-ready.
 
 **Carried forward** (v0.2.0 shipped without these; tracked for a later release):
 
+- [ ] **Drop the NodeODM `shQuote` hotfix** once upstream fixes the PR #268
+      regression (numeric option values crash `s.replace()`); then bump
+      `NODEODM_REF` to the fixed commit and remove the build-time sed. The repo
+      policy stays "no NodeODM patches" — this is a pinned, documented exception
+      for an upstream crash.
 - [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
       builds and handle the variants.
 - [ ] Slim the image with a multi-stage (devel build → runtime copy) layout.

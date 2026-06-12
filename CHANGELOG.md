@@ -30,6 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `texture-color-harmonize` (on by default).
 
 ### Fixed
+- **NodeODM crashed on numeric task options ("&lt;uuid&gt; not found" in WebODM).**
+  Upstream NodeODM PR #268 (2026-04-30) introduced `shQuote()`, which calls
+  `s.replace()` on every option value — numeric options (e.g. `cpu-threads: 12`)
+  arrive as JS numbers after NodeODM's own type cast and crash the node the moment
+  a task starts; the restarted node then removes the half-created task as
+  orphaned, surfacing in WebODM as "not found". NodeODM is now **pinned**
+  (`8ad3e30d`, same reproducibility policy as every other component) with a
+  one-line type-safety hotfix (`String(s)`) applied at image build — to be dropped
+  when upstream fixes the regression.
+- **Node task state survives container recreates.** NodeODM keeps its task store
+  in `/opt/NodeODM/data` inside the container; the node now runs with a named
+  volume (`effigies_data`), so image updates no longer wipe existing tasks.
 - **Texture (and therefore orthophoto + 3D model) corrupted by OpenMVS seam
   leveling.** On the arm64/CPU build, OpenMVS 2.4.0's global+local seam leveling
   clamps texture-patch interiors to black and their borders to saturated colours —

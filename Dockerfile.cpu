@@ -156,9 +156,19 @@ RUN set -eux; \
     command -v pdal; \
     echo "[effigies] all required engine binaries present (CPU build)"
 
-# --- NodeODM REST layer (unmodified upstream) ---
+# --- NodeODM REST layer (pinned upstream + one type-safety hotfix) ---
+# Pinned for reproducibility (same policy as every other component). The sed is a
+# minimal hotfix for an upstream regression introduced by NodeODM PR #268
+# ("more-quotes", 2026-04-30): shQuote() calls s.replace() on every option value,
+# but numeric options (e.g. our cpu-threads) arrive as JS numbers after NodeODM's
+# own type cast -> "TypeError: s.replace is not a function" crashes the node when
+# a task starts. String(s) makes it type-safe; behaviour is otherwise unchanged.
+ARG NODEODM_REF=8ad3e30dc0006d59fd552c1e884614b53daa19e3
 WORKDIR /opt
-RUN git clone --depth 1 https://github.com/OpenDroneMap/NodeODM.git
+RUN git clone https://github.com/OpenDroneMap/NodeODM.git && \
+    git -C NodeODM checkout ${NODEODM_REF} && \
+    sed -i 's|s = s.replace(/"/g, "")|s = String(s).replace(/"/g, "")|' NodeODM/libs/odmRunner.js && \
+    grep -q 'String(s).replace' NodeODM/libs/odmRunner.js
 WORKDIR /opt/NodeODM
 RUN npm install --production
 
