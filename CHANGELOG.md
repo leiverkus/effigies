@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Base image: Ubuntu 22.04 → 24.04 (noble), CUDA 12.4.1 → 12.8.1.** No legacy
+  base for new software: 22.04's standard support ends in under a year and forced
+  workarounds (node v12 too old for obj2gltf, nanoflann header overlay, ancient
+  OpenCV). On noble the nanoflann vendoring is gone (1.5.4 in apt), node is 18,
+  OIIO/ceres/suitesparse are current. Noble dropped PDAL from its repos, so PDAL
+  is now **built from pinned source** (2.10.1) like COLMAP/OpenMVS — pin + verify
+  instead of distro roulette. The only vendored header remains CGAL 6.0.1
+  (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
+
 ### Fixed
 - **`refine-mesh-iters` was advertised but did nothing.** The log claimed
   "RefineMesh x3", yet no iteration flag was passed — `--scales` was hardcoded

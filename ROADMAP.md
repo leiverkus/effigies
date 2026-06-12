@@ -58,7 +58,7 @@ Made the image trustworthy and the output cloud web-ready.
 Both images are now on **COLMAP 4.0.4 + OpenMVS 2.4.0**, built from identical pinned
 sources and run-verified end-to-end on the CPU image. The originally-planned
 three-step sequence (24.04 base → GPU OpenMVS 2.4.0 → COLMAP 3.13 → 4.0.x) collapsed:
-**the base bump to 24.04 was not needed** — COLMAP 4 builds on Ubuntu 22.04 once
+**the base bump to 24.04 was not blocking** — COLMAP 4 already built on Ubuntu 22.04 once
 `libopenimageio-dev openimageio-tools libsuitesparse-dev` are added, so **PDAL is
 kept** (24.04 dropped it). Facts worth keeping:
 
