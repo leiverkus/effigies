@@ -6,6 +6,7 @@ IMAGES="$1"; WORK="$2"; MATCHER="$3"; CAMERA_MODEL="$4"; GPU="$5"; MAPPER="${6:-
 
 DB="$WORK/database.db"
 mkdir -p "$WORK/sparse"
+source "$(dirname "$0")/progress.sh"   # WebODM progress bar (no-op outside NodeODM)
 
 # COLMAP CLI option naming changed across versions. COLMAP 3.13 renamed the
 # generic feature options SiftExtraction/SiftMatching.{use_gpu,num_threads} ->
@@ -58,6 +59,7 @@ colmap feature_extractor \
   --${FEAT_EXTRACT}.use_gpu "$GPU" \
   "${EXTRACT_THREADS[@]}"
 
+progress 10
 echo "[colmap] ${MATCHER}_matcher"
 case "$MATCHER" in
   exhaustive) colmap exhaustive_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" "${EXHAUSTIVE_CPU[@]}" ;;
@@ -80,6 +82,8 @@ case "$MATCHER" in
       --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
   *) echo "[colmap] unknown/unsupported matcher '$MATCHER'" >&2; exit 1 ;;
 esac
+
+progress 32
 
 if [[ "$MAPPER" == "global" ]]; then
   # GLOMAP global SfM, built into COLMAP 4 (colmap global_mapper). Optional, never
@@ -110,6 +114,8 @@ else
     --image_path "$IMAGES" \
     --output_path "$WORK/sparse"
 fi
+
+progress 38
 
 # COLMAP writes model(s) under sparse/0, sparse/1, ... ; downstream uses sparse/0
 if [[ ! -d "$WORK/sparse/0" ]]; then
@@ -147,4 +153,5 @@ if [[ ! -f "$WORK/dense/sparse/cameras.bin" ]]; then
   echo "[colmap] undistortion failed: no dense/sparse model produced" >&2
   exit 1
 fi
+progress 42
 echo "[colmap] dense workspace at $WORK/dense"

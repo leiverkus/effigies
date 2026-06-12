@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is present.)
 
 ### Added
+- **WebODM progress bar is driven now.** NodeODM listens on UDP :6367 for ODM's
+  `PGUP/<pid>/<uuid>/<percent>` datagrams; the engine never sent them, so tasks
+  showed only a spinning "Processing". `pipeline/progress.sh` (sourced by run.sh
+  and the pipeline scripts) emits stage-weighted progress — extraction 10,
+  matching 32, mapper 38, undistort 42, scene 44, densify 62, mesh 68, refine 74,
+  texture 78, then the asset helpers up to 99. Best-effort by design: a progress
+  failure can never fail a run.
 - **Capture profiles (`profile` option): `drone-3d`, `object`, `architecture`.**
   Versioned parameter bundles inside the engine — applied only for options the
   user did not set explicitly, so individual choices always win. This replaces

@@ -92,6 +92,11 @@ IMAGES="${PROJ}/images"
 WORK="${PROJ}/effigies"
 mkdir -p "$WORK"
 
+# WebODM progress bar (UDP to NodeODM); see pipeline/progress.sh
+export EFFIGIES_TASK_UUID="$PROJECT_NAME"
+source "$(dirname "$0")/pipeline/progress.sh"
+progress 1
+
 echo "[effigies] project: $PROJ"
 echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} mapper=${OPT[mapper]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
 
@@ -129,6 +134,7 @@ if [[ "${OPT[sparse-engine]}" == "colmap" ]]; then
   # "images/" and DensifyPointCloud fails to find the images under $WORK/images.
   InterfaceCOLMAP -i "$WORK/dense" --image-folder "$WORK/dense/images/" \
                   -o "$WORK/scene.mvs" -w "$WORK"
+  progress 44
 else
   bash "$(dirname "$0")/pipeline/sparse_opensfm.sh" "$IMAGES" "$WORK"
   InterfaceOpenSfM -i "$WORK/opensfm" -o "$WORK/scene.mvs" -w "$WORK"
@@ -161,6 +167,7 @@ if [[ -z "${OPT[gcp]}" && -f "${PROJ}/gcp_list.txt" ]]; then
   echo "[effigies] auto-detected GCP file: ${OPT[gcp]}"
 fi
 
+progress 80
 python3 "$(dirname "$0")/helpers/georef_bridge.py" \
      --work "$WORK" \
      --images "$IMAGES" \
@@ -173,9 +180,11 @@ python3 "$(dirname "$0")/helpers/georef_bridge.py" \
 # 5. Point cloud -> georeferenced LAZ (+ EPT for the Potree viewer)
 #    Applies the georef transform to scene_dense.ply and writes LAZ via PDAL.
 # ---------------------------------------------------------------------------
+progress 83
 if ! python3 "$(dirname "$0")/helpers/pointcloud_to_laz.py" --work "$WORK" --ept; then
   echo "[effigies] WARN: LAZ/EPT step failed; map_outputs will fall back to the raw PLY" >&2
 fi
+progress 88
 
 # ---------------------------------------------------------------------------
 # 5b. Orthophoto -> georeferenced GeoTIFF (nadir-rasterised from the textured mesh)
@@ -195,6 +204,7 @@ fi
 # 5c. Camera assets — cameras.json (intrinsics) + shots.geojson (camera positions
 #     on the map). Matches the ODM downloadable assets. Non-fatal.
 # ---------------------------------------------------------------------------
+progress 92
 if ! python3 "$(dirname "$0")/helpers/camera_exports.py" --work "$WORK"; then
   echo "[effigies] WARN: camera export step failed; continuing without it" >&2
 fi
@@ -203,6 +213,7 @@ fi
 # 5d. glTF model — WebODM's "Struktur-Modell (glTF)" (odm_textured_model_geo.glb),
 #     a self-contained .glb of the same textured mesh. Non-fatal.
 # ---------------------------------------------------------------------------
+progress 93
 if ! python3 "$(dirname "$0")/helpers/mesh_to_gltf.py" --work "$WORK"; then
   echo "[effigies] WARN: glTF export failed; continuing without it" >&2
 fi
@@ -220,6 +231,8 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Map outputs onto the WebODM asset contract
 # ---------------------------------------------------------------------------
+progress 98
 python3 "$(dirname "$0")/helpers/map_outputs.py" --proj "$PROJ" --work "$WORK"
+progress 99
 
 echo "[effigies] done."

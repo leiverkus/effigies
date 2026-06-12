@@ -10,6 +10,7 @@ HARMONIZE="${12:-true}"
 HELPERS="$(cd "$(dirname "$0")/../helpers" && pwd)"
 
 cd "$WORK"
+source "$(dirname "$0")/progress.sh"   # WebODM progress bar (no-op outside NodeODM)
 
 # CUDA device selection (-1 = first GPU, -2 = CPU only). The --cuda-device option
 # only exists in a CUDA-enabled OpenMVS build; the CPU image is built with
@@ -29,6 +30,7 @@ DensifyPointCloud scene.mvs \
   "${CUDA_ARGS[@]}" \
   -w "$WORK"
 
+progress 62
 MESH_INPUT="scene_dense.mvs"
 
 if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
@@ -39,6 +41,7 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
     "${CUDA_ARGS[@]}" \
     -w "$WORK"
   MESH_MVS="scene_dense_mesh.mvs"
+  progress 68
 
   if [[ "${REFINE_ITERS}" != "0" ]]; then
     # OpenMVS 2.4 has no --max-iters; its "iterations" lever IS --scales ("how many
@@ -53,6 +56,7 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
       "${CUDA_ARGS[@]}" \
       -w "$WORK"
     MESH_MVS="scene_dense_mesh_refine.mvs"
+    progress 74
   fi
 
   echo "[openmvs] TextureMesh"
@@ -94,4 +98,5 @@ else
   echo "[openmvs] reconstruct-mesh disabled; leaving dense point cloud only"
 fi
 
+progress 78
 echo "[openmvs] dense stage complete"
