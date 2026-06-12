@@ -90,7 +90,7 @@ Advertised in [`options.json`](options.json) and surfaced in the WebODM task UI:
 | `texture-resolution` | `8192` | Texture atlas size in px. |
 | `georeference` | `auto` | `auto` / `gcp` / `exif` / `none` (see below). |
 | `crs` | `auto` | Target projected CRS (EPSG code, or `auto` UTM derivation). |
-| `crs-preset` | `none` | Named regional grids filling `crs` (Israeli TM, Palestine 1923, ETRS89 UTM 32/33N, OSGB, LV95); an explicit `crs` always wins. |
+| `crs-preset` | `none` | Named regional grids filling `crs` (Israeli TM, Palestine 1923, ETRS89 UTM 32/33N = Germany's official grid, OSGB, LV95); an explicit `crs` always wins. |
 | `gcp` | — | Optional path to an ODM-format `gcp_list.txt`. |
 | `no-gpu` | `false` | Force CPU even when CUDA is available. |
 
