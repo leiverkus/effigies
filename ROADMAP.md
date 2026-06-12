@@ -179,10 +179,14 @@ RealityScan out-of-core **components**, and ODM's own **split-merge**
       atlas + mesh, not image count). Full design with measured slopes and a
       phased plan in [docs/blend-streaming-plan.md](docs/blend-streaming-plan.md).
       Must land before tiling, or our own texture-quality stage becomes the wall.
-- [ ] **Split-merge tiling.** Spatially partition the images by GPS (with
-      overlap), run the full Effigies chain per tile, and merge mesh / cloud /
-      orthophoto in a shared coordinate frame. The open-source analogue of
-      Metashape chunks; the only clean path past the single-machine memory wall.
+- [ ] **Split-merge tiling.** Run SfM once on the whole set, partition the
+      cameras spatially **in that shared sparse frame** (no GPS required, no
+      per-tile alignment), run the dense→mesh→texture chain per tile within a
+      memory budget, and merge cloud / mesh / orthophoto. The open-source
+      analogue of Metashape chunks; the only clean path past the single-machine
+      memory wall. Full architecture (shared-sparse anchor, global-harmonise
+      coupling, easiest-merge-first phasing, honest seam risks) in
+      [docs/split-merge-tiling-plan.md](docs/split-merge-tiling-plan.md).
 - [ ] Optional: out-of-core / cache-to-disk for the dense + Delaunay stages
       (the RealityScan approach) as an alternative to tiling for mid-size sets.
 
