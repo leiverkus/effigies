@@ -111,6 +111,13 @@
     "help": "TextureMesh output texture atlas size in px. Default: %(default)s"
   },
   {
+    "name": "texture-color-harmonize",
+    "title": "Texture Color Harmonization",
+    "value": true,
+    "type": "bool",
+    "help": "Equalise per-image exposure/colour before texturing: one RGB gain per image, estimated from the sparse-point observations and applied to the undistorted images, so the texture atlas (and orthophoto) is assembled from photometrically consistent photos. Replaces OpenMVS seam leveling, which is corrupted on this build. Default: %(default)s"
+  },
+  {
     "name": "texture-seam-leveling",
     "title": "Texture Seam Leveling",
     "value": false,

@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of distro roulette. The only vendored header remains CGAL 6.0.1
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
+### Added
+- **Exposure/colour harmonisation before texturing
+  (`helpers/harmonize_exposure.py`).** With OpenMVS seam leveling disabled (it is
+  corrupted on this build), texture patches showed the raw exposure differences
+  between photos — a patchy ("fleckig") texture and orthophoto. Now one RGB gain
+  per image is estimated from the sparse-point observations (every 3D point seen
+  in several images; alternating least squares in log space) and applied to the
+  undistorted images before TextureMesh, so the atlas is assembled from
+  photometrically consistent photos. On the drone test set the estimated spread
+  was 0.59–1.77 (≈3× brightness) across 70 images. New option
+  `texture-color-harmonize` (on by default).
+
 ### Fixed
 - **Texture (and therefore orthophoto + 3D model) corrupted by OpenMVS seam
   leveling.** On the arm64/CPU build, OpenMVS 2.4.0's global+local seam leveling

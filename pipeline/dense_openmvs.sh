@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # OpenMVS dense reconstruction + the steps ODM skips.
 # args: WORK RES_LEVEL VIEWS_FUSE RECONSTRUCT_MESH REFINE_ITERS DECIMATE TEX_RES GPU_FLAG
-#       [MAX_FACE_AREA] [GRADIENT_STEP] [SEAM_LEVELING]
+#       [MAX_FACE_AREA] [GRADIENT_STEP] [SEAM_LEVELING] [HARMONIZE]
 set -euo pipefail
 WORK="$1"; RES_LEVEL="$2"; VIEWS_FUSE="$3"; RECONSTRUCT_MESH="$4"
 REFINE_ITERS="$5"; DECIMATE="$6"; TEX_RES="$7"; GPU="$8"
 MAX_FACE_AREA="${9:-16}"; GRADIENT_STEP="${10:-25.05}"; SEAM_LEVELING="${11:-false}"
+HARMONIZE="${12:-true}"
+HELPERS="$(cd "$(dirname "$0")/../helpers" && pwd)"
 
 cd "$WORK"
 
@@ -65,6 +67,14 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
   # to black, borders to saturated colors — which wrecks both the model texture
   # and the orthophoto. Re-enable via --texture-seam-leveling once a build
   # without the defect is validated.
+  # Equalise per-image exposure BEFORE assembling the atlas (the harmonisation
+  # OpenMVS's broken seam leveling was supposed to provide): per-image RGB gains
+  # from the sparse-point observations, applied to the undistorted images.
+  if [[ "$HARMONIZE" == "true" ]]; then
+    if ! python3 "$HELPERS/harmonize_exposure.py" --work "$WORK"; then
+      echo "[openmvs] WARN: exposure harmonisation failed; texturing unadjusted images" >&2
+    fi
+  fi
   SEAM=0; [[ "$SEAM_LEVELING" == "true" ]] && SEAM=1
   TEX_IN="$MESH_MVS"; TEX_ARGS=()
   if [[ "$MESH_MVS" == "scene_dense_mesh_refine.mvs" ]]; then
