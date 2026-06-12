@@ -105,6 +105,17 @@ kept** (24.04 dropped it). Facts worth keeping:
 - [x] Named CRS presets (`crs-preset`): Israeli TM, Palestine 1923, ETRS89 UTM
       32N/33N, OSGB, Swiss LV95 — presets, not defaults; explicit `crs` wins.
 
+## v0.3.x — Deeper georeferencing rigor *(when the paper's accuracy claims need it)*
+
+- [ ] **GCP-constrained bundle adjustment.** Today GCPs drive a post-hoc Umeyama
+      similarity on triangulated marker points (the bridge in `georef_bridge.py`).
+      ODM's stronger path puts GCPs *into* the bundle adjustment, so marker
+      residuals shape the reconstruction itself. COLMAP supports pose / position
+      priors (`Mapper.use_prior_position` for GPS); pulling GCP observations into
+      the BA is more involved but achievable, and would tighten the CP-RMSE that
+      the benchmark reports. Real work — schedule it only if the accuracy claims
+      in the paper demand it, not speculatively.
+
 ## v0.4.0 — Quality profiles & tuning
 
 - [~] **Capture profiles** as an engine option (`profile`: `drone-3d` / `object` /
@@ -129,8 +140,24 @@ kept** (24.04 dropped it). Facts worth keeping:
       (`odm_orthophoto/odm_orthophoto.tif`), so the ortho inherits RefineMesh
       detail. Rasteriser is batch-vectorised (small-triangle size classes in one
       numpy pass each, z-buffer conflicts via lexsort; ~10x vs the per-face loop,
-      pixel-identical). Open: optional DSM/DTM output and true-ortho occlusion
-      handling.
+      pixel-identical). DSM/DTM and true-ortho hardening are broken out as their
+      own items below (closing the gap to ODM's mature raster outputs).
+- [ ] **DSM (digital surface model) — low effort, building blocks present.**
+      `orthophoto.py` already rasterises the refined mesh nadir with a z-buffer
+      (z-winner lexsort) — the per-pixel surface height it computes *is* the DSM,
+      currently discarded. Emit the height grid as a georeferenced GeoTIFF
+      (`odm_dem/dsm.tif`) alongside the RGB ortho; it inherits RefineMesh detail
+      for free. The single best gap-to-ODM lever per unit effort.
+- [ ] **DTM (digital terrain model) — medium, no new dependency.** Needs ground
+      classification (remove buildings/vegetation). PDAL — already built for the
+      LAZ output — ships exactly the filters ODM uses (`filters.smrf` /
+      `filters.pmf` / CSF). Pipeline: dense cloud → SMRF ground filter → rasterise
+      ground returns → `odm_dem/dtm.tif`. Reuses the DSM rasteriser.
+- [ ] **True-ortho hardening.** We are closer than it looks: rasterising the real
+      3D mesh with the z-buffer already yields true-ortho occlusion (no building
+      lean), unlike a DSM-only ortho. The remaining gap to ODM is robustness /
+      edge cases (nodata handling, seam-free coverage), not a missing foundation —
+      incremental.
 - [~] **Benchmark suite** comparing Effigies output against stock ODM /
       Metashape / RealityCapture on shared datasets (mesh density, photometric
       error, runtime). Scaffolded: `scripts/benchmark.sh` (per-stage runtime +
