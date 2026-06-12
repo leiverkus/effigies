@@ -112,12 +112,12 @@ kept** (24.04 dropped it). Facts worth keeping:
       `refine-mesh-iters` now genuinely driving `RefineMesh --scales` (it was
       hardcoded to 1 — the advertised option did nothing). The CPU stability caps
       (`cpu-threads`, `cpu-match-block`) are options too; env vars still override.
-- [ ] **Multi-view blended texturing** — the real cure for view-character
-      blotches on homogeneous surfaces (roof planes): each face textured as a
-      weighted blend of SEVERAL views (angle/sharpness weighted, multi-band)
-      instead of OpenMVS's single best view. Seam leveling (shipped) equalises
-      patch borders; it cannot remove per-view exposure/sharpness character
-      inside patches.
+- [x] **Multi-view blended texturing** (`texture_blend.py`): every texel
+      re-baked as a depth-tested, angle/distance-weighted blend of its top-4
+      views — removes the per-view blotches on homogeneous surfaces (roof std
+      23.6 -> 16.9 cumulatively with harmonisation). Possible refinements:
+      sharpness-aware weights, multi-band blending (low frequencies blended,
+      high frequencies from the best view).
 - [~] **Orthophoto from the textured mesh.** `helpers/orthophoto.py` nadir-
       rasterises the refined textured mesh into a georeferenced GeoTIFF
       (`odm_orthophoto/odm_orthophoto.tif`), so the ortho inherits RefineMesh

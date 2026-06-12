@@ -40,6 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is present.)
 
 ### Added
+- **Multi-view blended texturing (`helpers/texture_blend.py`) — Metashape-class
+  texture.** TextureMesh's atlas LAYOUT is kept, the CONTENT is re-baked: every
+  texel is projected through its 3D position into its best views (top-4, weights
+  cos²(view angle)/distance², occlusion-tested against per-view depth maps
+  rendered from the mesh) and the harmonised undistorted images are blended.
+  This removes the per-view exposure/sharpness blotches a single-view texture
+  shows on homogeneous surfaces. Includes `helpers/colmap_bin.py` (reader for
+  the binary undistorted PINHOLE model; poses cross-checked against the text
+  model to 1e-16). Real 12 MP validation: 99.5% of faces with valid views,
+  ~4.7 min for a 1.9M-face mesh, roof-plane brightness std 19.6 -> 16.9 with no
+  visible ghosting (cumulative since single-view/global-gain: 23.6 -> 16.9).
+  New option `skip-view-blending`. Pipeline order: TextureMesh -> blend ->
+  seam leveling -> georeferencing.
 - **Own texture seam leveling (`helpers/seam_level.py`).** OpenMVS's seam
   leveling is corrupted (v2.4.0 and master), so Effigies now levels seams
   itself: texture patches are found by value-based connectivity (OpenMVS shares

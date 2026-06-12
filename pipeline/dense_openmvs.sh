@@ -2,11 +2,12 @@
 # OpenMVS dense reconstruction + the steps ODM skips.
 # args: WORK RES_LEVEL VIEWS_FUSE RECONSTRUCT_MESH REFINE_ITERS DECIMATE TEX_RES GPU_FLAG
 #       [MAX_FACE_AREA] [GRADIENT_STEP] [SEAM_LEVELING] [HARMONIZE] [SEAM_SMOOTH]
+#       [VIEW_BLEND]
 set -euo pipefail
 WORK="$1"; RES_LEVEL="$2"; VIEWS_FUSE="$3"; RECONSTRUCT_MESH="$4"
 REFINE_ITERS="$5"; DECIMATE="$6"; TEX_RES="$7"; GPU="$8"
 MAX_FACE_AREA="${9:-16}"; GRADIENT_STEP="${10:-25.05}"; SEAM_LEVELING="${11:-false}"
-HARMONIZE="${12:-true}"; SEAM_SMOOTH="${13:-true}"
+HARMONIZE="${12:-true}"; SEAM_SMOOTH="${13:-true}"; VIEW_BLEND="${14:-true}"
 HELPERS="$(cd "$(dirname "$0")/../helpers" && pwd)"
 
 cd "$WORK"
@@ -94,6 +95,15 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
     --archive-type 3 \
     "${CUDA_ARGS[@]}" \
     -w "$WORK"
+  # Multi-view blended texturing (Metashape-class): keep TextureMesh's atlas
+  # layout, re-bake every texel as a weighted blend of its best views (angle/
+  # distance weights, depth-tested) — removes the per-view exposure/sharpness
+  # blotches a single-view texture shows on homogeneous surfaces. Non-fatal.
+  if [[ "$VIEW_BLEND" == "true" ]]; then
+    if ! python3 "$HELPERS/texture_blend.py" --work "$WORK"; then
+      echo "[openmvs] WARN: multi-view blend failed; keeping single-view texture" >&2
+    fi
+  fi
   # Our own seam leveling (OpenMVS's is corrupted): equalise colours across
   # texture-patch seams and diffuse the adjustment into the patch interiors —
   # measured to halve the median seam colour difference. Non-fatal.

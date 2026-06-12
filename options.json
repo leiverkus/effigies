@@ -147,6 +147,13 @@
     "help": "Skip the per-image exposure/colour equalisation before texturing. By default one RGB gain per image (estimated from the sparse-point observations) is applied to the undistorted images, so the texture atlas and orthophoto are assembled from photometrically consistent photos — it replaces OpenMVS seam leveling, which is corrupted on this build. Default: %(default)s"
   },
   {
+    "name": "skip-view-blending",
+    "title": "Skip Multi-View Texture Blending",
+    "value": false,
+    "type": "bool",
+    "help": "Skip the multi-view texture blend: by default every texel is re-baked as a weighted blend of its best source views (view angle and distance weighted, occlusion-tested against mesh depth maps) instead of OpenMVS's single best view — removes per-view exposure/sharpness blotches on homogeneous surfaces (roofs). Default: %(default)s"
+  },
+  {
     "name": "skip-seam-smoothing",
     "title": "Skip Texture Seam Smoothing",
     "value": false,
