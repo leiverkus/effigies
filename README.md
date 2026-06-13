@@ -205,10 +205,12 @@ honest list lives in [ROADMAP.md](ROADMAP.md); the short version:
   build-time `which` gate that fails loudly if `RefineMesh` (or any other required
   binary) is missing. It has **not yet been built/run on real hardware** — the gate
   is the safety net until an end-to-end run confirms it.
-- VCGlib (an OpenMVS build dependency) still tracks a branch via the `VCG_REF`
-  build arg; it must be pinned to a verified commit before a release image.
-- GCP localization uses the nearest observed sparse point to the marked pixel;
-  multi-view triangulation would be more precise.
+- VCGlib (an OpenMVS build dependency) is pinned to a verified commit via the
+  `VCG_REF` build arg (`658ba36`), like every other component — no floating branch.
+- GCP localization triangulates each GCP across all images it is marked in (marked
+  pixels undistorted into viewing rays, intersected in least squares); the
+  nearest-observed-sparse-point heuristic is now only the single-view fallback.
+  Shipped in v0.3.0.
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
