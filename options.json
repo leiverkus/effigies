@@ -124,6 +124,14 @@
     "help": "COLMAP exhaustive-matcher block size on the CPU path. The default FLANN matcher segfaults at large blocks on some hosts (arm64); 10 is safe. Raise cautiously for speed on x86. Ignored on GPU. Default: %(default)s"
   },
   {
+    "name": "dense-max-threads",
+    "title": "Dense Stage Max Threads",
+    "value": 0,
+    "domain": "integer",
+    "type": "int",
+    "help": "Cap the worker threads of the OpenMVS dense binaries (DensifyPointCloud / ReconstructMesh / RefineMesh / TextureMesh). Each thread holds image pyramids and working buffers, so on many-core but RAM-constrained hosts the per-thread peak can OOM during densify/refine — the same reason 'cpu-threads' is capped for COLMAP's CPU SIFT. 0 (default) = all cores (OpenMVS default, unchanged behaviour). NOTE: this bounds the densify/refine peak only; it does NOT reduce the ReconstructMesh Delaunay tetrahedralization, which is strictly in-core — for that memory wall use 'tiles' (split-merge) or a higher 'densify-resolution-level'. The EFFIGIES_DENSE_THREADS env var overrides it. Default: %(default)s"
+  },
+  {
     "name": "free-space-support",
     "title": "Mesh: Free-Space Support",
     "value": false,

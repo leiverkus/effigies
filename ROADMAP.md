@@ -253,8 +253,18 @@ RealityScan out-of-core **components**, and ODM's own **split-merge**
       real large run and are deferred to the reference-data campaign. v1 mesh-seam
       limitation at tile borders documented (Metashape/ODM share it). Architecture:
       [docs/split-merge-tiling-plan.md](docs/split-merge-tiling-plan.md).
-- [ ] Optional: out-of-core / cache-to-disk for the dense + Delaunay stages
-      (the RealityScan approach) as an alternative to tiling for mid-size sets.
+- [x] ~~Optional: out-of-core / cache-to-disk for the dense + Delaunay stages~~
+      **— superseded; not feasible as stated.** Investigated against the OpenMVS
+      2.4.0 binaries: `ReconstructMesh`'s Delaunay tetrahedralization is **strictly
+      in-core** (no `--max-memory`, no block/chunk processing, no disk-cache), so a
+      true out-of-core Delaunay would need patching OpenMVS internals (out of scope).
+      The memory wall is only movable by fewer points (`densify-resolution-level` /
+      `number-views-fuse` — already options) or splitting (**split-merge tiling —
+      shipped**), which already meets the item's goal. The one residual worth keeping
+      landed: **`dense-max-threads`** (OpenMVS `--max-threads`, default 0 = all cores)
+      bounds the densify/refine **peak** RAM on many-core, RAM-constrained hosts —
+      the same rationale as `cpu-threads` for COLMAP SIFT — but explicitly does *not*
+      touch the Delaunay wall.
 
 ## v0.6.0 — Benchmark campaign & profile calibration *(needs reference data)*
 

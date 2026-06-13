@@ -38,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **OpenMVS dense thread cap (`dense-max-threads`, default 0 = all cores).** Caps the
+  worker threads of DensifyPointCloud / ReconstructMesh / RefineMesh / TextureMesh
+  (`--max-threads`) to bound the **densify/refine peak** RAM on many-core but
+  RAM-constrained hosts — each thread holds image pyramids + working buffers, the
+  same OOM risk that already caps COLMAP's CPU SIFT via `cpu-threads`. Wired like
+  `cpu-threads` (`EFFIGIES_DENSE_THREADS` env overrides; tiles inherit it via the
+  subprocess env); `0` omits the flag, so the default is byte-identical. **Honest
+  scope:** it does *not* reduce the `ReconstructMesh` Delaunay tetrahedralization
+  peak — that is strictly in-core in OpenMVS 2.4.0; for that memory wall use `tiles`
+  (split-merge) or a higher `densify-resolution-level`. This closes the v0.5.0
+  "optional out-of-core / cache-to-disk" item: a true out-of-core Delaunay was
+  investigated and found infeasible without patching OpenMVS (no `--max-memory`, no
+  block processing), and the wall is already addressed by split-merge tiling — so
+  only this residual thread cap was kept.
 - **Split-merge tiling for large image sets (`tiles=off|auto|N`, `tile-budget`).**
   The open-source analogue of Metashape chunks / ODM split-merge — the path past
   the single-machine RAM wall (Densify + ReconstructMesh's Delaunay). SfM runs once

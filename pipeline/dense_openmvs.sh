@@ -24,12 +24,23 @@ if DensifyPointCloud --help 2>&1 | grep -q -- '--cuda-device'; then
   if [[ "$GPU" == "1" ]]; then CUDA_ARGS=(--cuda-device -1); else CUDA_ARGS=(--cuda-device -2); fi
 fi
 
+# Optional cap on OpenMVS worker threads (EFFIGIES_DENSE_THREADS, 0 = all cores =
+# OpenMVS default). Each densify/refine thread holds image pyramids + working
+# buffers, so on many-core, RAM-constrained hosts the per-thread peak can OOM
+# (the same reason COLMAP's CPU SIFT is capped via cpu-threads). NOTE: this bounds
+# the Densify/Refine peak only — it does NOT reduce the ReconstructMesh Delaunay
+# tetrahedralization (strictly in-core); use --tiles or a higher
+# densify-resolution-level for that wall. 0 -> flag omitted -> unchanged.
+THREADS_ARG=()
+DENSE_THREADS="${EFFIGIES_DENSE_THREADS:-0}"
+[[ "$DENSE_THREADS" != "0" ]] && THREADS_ARG=(--max-threads "$DENSE_THREADS")
+
 echo "[openmvs] DensifyPointCloud"
 DensifyPointCloud scene.mvs \
   --resolution-level "$RES_LEVEL" \
   --number-views-fuse "$VIEWS_FUSE" \
   --archive-type 3 \
-  "${CUDA_ARGS[@]}" \
+  "${CUDA_ARGS[@]}" "${THREADS_ARG[@]}" \
   -w "$WORK"
 
 progress 62
@@ -43,7 +54,7 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
     --free-space-support "$FSS" \
     --close-holes "$CLOSE_HOLES" \
     --archive-type 3 \
-    "${CUDA_ARGS[@]}" \
+    "${CUDA_ARGS[@]}" "${THREADS_ARG[@]}" \
     -w "$WORK"
   MESH_MVS="scene_dense_mesh.mvs"
   progress 68
@@ -58,7 +69,7 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
       --scales "$REFINE_ITERS" \
       --gradient-step "$GRADIENT_STEP" \
       --resolution-level "$RES_LEVEL" \
-      "${CUDA_ARGS[@]}" \
+      "${CUDA_ARGS[@]}" "${THREADS_ARG[@]}" \
       -w "$WORK"
     MESH_MVS="scene_dense_mesh_refine.mvs"
     progress 74
@@ -97,7 +108,7 @@ if [[ "$RECONSTRUCT_MESH" == "true" ]]; then
     --global-seam-leveling "$SEAM" \
     --local-seam-leveling "$SEAM" \
     --archive-type 3 \
-    "${CUDA_ARGS[@]}" \
+    "${CUDA_ARGS[@]}" "${THREADS_ARG[@]}" \
     -w "$WORK"
   # Multi-view blended texturing (Metashape-class): keep TextureMesh's atlas
   # layout, re-bake every texel as a weighted blend of its best views (angle/

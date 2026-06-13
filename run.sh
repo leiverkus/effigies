@@ -32,6 +32,7 @@ declare -A OPT=(
   [skip-view-blending]=false
   [cpu-threads]=4
   [cpu-match-block]=10
+  [dense-max-threads]=0
   [crs]=auto
   [crs-preset]=none
   [georeference]=auto
@@ -148,6 +149,11 @@ echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} map
 # CPU tuning caps as task options; an explicitly set env var still wins (ops override)
 export EFFIGIES_CPU_THREADS="${EFFIGIES_CPU_THREADS:-${OPT[cpu-threads]}}"
 export EFFIGIES_CPU_MATCH_BLOCK="${EFFIGIES_CPU_MATCH_BLOCK:-${OPT[cpu-match-block]}}"
+# OpenMVS dense worker-thread cap (0 = all cores = unchanged). Exported so the
+# dense stage AND per-tile subprocesses (pipeline/tile.sh -> dense_openmvs.sh)
+# inherit it. Bounds the densify/refine peak on many-core, RAM-constrained hosts;
+# does not touch the ReconstructMesh Delaunay wall (use --tiles / resolution).
+export EFFIGIES_DENSE_THREADS="${EFFIGIES_DENSE_THREADS:-${OPT[dense-max-threads]}}"
 
 GPU_FLAG=0
 if [[ "${OPT[no-gpu]}" != "true" ]]; then
