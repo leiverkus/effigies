@@ -118,12 +118,14 @@ kept** (24.04 dropped it). Facts worth keeping:
 
 ## v0.4.0 — Quality profiles & tuning
 
-- [~] **Capture profiles** as an engine option (`profile`: `drone-3d` / `object` /
+- [x] **Capture profiles** as an engine option (`profile`: `drone-3d` / `object` /
       `architecture`): versioned parameter bundles applied for options the user
       did not set explicitly (explicit choices win). Lives in the engine instead
       of WebODM's preset JSON — those are per-install data keyed to ODM's option
-      names and useless for Effigies. Open: calibrate the bundles (esp.
-      `RefineMesh`) per profile against benchmark runs.
+      names and useless for Effigies. The bundle *values* are currently reasoned
+      defaults; **empirically calibrating them** (esp. `RefineMesh`) per profile
+      against benchmark runs is deferred to **v0.6.0** (it needs the benchmark
+      campaign).
 - [x] Expose key OpenMVS refine parameters as task options with documented
       effects: `refine-max-face-area`, `refine-gradient-step`, and
       `refine-mesh-iters` now genuinely driving `RefineMesh --scales` (it was
@@ -135,13 +137,13 @@ kept** (24.04 dropped it). Facts worth keeping:
       23.6 -> 16.9 cumulatively with harmonisation). Possible refinements:
       sharpness-aware weights, multi-band blending (low frequencies blended,
       high frequencies from the best view).
-- [~] **Orthophoto from the textured mesh.** `helpers/orthophoto.py` nadir-
+- [x] **Orthophoto from the textured mesh.** `helpers/orthophoto.py` nadir-
       rasterises the refined textured mesh into a georeferenced GeoTIFF
       (`odm_orthophoto/odm_orthophoto.tif`), so the ortho inherits RefineMesh
       detail. Rasteriser is batch-vectorised (small-triangle size classes in one
       numpy pass each, z-buffer conflicts via lexsort; ~10x vs the per-face loop,
-      pixel-identical). DSM/DTM and true-ortho hardening are broken out as their
-      own items below (closing the gap to ODM's mature raster outputs).
+      pixel-identical). DSM/DTM and true-ortho hardening landed as their own
+      items below (the gap to ODM's mature raster outputs is closed).
 - [x] **DSM (digital surface model).** `orthophoto.py` already rasterises the
       refined mesh nadir with a z-buffer (z-winner lexsort) — the per-pixel
       surface height it computes *is* the DSM. That height grid is now emitted as
@@ -168,23 +170,14 @@ kept** (24.04 dropped it). Facts worth keeping:
       (default 0.25, 0=off) are closed with the nearest valid colour; large voids
       (missing walls) and the outer boundary stay honest nodata, and the DSM /
       DTM / cloud are never touched (verified byte-identical with fill on/off).
-- [~] **Benchmark suite** comparing Effigies output against stock ODM /
-      Metashape / RealityCapture on shared datasets (mesh density, photometric
-      error, runtime). Scaffolded: `scripts/benchmark.sh` (per-stage runtime +
-      mesh/cloud stats) and a prior-art review in
-      [docs/benchmark-literature.md](docs/benchmark-literature.md) (BibTeX in
-      `docs/references.bib`). `benchmark.sh` computes the full accuracy core:
-      `compare` (cloud-to-reference **and** mesh-to-reference distance — an OBJ is
-      area-weighted surface-sampled first — via PDAL ICP + scipy KD-tree, plus
-      completeness), `cprmse` (check-point RMSE), and `stats` surface roughness
-      (local plane-fit residual, detail-vs-noise). Remaining: run the actual
-      comparison against stock ODM / Metashape / RealityCapture on shared datasets.
-      No prior study benchmarks COLMAP + OpenMVS *with RefineMesh* against the
-      commercial tools, so this is a publishable contribution, not just an internal
-      check. Two queued single-variable experiments (watertightness via
-      `mesh-close-holes`, and densify-resolution vs. runtime) are specified
-      against a shared baseline run in
-      [docs/planned-experiments.md](docs/planned-experiments.md).
+- [x] **Benchmark tooling.** `scripts/benchmark.sh` computes the full accuracy
+      core: `compare` (cloud-to-reference **and** mesh-to-reference distance — an
+      OBJ is area-weighted surface-sampled first — via PDAL ICP + scipy KD-tree,
+      plus completeness), `cprmse` (check-point RMSE), and `stats` surface
+      roughness (local plane-fit residual, detail-vs-noise); with a prior-art
+      review in [docs/benchmark-literature.md](docs/benchmark-literature.md)
+      (BibTeX in `docs/references.bib`). The actual comparison **runs** against
+      stock ODM / Metashape / RealityScan are the **v0.6.0** campaign below.
 
 ## v0.5.0 — Scaling to large image sets (split-merge tiling)
 
@@ -226,6 +219,33 @@ RealityScan out-of-core **components**, and ODM's own **split-merge**
       [docs/split-merge-tiling-plan.md](docs/split-merge-tiling-plan.md).
 - [ ] Optional: out-of-core / cache-to-disk for the dense + Delaunay stages
       (the RealityScan approach) as an alternative to tiling for mid-size sets.
+
+## v0.6.0 — Benchmark campaign & profile calibration *(needs reference data)*
+
+The empirical work behind the paper, split out from v0.4.0 (the *tooling* is
+done; the *runs* are here). Gated on a dataset with **reference data** — a TLS
+scan and/or surveyed check points — for absolute accuracy; relative metrics
+(roughness, detail, completeness, runtime) can proceed without it.
+
+- [ ] **Comparison runs.** Process shared datasets through Effigies, stock ODM,
+      Metashape and (where available) RealityScan, and compute the
+      `scripts/benchmark.sh` metrics — cloud/mesh-to-reference distance,
+      check-point RMSE, surface roughness, completeness, runtime. No prior study
+      benchmarks COLMAP + OpenMVS *with RefineMesh* against the commercial tools,
+      so this is a publishable contribution, not just an internal check. The
+      honest headline is narrow-but-deep: refined-mesh surface detail (see the
+      ODM comparison in the v0.4.0 notes — ODM leads on ortho maturity / DSM-DTM
+      breadth / scaling, Effigies on RefineMesh geometry).
+- [ ] **Two queued single-variable experiments** specified against a shared
+      baseline run in [docs/planned-experiments.md](docs/planned-experiments.md):
+      watertightness (`mesh-close-holes`) and densify-resolution vs. runtime —
+      both double as profile-calibration data points.
+- [ ] **Profile calibration.** Sweep the key levers (esp. `RefineMesh`
+      iterations / `max-face-area` / `gradient-step`, `densify-resolution-level`,
+      `number-views-fuse`) per capture type against the benchmark metrics, find
+      the quality/cost knee, and bake the measured-optimal values into the
+      `drone-3d` / `object` / `architecture` bundles — replacing today's reasoned
+      defaults with calibrated ones.
 
 ## v1.0.0 — Production
 
