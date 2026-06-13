@@ -80,6 +80,14 @@ RUN git clone --depth 1 --branch ${PDAL_VERSION} https://github.com/PDAL/PDAL.gi
     pdal --version
 
 # --- COLMAP from pinned source, CUDA-enabled, no GUI ---
+# After installing libcolmap, build the matching pycolmap from the SAME tree:
+# helpers/gcp_bundle_adjust.py drives COLMAP's own Ceres BA through pycolmap for
+# GCP-constrained bundle adjustment. It is built from source against the
+# just-installed COLMAP (find_package(colmap) resolves under /usr/local); pycolmap
+# builds from the repo ROOT (top-level pyproject.toml, scikit-build-core), build
+# deps fetched by pip build isolation. Must run BEFORE `rm -rf /opt/colmap`.
+# (Same addition as Dockerfile.cpu; the GPU image is validation-parked but kept in
+# lockstep.)
 RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/colmap.git /opt/colmap && \
     cmake -S /opt/colmap -B /opt/colmap/build -GNinja \
       -DCMAKE_BUILD_TYPE=Release \
@@ -90,6 +98,8 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
       -DTESTS_ENABLED=OFF \
       -DCMAKE_INSTALL_PREFIX=/usr/local && \
     ninja -C /opt/colmap/build install && \
+    pip install --break-system-packages --no-cache-dir /opt/colmap && \
+    python3 -c "import pycolmap; print('[effigies] pycolmap', pycolmap.__version__)" && \
     rm -rf /opt/colmap
 
 # --- COLMAP vocabulary tree (for matcher=vocab_tree) ---

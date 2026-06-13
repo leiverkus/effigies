@@ -131,7 +131,14 @@ def parse_gcp_list(gcp_path):
     """Parse an ODM-style gcp_list.txt.
     Line 1: a CRS / proj string (e.g. 'EPSG:32637' or a +proj string).
     Following lines: geo_x geo_y geo_z im_x im_y image_name [extra...]
-    Returns (crs_header, [ {world:(x,y,z), px:(u,v), image:name}, ... ])."""
+
+    Check-point convention: a line whose trailing token (in the ODM ``[extra]``
+    field) is ``check`` (case-insensitive) marks a **held-out check point** —
+    measured but excluded from the georef solve / bundle adjustment, so an honest
+    independent CP-RMSE can be reported (see helpers/gcp_bundle_adjust.py). Such an
+    entry carries ``check=True``; all others ``check=False``.
+
+    Returns (crs_header, [ {world:(x,y,z), px:(u,v), image:name, check:bool}, ... ])."""
     entries = []
     with open(gcp_path) as f:
         raw = [l.rstrip("\n") for l in f if l.strip() and not l.startswith("#")]
@@ -146,6 +153,7 @@ def parse_gcp_list(gcp_path):
             "world": np.array(list(map(float, p[0:3]))),
             "px": np.array(list(map(float, p[3:5]))),
             "image": p[5],
+            "check": len(p) > 6 and p[-1].lower() == "check",
         })
     return crs_header, entries
 
@@ -276,7 +284,7 @@ def _triangulate_rays(rays):
     return X
 
 
-def gcp_correspondences(model_dir, gcp_entries):
+def gcp_correspondences(model_dir, gcp_entries, min_points=3):
     """Build (local, world) correspondences from GCPs.
 
     A GCP's WORLD position comes from gcp_list.txt directly. Its LOCAL position is
@@ -286,7 +294,12 @@ def gcp_correspondences(model_dir, gcp_entries):
     image only (or whose rays carry no parallax) fall back to the previous
     heuristic — the observed sparse 3D point whose pixel is nearest the marking,
     averaged over markings. Returns (local (N,3), world (N,3), info dict with the
-    per-method counts)."""
+    per-method counts).
+
+    ``min_points`` is the minimum number of localizable GCPs required (default 3 —
+    a similarity solve needs ≥3 non-collinear correspondences). Held-out
+    check-point residual reporting passes ``min_points=1`` to localize whatever it
+    can without demanding a solvable set."""
     points = read_colmap_points(model_dir)
     cams = _read_cameras(model_dir)
     images = _read_images_full(model_dir)
@@ -335,10 +348,10 @@ def gcp_correspondences(model_dir, gcp_entries):
             world_list.append(np.array(key))
             n_near += 1
 
-    if len(local_list) < 3:
+    if len(local_list) < min_points:
         raise RuntimeError(
             f"only {len(local_list)} GCPs could be localized in COLMAP "
-            f"(need >=3 with matching observations)")
+            f"(need >={min_points} with matching observations)")
     print(f"[georef] GCP localization: {n_tri} triangulated, "
           f"{n_near} nearest-point fallback")
     return (np.array(local_list), np.array(world_list),
@@ -536,6 +549,30 @@ def main():
         return
 
     have_gcp = bool(args.gcp) and os.path.exists(args.gcp)
+
+    # ---- honor an upstream GCP-constrained bundle adjustment --------------
+    # If sparse_colmap.sh already ran gcp_bundle_adjust.py, the sparse model was
+    # rewritten into the offset-world frame and georef_transform.json is the
+    # identity-with-offset transform (s=1, R=I, t=offset). Apply that to the OBJ
+    # (-> identity, the mesh stays offset-world, matching the cloud) and write
+    # coords.txt — do NOT re-solve a post-hoc Umeyama, which would fight the
+    # already-corrected reconstruction. Keep the colmap-gcp-ba transform in place
+    # so pointcloud_to_laz/orthophoto consume its offset.
+    if mode in ("gcp", "auto") and os.path.exists(transform_path):
+        try:
+            existing = json.load(open(transform_path))
+        except (ValueError, OSError):
+            existing = None
+        if existing and existing.get("source") == "colmap-gcp-ba":
+            print("[georef] honoring upstream GCP-constrained BA "
+                  "(source=colmap-gcp-ba); applying identity-with-offset to OBJ")
+            s = float(existing.get("s", 1.0))
+            R = np.asarray(existing.get("R", np.eye(3).tolist()))
+            t = np.asarray(existing.get("t", [0.0, 0.0, 0.0]))
+            offset = np.asarray(existing.get("offset", [0.0, 0.0, 0.0]))
+            apply_to_obj(args.work, s, R, t, offset)
+            write_coords_txt(args.work, offset, existing.get("crs", args.crs))
+            return
 
     # ---- resolve order per mode -------------------------------------------
     order = []

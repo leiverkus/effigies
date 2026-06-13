@@ -36,6 +36,7 @@ declare -A OPT=(
   [crs-preset]=none
   [georeference]=auto
   [gcp]=""
+  [gcp-bundle-adjust]=false
   [skip-orthophoto]=false
   [skip-dsm]=false
   [dtm]=false
@@ -155,12 +156,34 @@ if [[ "${OPT[no-gpu]}" != "true" ]]; then
   fi
 fi
 
+# ODM convention: a gcp_list.txt in the project root is used automatically.
+# Resolved BEFORE the sparse stage so a GCP-constrained bundle adjustment
+# (--gcp-bundle-adjust) can run inside sparse_colmap.sh; the post-hoc georef
+# bridge (step 4) reuses the same resolved path.
+if [[ -z "${OPT[gcp]}" && -f "${PROJ}/gcp_list.txt" ]]; then
+  OPT[gcp]="${PROJ}/gcp_list.txt"
+  echo "[effigies] auto-detected GCP file: ${OPT[gcp]}"
+fi
+
+# GCP-constrained bundle adjustment is a GCP georeferencing method: only enable it
+# when georeferencing actually consumes GCPs (auto / gcp). Under exif/none it would
+# rewrite the sparse model into a world frame the later bridge then discards.
+GCP_BA=false
+if [[ "${OPT[gcp-bundle-adjust]}" == "true" ]]; then
+  if [[ "${OPT[georeference]}" == "auto" || "${OPT[georeference]}" == "gcp" ]]; then
+    GCP_BA=true
+  else
+    echo "[effigies] WARN: --gcp-bundle-adjust ignored with --georeference ${OPT[georeference]} (needs auto or gcp)" >&2
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Sparse reconstruction  ->  produces $WORK/sparse  (+ scene.mvs)
 # ---------------------------------------------------------------------------
 if [[ "${OPT[sparse-engine]}" == "colmap" ]]; then
   bash "$(dirname "$0")/pipeline/sparse_colmap.sh" \
-       "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG" "${OPT[mapper]}"
+       "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG" "${OPT[mapper]}" \
+       "${OPT[gcp]}" "${OPT[crs]}" "$GCP_BA"
   # COLMAP -> OpenMVS scene. InterfaceCOLMAP reads the undistorted dense
   # workspace (dense/sparse model + dense/images), produced by image_undistorter
   # in sparse_colmap.sh — not the raw sparse/0 model. --image-folder is given the
@@ -199,14 +222,10 @@ bash "$(dirname "$0")/pipeline/dense_openmvs.sh" \
 
 # ---------------------------------------------------------------------------
 # 4. Georeferencing bridge  (local SfM frame -> projected CRS)
-#    This is what ODM does internally and COLMAP does NOT.
+#    This is what ODM does internally and COLMAP does NOT. When a GCP-constrained
+#    bundle adjustment already ran (--gcp-bundle-adjust), georef_bridge honors its
+#    colmap-gcp-ba transform instead of re-solving a post-hoc Umeyama.
 # ---------------------------------------------------------------------------
-# ODM convention: a gcp_list.txt in the project root is used automatically.
-if [[ -z "${OPT[gcp]}" && -f "${PROJ}/gcp_list.txt" ]]; then
-  OPT[gcp]="${PROJ}/gcp_list.txt"
-  echo "[effigies] auto-detected GCP file: ${OPT[gcp]}"
-fi
-
 progress 80
 python3 "$(dirname "$0")/helpers/georef_bridge.py" \
      --work "$WORK" \

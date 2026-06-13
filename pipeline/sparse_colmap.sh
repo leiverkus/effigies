@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # COLMAP sparse stage.
-# args: IMAGES WORK MATCHER CAMERA_MODEL GPU_FLAG [MAPPER]
+# args: IMAGES WORK MATCHER CAMERA_MODEL GPU_FLAG [MAPPER] [GCP_FILE] [CRS] [GCP_BA]
 set -euo pipefail
 IMAGES="$1"; WORK="$2"; MATCHER="$3"; CAMERA_MODEL="$4"; GPU="$5"; MAPPER="${6:-incremental}"
+GCP_FILE="${7:-}"; CRS="${8:-auto}"; GCP_BA="${9:-false}"
 
 DB="$WORK/database.db"
 mkdir -p "$WORK/sparse"
@@ -136,6 +137,26 @@ colmap model_converter \
 if [[ ! -f "$WORK/sparse/0/images.txt" ]]; then
   echo "[colmap] model_converter failed: no text model produced" >&2
   exit 1
+fi
+
+# GCP-constrained bundle adjustment (opt-in: --gcp-bundle-adjust). Anchors the
+# marked GCPs at their surveyed world coordinates and re-optimises cameras + tie
+# points (pycolmap / COLMAP's Ceres BA) on the sparse model BEFORE undistortion, so
+# densify / mesh / texture / ortho all inherit the corrected, world-frame poses.
+# Rewrites sparse/0 (offset-world frame) and writes georef_transform.json
+# (source=colmap-gcp-ba), which the georef bridge then honors instead of solving a
+# post-hoc Umeyama. NON-FATAL: on any failure the free sparse model is kept and the
+# default post-hoc georeferencing (georef_bridge.py) still runs.
+if [[ "$GCP_BA" == "true" && -n "$GCP_FILE" && -f "$GCP_FILE" ]]; then
+  echo "[colmap] GCP-constrained bundle adjustment (pycolmap) on sparse/0"
+  if python3 "$(dirname "$0")/../helpers/gcp_bundle_adjust.py" \
+       --work "$WORK" --gcp "$GCP_FILE" --crs "$CRS"; then
+    echo "[colmap] GCP-BA done; sparse/0 rewritten in the offset-world frame"
+  else
+    echo "[colmap] WARN: GCP-BA failed; keeping the free sparse model and falling back to post-hoc georeferencing" >&2
+  fi
+elif [[ "$GCP_BA" == "true" ]]; then
+  echo "[colmap] WARN: --gcp-bundle-adjust set but no GCP file ('$GCP_FILE'); skipping GCP-BA" >&2
 fi
 
 # Undistort into the workspace layout OpenMVS' InterfaceCOLMAP expects:

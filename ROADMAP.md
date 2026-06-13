@@ -107,14 +107,25 @@ kept** (24.04 dropped it). Facts worth keeping:
 
 ## v0.3.x — Deeper georeferencing rigor *(when the paper's accuracy claims need it)*
 
-- [ ] **GCP-constrained bundle adjustment.** Today GCPs drive a post-hoc Umeyama
-      similarity on triangulated marker points (the bridge in `georef_bridge.py`).
-      ODM's stronger path puts GCPs *into* the bundle adjustment, so marker
-      residuals shape the reconstruction itself. COLMAP supports pose / position
-      priors (`Mapper.use_prior_position` for GPS); pulling GCP observations into
-      the BA is more involved but achievable, and would tighten the CP-RMSE that
-      the benchmark reports. Real work — schedule it only if the accuracy claims
-      in the paper demand it, not speculatively.
+- [x] **GCP-constrained bundle adjustment** (`--gcp-bundle-adjust`, opt-in,
+      default off). The default GCP path drives a post-hoc Umeyama similarity on
+      triangulated marker points (`georef_bridge.py`); a rigid 7-DoF similarity
+      cannot absorb reconstruction **drift**, so the check-point RMSE it leaves is
+      a floor. The new path (`helpers/gcp_bundle_adjust.py`, **pycolmap** / COLMAP's
+      own Ceres BA) anchors the marked GCPs at their surveyed coordinates as
+      constant 3D points and re-optimises cameras + tie points on the **sparse**
+      model — *before* `image_undistorter`, so densify / mesh / texture / ortho all
+      inherit the corrected, world-frame poses. It rewrites `sparse/0` into the
+      offset-world frame and writes `georef_transform.json` as the
+      identity-with-offset transform (`source=colmap-gcp-ba`), which the bridge then
+      honors instead of re-solving (the *offset trick* keeps every downstream
+      consumer unchanged). pycolmap is built from the pinned COLMAP source into both
+      images. Check-point convention: a `gcp_list.txt` line ending in `check` is
+      held out and reported as an independent CP-RMSE. **Real-data validation
+      deferred** to the v0.6.0 reference-data campaign (needs a surveyed GCP +
+      held-out check-point dataset); the synthetic fixture + the in-image Stage-0
+      spike (real 70-image / 34 626-point reconstruction, BA converged in ~1 s)
+      prove correctness, real-data tuning of BA options is the open piece.
 
 ## v0.4.0 — Quality profiles & tuning
 

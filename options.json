@@ -228,6 +228,13 @@
     "help": "Optional path to a ground control points file (ODM gcp_list.txt format) used for the Helmert georeferencing bridge. Default: none"
   },
   {
+    "name": "gcp-bundle-adjust",
+    "title": "GCP-constrained bundle adjustment",
+    "value": false,
+    "type": "bool",
+    "help": "Anchor the marked GCPs at their surveyed world coordinates in a constrained bundle adjustment (pycolmap / COLMAP's Ceres BA) on the sparse model BEFORE densification, instead of the default post-hoc 7-DoF similarity. A rigid similarity cannot absorb reconstruction drift; pulling the GCPs into the BA re-optimises cameras and tie points to be consistent with them, removing drift and tightening the check-point RMSE. Requires a GCP file (this option is ignored without one). More accurate but slightly slower. Mark GCPs in 2+ images; a gcp_list.txt line ending in 'check' is held out for an independent accuracy estimate. Default: %(default)s"
+  },
+  {
     "name": "skip-orthophoto",
     "title": "Skip Orthophoto",
     "value": false,
