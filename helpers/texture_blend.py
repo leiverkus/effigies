@@ -25,6 +25,7 @@ Non-fatal upstream by contract.
 """
 import argparse
 import os
+import resource
 import sys
 
 import numpy as np
@@ -41,6 +42,17 @@ DEPTH_TOL_REL = 0.01      # visibility: z <= depth * (1 + tol) + abs tol
 DEPTH_TOL_ABS = 0.05
 FRAME_MARGIN = 4.0        # px margin inside the image frame
 WEIGHT_FLOOR = 0.15       # drop views weaker than this fraction of the best
+
+
+def _log_rss(tag):
+    """Peak-RSS probe, gated on EFFIGIES_BLEND_RSS (the v0.5.0 memory-ceiling
+    instrument). ru_maxrss is KB on Linux, bytes on macOS — report the raw value
+    and a KB-assuming MB so the slope across runs is readable. No-op when unset."""
+    if not os.environ.get("EFFIGIES_BLEND_RSS"):
+        return
+    kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    print(f"[blend] peak RSS @ {tag}: {kb} ru_maxrss (~{kb / 1024:.0f} MB if KB)",
+          file=sys.stderr)
 
 
 def render_depth(V, FV, K, R, t, W, H):
@@ -95,16 +107,57 @@ def render_depth(V, FV, K, R, t, W, H):
     return depth
 
 
-def select_views(V, FV, names, poses, cam_of, cams, depths):
-    """Per face: top-K view indices + normalised weights ([F,K] each)."""
+def _topk_insert(top_idx, top_w, w, vi):
+    """Streaming running-top-K update, in place. For each face, if this view's
+    weight ``w[face]`` exceeds the face's current weakest kept weight, it replaces
+    that slot. ``w`` is [nF] (0 where the face is not visible in view ``vi``);
+    ``top_idx`` [nF,K] int32 (init -1), ``top_w`` [nF,K] float32 (init 0). Strict
+    ``>`` plus the 0-init means empty slots (weight 0) are filled by any positive
+    weight, and a non-visible face (w=0) never displaces anything. Replaces the
+    old dense [nF,nV] weight matrix — memory is O(nF·K), flat in the view count."""
+    cmin = top_w.min(1)
+    repl = w > cmin
+    if not repl.any():
+        return
+    rows = np.nonzero(repl)[0]
+    cols = top_w.argmin(1)[rows]
+    top_w[rows, cols] = w[rows]
+    top_idx[rows, cols] = vi
+
+
+def _finalize_topk(top_idx, top_w):
+    """Sort each face's K kept views by descending weight (matching the old
+    ``argsort`` order, so the downstream bake sums views in the same order), drop
+    views weaker than WEIGHT_FLOOR·best, and renormalise to sum 1. Returns
+    (top_idx [nF,K] int32, tw [nF,K] float32)."""
+    order = np.argsort(-top_w, axis=1)
+    top_idx = np.take_along_axis(top_idx, order, axis=1)
+    top_w = np.take_along_axis(top_w, order, axis=1)
+    best = top_w[:, :1]
+    tw = np.where(top_w >= WEIGHT_FLOOR * np.maximum(best, 1e-12), top_w, 0.0)
+    s = tw.sum(1, keepdims=True)
+    tw = np.where(s > 0, tw / np.maximum(s, 1e-12), 0.0)
+    return top_idx, tw.astype(np.float32)
+
+
+def select_views(V, FV, names, poses, cam_of, cams):
+    """Per face: top-K view indices + normalised weights ([F,K] each).
+
+    Streams the views in a single pass: each view's depth map is rendered on the
+    fly for the visibility test and immediately discarded, and a running top-K
+    (``_topk_insert``) replaces the old dense [faces×views] weight matrix and the
+    all-depth-maps list. Peak memory is therefore O(nF·K + one depth map), flat in
+    the number of views. The result (top-K set + normalised weights) is identical
+    to the old argsort path."""
     Fc = V[FV].mean(1)                                   # centroids
     e1 = V[FV[:, 1]] - V[FV[:, 0]]
     e2 = V[FV[:, 2]] - V[FV[:, 0]]
     N = np.cross(e1, e2)
     N /= np.maximum(np.linalg.norm(N, axis=1)[:, None], 1e-12)
 
-    nF = len(FV); nV = len(names)
-    Wt = np.zeros((nF, nV), np.float32)
+    nF = len(FV)
+    top_idx = np.full((nF, TOP_K), -1, np.int32)
+    top_w = np.zeros((nF, TOP_K), np.float32)
     for vi, name in enumerate(names):
         R, t = poses[name]["R"], poses[name]["t"]
         _, Wd, Hd, K = cams[cam_of[name]]
@@ -122,21 +175,19 @@ def select_views(V, FV, names, poses, cam_of, cams, depths):
         ok &= (u >= FRAME_MARGIN) & (u < Wd - FRAME_MARGIN) \
             & (v >= FRAME_MARGIN) & (v < Hd - FRAME_MARGIN)
         if ok.any():
-            dm = depths[vi]
+            # render this view's depth map on the fly for the visibility test,
+            # then discard it (no all-views `depths` list held in memory)
+            dm = render_depth(V, FV, K, R, t, Wd, Hd)
             du = np.clip((u / DEPTH_SCALE).astype(np.int64), 0, dm.shape[1] - 1)
             dv = np.clip((v / DEPTH_SCALE).astype(np.int64), 0, dm.shape[0] - 1)
             vis = z <= dm[dv, du] * (1 + DEPTH_TOL_REL) + DEPTH_TOL_ABS
             ok &= vis
-        Wt[ok, vi] = (np.maximum(cos[ok], 0.0) ** 2
-                      / np.maximum(dist[ok], 1e-6) ** 2)
+        w = np.zeros(nF, np.float32)
+        w[ok] = (np.maximum(cos[ok], 0.0) ** 2
+                 / np.maximum(dist[ok], 1e-6) ** 2)
+        _topk_insert(top_idx, top_w, w, vi)
 
-    top = np.argsort(-Wt, axis=1)[:, :TOP_K]              # [F,K]
-    tw = np.take_along_axis(Wt, top, axis=1)
-    best = tw[:, :1]
-    tw = np.where(tw >= WEIGHT_FLOOR * np.maximum(best, 1e-12), tw, 0.0)
-    s = tw.sum(1, keepdims=True)
-    tw = np.where(s > 0, tw / np.maximum(s, 1e-12), 0.0)
-    return top, tw.astype(np.float32)
+    return _finalize_topk(top_idx, top_w)
 
 
 def bilinear(img, u, v):
@@ -155,6 +206,7 @@ def bilinear(img, u, v):
 
 def blend(work):
     from PIL import Image
+    _log_rss("entry")
     obj_name = find_mesh_obj(work)
     if not obj_name or "texture" not in obj_name:
         print("[blend] no textured OBJ; skipping", file=sys.stderr)
@@ -182,18 +234,15 @@ def blend(work):
         return False
     cam_of = {n: poses[n]["camera_id"] for n in names}
 
-    print(f"[blend] rendering {len(names)} depth maps "
-          f"(1/{DEPTH_SCALE} resolution) ...")
-    depths = []
-    for n in names:
-        _, Wd, Hd, K = cams[cam_of[n]]
-        depths.append(render_depth(V, FV, K, poses[n]["R"], poses[n]["t"], Wd, Hd))
-
-    top, tw = select_views(V, FV, names, poses, cam_of, cams, depths)
-    del depths
+    # Streaming top-K view selection (depth maps rendered on the fly inside, then
+    # discarded — no all-views depth list, no dense [faces×views] weight matrix).
+    print(f"[blend] selecting top-{TOP_K} views over {len(names)} cameras "
+          f"(streaming, depth at 1/{DEPTH_SCALE} res) ...")
+    top, tw = select_views(V, FV, names, poses, cam_of, cams)
     covered = (tw.sum(1) > 0)
     print(f"[blend] view selection: {covered.mean() * 100:.1f}% of faces have "
           f"valid views (top-{TOP_K})")
+    _log_rss("after view selection")
 
     print(f"[blend] loading {len(names)} undistorted images ...")
     imgs = [np.asarray(Image.open(os.path.join(img_dir, n)).convert("RGB"))
@@ -287,6 +336,7 @@ def blend(work):
         print(f"[blend] page {m}: {covered_px.mean() * 100:.0f}% of texels re-baked")
         del tex, acc, wgt
     print(f"[blend] multi-view blend complete (top-{TOP_K}, cos²/d² weights)")
+    _log_rss("exit")
     return True
 
 

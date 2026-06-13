@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Blend memory — streaming top-K view selection (`texture_blend.py`).** The
+  multi-view texturing step's view selection no longer allocates a dense
+  `[faces × views]` weight matrix (~29 GB at 8 M faces × 900 views) or holds every
+  view's depth map at once. It now streams the views in a single pass — each depth
+  map rendered on the fly and discarded, a running top-K (`[faces × K]`, ~256 MB,
+  flat in the view count) replacing the matrix — giving the **same** top-K set and
+  normalised weights (proven bit-for-bit against the old argsort path on random
+  inputs and a synthetic golden scene). First half of the v0.5.0 blend-streaming
+  precondition; incidentally robust to fewer-than-K views (the old path crashed
+  the bake there). New `tests/test_blend.py` (kernel-equivalence + golden) and an
+  `EFFIGIES_BLEND_RSS` peak-RSS probe. No output or behaviour change.
 - **Base image: Ubuntu 22.04 → 24.04 (noble), CUDA 12.4.1 → 12.8.1.** No legacy
   base for new software: 22.04's standard support ends in under a year and forced
   workarounds (node v12 too old for obj2gltf, nanoflann header overlay, ancient
