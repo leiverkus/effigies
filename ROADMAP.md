@@ -160,11 +160,14 @@ kept** (24.04 dropped it). Facts worth keeping:
       default off): the ground filter costs time and a bare-earth model is
       meaningless without open ground. Verified on real data — strips ~3.7 m of
       building tops vs the DSM. Completes the `odm_dem/` pair with the DSM.
-- [ ] **True-ortho hardening.** We are closer than it looks: rasterising the real
-      3D mesh with the z-buffer already yields true-ortho occlusion (no building
-      lean), unlike a DSM-only ortho. The remaining gap to ODM is robustness /
-      edge cases (nodata handling, seam-free coverage), not a missing foundation —
-      incremental.
+- [x] **True-ortho hardening.** The foundation was already true-ortho —
+      rasterising the real 3D mesh with the z-buffer gives occlusion-correct
+      coverage (no building lean), unlike a DSM-only ortho. Hardening added a
+      bounded interior hole-fill (`fill_ortho_holes` in `orthophoto.py`, scipy
+      `ndimage`): only small INTERIOR nodata holes below `ortho-fill-holes` m²
+      (default 0.25, 0=off) are closed with the nearest valid colour; large voids
+      (missing walls) and the outer boundary stay honest nodata, and the DSM /
+      DTM / cloud are never touched (verified byte-identical with fill on/off).
 - [~] **Benchmark suite** comparing Effigies output against stock ODM /
       Metashape / RealityCapture on shared datasets (mesh density, photometric
       error, runtime). Scaffolded: `scripts/benchmark.sh` (per-stage runtime +

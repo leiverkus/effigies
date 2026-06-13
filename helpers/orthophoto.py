@@ -266,6 +266,39 @@ def write_geotiff(path, rgb, alpha, originx, originy, gsd, crs):
     ds.FlushCache(); ds = None
 
 
+def fill_ortho_holes(rgb, alpha, max_hole_px):
+    """Fill only SMALL INTERIOR nodata holes in the orthophoto with the nearest
+    valid colour. A hole is filled iff it does not touch the image border (real
+    edge) and its area is <= max_hole_px — so pinholes / thin seams / tiny mesh
+    gaps close, while large voids (missing walls) and the outer boundary stay
+    honest nodata. Operates on the visual ortho only; the DSM zbuf is never
+    touched. Returns (rgb, alpha, n_filled_px). Pure except for the lazy import."""
+    if max_hole_px <= 0:
+        return rgb, alpha, 0
+    from scipy import ndimage
+    holes = alpha == 0
+    if not holes.any():
+        return rgb, alpha, 0
+    lbl, n = ndimage.label(holes)
+    if n == 0:
+        return rgb, alpha, 0
+    # components touching any image edge are the real exterior — never fill them
+    border = set(lbl[0, :]) | set(lbl[-1, :]) | set(lbl[:, 0]) | set(lbl[:, -1])
+    border.discard(0)
+    counts = np.bincount(lbl.ravel())
+    small_interior = [l for l in range(1, n + 1)
+                      if l not in border and counts[l] <= max_hole_px]
+    if not small_interior:
+        return rgb, alpha, 0
+    fill = np.isin(lbl, small_interior)
+    # nearest valid pixel (background = valid) for every pixel; sample at `fill`
+    _, (iy, ix) = ndimage.distance_transform_edt(holes, return_indices=True)
+    rgb = rgb.copy(); alpha = alpha.copy()
+    rgb[fill] = rgb[iy[fill], ix[fill]]
+    alpha[fill] = 255
+    return rgb, alpha, int(fill.sum())
+
+
 def write_dem_geotiff(path, zbuf, originx, originy, gsd, crs, nodata=-9999.0):
     """Write the per-pixel surface-height grid (`zbuf`, absolute elevations) as a
     single-band Float32 DSM GeoTIFF — same geotransform/CRS as the orthophoto.
@@ -296,6 +329,8 @@ def main():
                     help="do not write the RGB orthophoto")
     ap.add_argument("--skip-dsm", action="store_true",
                     help="do not write the DSM (digital surface model)")
+    ap.add_argument("--fill-holes", type=float, default=0.25,
+                    help="max hole area (m²) filled in the orthophoto (0 = off)")
     args = ap.parse_args()
 
     if args.skip_orthophoto and args.skip_dsm:
@@ -339,11 +374,17 @@ def main():
     cov = 100.0 * (alpha > 0).mean()
 
     if not args.skip_orthophoto:
+        filled = 0
+        if args.fill_holes > 0:
+            max_hole_px = round(args.fill_holes / (gsd * gsd))
+            rgb, alpha, filled = fill_ortho_holes(rgb, alpha, max_hole_px)
+            cov = 100.0 * (alpha > 0).mean()
         out = os.path.join(args.work, "odm_orthophoto.tif")
         write_geotiff(out, rgb, alpha, ox, oy, gsd, crs)
+        fmsg = f", filled {filled} hole px (<{args.fill_holes:g} m²)" if filled else ""
         print(f"[ortho] wrote {os.path.basename(out)} "
               f"({rgb.shape[1]}x{rgb.shape[0]} px @ {gsd*100:.1f} cm/px, "
-              f"{cov:.0f}% covered, crs={crs})")
+              f"{cov:.0f}% covered{fmsg}, crs={crs})")
 
     if not args.skip_dsm:
         # The z-buffer the rasteriser already computed IS the DSM: per-pixel

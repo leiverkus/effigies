@@ -40,6 +40,7 @@ declare -A OPT=(
   [skip-dsm]=false
   [dtm]=false
   [orthophoto-resolution]=auto
+  [ortho-fill-holes]=0.25
   [no-gpu]=false
   [no-auto-scale]=false
   [keep-workdir]=false
@@ -249,6 +250,7 @@ fi
 if [[ "${OPT[skip-orthophoto]}" != "true" || "${OPT[skip-dsm]}" != "true" ]]; then
   if ! python3 "$(dirname "$0")/helpers/orthophoto.py" \
        --work "$WORK" --resolution "${OPT[orthophoto-resolution]}" \
+       --fill-holes "${OPT[ortho-fill-holes]}" \
        $([[ "${OPT[skip-orthophoto]}" == "true" ]] && echo --skip-orthophoto) \
        $([[ "${OPT[skip-dsm]}" == "true" ]] && echo --skip-dsm); then
     echo "[effigies] WARN: orthophoto/DSM step failed; continuing without it" >&2

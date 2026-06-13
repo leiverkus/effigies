@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **True-ortho hardening — bounded orthophoto hole-fill.** The orthophoto was
+  already a true-ortho (the mesh z-buffer resolves occlusion, no building lean);
+  this hardens its coverage. `fill_ortho_holes` (scipy `ndimage`) fills only
+  *small interior* nodata holes — pinholes, thin triangle seams, tiny mesh gaps —
+  with the nearest valid colour, while *large* voids (missing walls) and the outer
+  boundary stay honest nodata: a hole is fully filled (small) or fully untouched
+  (large), never smeared at the edge. Controlled by `ortho-fill-holes` (max hole
+  area m², default 0.25, 0 disables); default-on but conservative. Affects only
+  the visual orthophoto — the DSM, DTM and point cloud are never modified (verified
+  byte-identical with fill on/off). No new dependency.
 - **DTM (digital terrain model / bare earth) output (`odm_dem/dtm.tif`).** The
   complement of the DSM: `helpers/pointcloud_to_dtm.py` ground-classifies the
   georeferenced dense cloud with PDAL (statistical outlier → SMRF → keep ground)

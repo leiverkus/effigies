@@ -151,10 +151,45 @@ def test_dsm_geotiff_is_single_band_float():
     print("ok  DSM writes a single-band Float32 GeoTIFF (nodata -9999, north-up, CRS)")
 
 
+def _have_scipy():
+    try:
+        import scipy.ndimage  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def test_fill_ortho_holes():
+    """Hardening: only small INTERIOR holes fill; large voids and border-open
+    nodata stay transparent; valid pixels are untouched."""
+    if not _have_scipy():
+        print("skip fill-holes (needs scipy — present in the Effigies image)")
+        return
+    H = W = 60
+    rgb = np.zeros((H, W, 3), np.uint8); rgb[..., 1] = 200      # all green
+    alpha = np.full((H, W), 255, np.uint8)
+    alpha[10:13, 10:13] = 0          # tiny interior hole (9 px) -> fill
+    alpha[30:45, 30:45] = 0          # large interior hole (225 px) -> keep
+    alpha[0:5, 0:5] = 0              # notch open to the border -> keep
+
+    out_rgb, out_alpha, n = op.fill_ortho_holes(rgb, alpha, max_hole_px=50)
+    assert n == 9, n
+    assert (out_alpha[10:13, 10:13] == 255).all()              # small hole closed
+    assert tuple(out_rgb[11, 11]) == (0, 200, 0)               # nearest-valid colour
+    assert (out_alpha[30:45, 30:45] == 0).all()                # large void untouched
+    assert (out_alpha[0:5, 0:5] == 0).all()                    # border edge untouched
+    assert (out_rgb[alpha == 255] == rgb[alpha == 255]).all()  # valid pixels intact
+    # threshold 0 disables entirely
+    _, a0, n0 = op.fill_ortho_holes(rgb, alpha, max_hole_px=0)
+    assert n0 == 0 and (a0[10:13, 10:13] == 0).all()
+    print("ok  ortho hole-fill (small interior fills; large void + border stay nodata)")
+
+
 if __name__ == "__main__":
     test_rasterize_orientation_and_coverage()
     test_geotiff_is_georeferenced()
     test_skips_when_not_georeferenced()
     test_dsm_height_grid()
     test_dsm_geotiff_is_single_band_float()
+    test_fill_ortho_holes()
     print("\nall orthophoto tests passed")

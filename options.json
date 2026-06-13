@@ -257,6 +257,14 @@
     "help": "Orthophoto ground sample distance in cm/pixel. 'auto' targets ~4k px across the scene (clamped 1 cm .. 1 m). Smaller = sharper but larger file. Default: %(default)s"
   },
   {
+    "name": "ortho-fill-holes",
+    "title": "Orthophoto: Fill Small Holes (m²)",
+    "value": "0.25",
+    "domain": "float >= 0.0",
+    "type": "float",
+    "help": "Maximum hole area (in m²) filled in the orthophoto with the nearest valid colour. Only small INTERIOR holes below this size are closed (pinholes, thin triangle seams, tiny mesh gaps); large voids (e.g. missing walls) and the outer boundary stay transparent (honest nodata). 0 disables filling. Affects only the visual orthophoto — the DSM, DTM and point cloud are never modified. Default: %(default)s"
+  },
+  {
     "name": "no-gpu",
     "title": "No GPU",
     "value": false,
