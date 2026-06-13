@@ -34,6 +34,29 @@ def read_cameras_bin(path):
     return cams
 
 
+def read_points3D_bin(path):
+    """-> (N,3) float64 array of sparse 3D point positions (XYZ).
+
+    COLMAP points3D.bin layout (reconstruction_io.cc): uint64 count, then per point
+    id(uint64), xyz(3·f64), rgb(3·u8), error(f64), track_len(uint64), track
+    (track_len · (image_id:uint32, point2D_idx:uint32)). Only the XYZ is returned —
+    tiling needs the point count (memory-budget estimate) and positions; the colour,
+    error and track are skipped. Returns an empty (0,3) array if the file is absent."""
+    if not os.path.exists(path):
+        return np.zeros((0, 3), dtype=np.float64)
+    xyz = []
+    with open(path, "rb") as f:
+        (n,) = struct.unpack("<Q", f.read(8))
+        for _ in range(n):
+            f.read(8)                                  # point3D_id
+            x, y, z = struct.unpack("<3d", f.read(24))
+            f.read(3 + 8)                              # rgb (3·u8) + error (f64)
+            (track_len,) = struct.unpack("<Q", f.read(8))
+            f.seek(track_len * 8, os.SEEK_CUR)         # skip track (2·uint32 each)
+            xyz.append((x, y, z))
+    return np.asarray(xyz, dtype=np.float64) if xyz else np.zeros((0, 3), np.float64)
+
+
 def read_images_bin(path):
     """-> {name: dict(R[3,3], t[3], camera_id)} — poses are world-to-cam."""
     out = {}

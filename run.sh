@@ -44,6 +44,8 @@ declare -A OPT=(
   [ortho-fill-holes]=0.25
   [no-gpu]=false
   [no-auto-scale]=false
+  [tiles]=off
+  [tile-budget]=auto
   [keep-workdir]=false
   [project-path]=""
 )
@@ -190,19 +192,27 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Sparse reconstruction  ->  produces $WORK/sparse  (+ scene.mvs)
 # ---------------------------------------------------------------------------
+# Decide whether to split the dense chain into spatial tiles (large sets exceed
+# the single-machine RAM wall in Densify/ReconstructMesh). Only the COLMAP path
+# tiles (OpenSfM is already geo-aligned and used for small/aerial sets); the
+# decision needs the global dense/sparse, so it runs after sparse_colmap.sh.
+TILE_N=0
 if [[ "${OPT[sparse-engine]}" == "colmap" ]]; then
   bash "$(dirname "$0")/pipeline/sparse_colmap.sh" \
        "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG" "${OPT[mapper]}" \
        "${OPT[gcp]}" "${OPT[crs]}" "$GCP_BA"
-  # COLMAP -> OpenMVS scene. InterfaceCOLMAP reads the undistorted dense
-  # workspace (dense/sparse model + dense/images), produced by image_undistorter
-  # in sparse_colmap.sh — not the raw sparse/0 model. --image-folder is given the
-  # absolute undistorted-images path; InterfaceCOLMAP records it relative to the
-  # working folder ($WORK) as "dense/images/...", which the OpenMVS dense stage
-  # (also run with -w $WORK) then resolves correctly. Without this it defaults to
-  # "images/" and DensifyPointCloud fails to find the images under $WORK/images.
-  InterfaceCOLMAP -i "$WORK/dense" --image-folder "$WORK/dense/images/" \
-                  -o "$WORK/scene.mvs" -w "$WORK"
+  TILE_N=$(python3 "$(dirname "$0")/helpers/tiling.py" --decide --work "$WORK" \
+             --tiles "${OPT[tiles]}" --budget "${OPT[tile-budget]}" \
+             --res-level "${OPT[densify-resolution-level]}" 2>/dev/null || echo 0)
+  if [[ "$TILE_N" -le 1 ]]; then
+    # Single-machine path: build the global OpenMVS scene. InterfaceCOLMAP reads
+    # the undistorted dense workspace (dense/sparse + dense/images) from
+    # image_undistorter — not the raw sparse/0. --image-folder is recorded relative
+    # to -w ($WORK) as "dense/images/...", which the dense stage (also -w $WORK)
+    # resolves; without it DensifyPointCloud looks under $WORK/images and fails.
+    InterfaceCOLMAP -i "$WORK/dense" --image-folder "$WORK/dense/images/" \
+                    -o "$WORK/scene.mvs" -w "$WORK"
+  fi
   progress 44
 else
   bash "$(dirname "$0")/pipeline/sparse_opensfm.sh" "$IMAGES" "$WORK"
@@ -212,23 +222,64 @@ fi
 # ---------------------------------------------------------------------------
 # 3. OpenMVS dense + the steps ODM skips (ReconstructMesh / RefineMesh)
 # ---------------------------------------------------------------------------
-bash "$(dirname "$0")/pipeline/dense_openmvs.sh" \
-     "$WORK" \
-     "${OPT[densify-resolution-level]}" \
-     "${OPT[number-views-fuse]}" \
-     "$([[ "${OPT[skip-reconstruct-mesh]}" == "true" ]] && echo false || echo true)" \
-     "${OPT[refine-mesh-iters]}" \
-     "${OPT[mesh-decimate]}" \
-     "${OPT[texture-resolution]}" \
-     "$GPU_FLAG" \
-     "${OPT[refine-max-face-area]}" \
-     "${OPT[refine-gradient-step]}" \
-     "${OPT[texture-seam-leveling]}" \
-     "$([[ "${OPT[skip-color-harmonize]}" == "true" ]] && echo false || echo true)" \
-     "$([[ "${OPT[skip-seam-smoothing]}" == "true" ]] && echo false || echo true)" \
-     "$([[ "${OPT[skip-view-blending]}" == "true" ]] && echo false || echo true)" \
-     "${OPT[free-space-support]}" \
-     "${OPT[mesh-close-holes]}"
+# Dense-stage args shared by the single-machine and per-tile paths (positionals
+# 2..16 of dense_openmvs.sh; index 10 == HARMONIZE).
+DENSE_ARGS=(
+  "${OPT[densify-resolution-level]}"
+  "${OPT[number-views-fuse]}"
+  "$([[ "${OPT[skip-reconstruct-mesh]}" == "true" ]] && echo false || echo true)"
+  "${OPT[refine-mesh-iters]}"
+  "${OPT[mesh-decimate]}"
+  "${OPT[texture-resolution]}"
+  "$GPU_FLAG"
+  "${OPT[refine-max-face-area]}"
+  "${OPT[refine-gradient-step]}"
+  "${OPT[texture-seam-leveling]}"
+  "$([[ "${OPT[skip-color-harmonize]}" == "true" ]] && echo false || echo true)"
+  "$([[ "${OPT[skip-seam-smoothing]}" == "true" ]] && echo false || echo true)"
+  "$([[ "${OPT[skip-view-blending]}" == "true" ]] && echo false || echo true)"
+  "${OPT[free-space-support]}"
+  "${OPT[mesh-close-holes]}"
+)
+
+if [[ "$TILE_N" -gt 1 ]]; then
+  # ----- split-merge tiling (helpers/tiling.py, pipeline/tile.sh, helpers/tile_merge.py) -----
+  echo "[effigies] tiling: $TILE_N tiles (set exceeds the per-tile memory budget)"
+  # Harmonise exposure ONCE on the shared undistorted images, before splitting, so
+  # every tile (which symlinks them) textures at a consistent exposure. Sentinel in
+  # dense/ so a sparse rebuild (which wipes dense/) re-harmonises, a resume skips.
+  if [[ "${OPT[skip-color-harmonize]}" != "true" && ! -f "$WORK/dense/.harmonized" ]]; then
+    if python3 "$(dirname "$0")/helpers/harmonize_exposure.py" --work "$WORK" --images "$IMAGES"; then
+      touch "$WORK/dense/.harmonized"
+    else
+      echo "[effigies] WARN: global exposure harmonisation failed; tiles texture unadjusted" >&2
+    fi
+  fi
+  python3 "$(dirname "$0")/helpers/tiling.py" --partition --work "$WORK" \
+          --tiles "$TILE_N" --manifest "$WORK/tiles_manifest.json"
+  TILE_ARGS=("${DENSE_ARGS[@]}"); TILE_ARGS[10]=false      # per-tile HARMONIZE off
+  PENDING=$(python3 "$(dirname "$0")/helpers/tiling.py" --list-pending \
+              --manifest "$WORK/tiles_manifest.json")
+  TOTAL=$(printf '%s\n' "$PENDING" | grep -c . || true); DONE=0
+  for TID in $PENDING; do
+    if bash "$(dirname "$0")/pipeline/tile.sh" "$WORK" "$TID" "${TILE_ARGS[@]}"; then
+      python3 "$(dirname "$0")/helpers/tiling.py" --mark "$TID" done   --manifest "$WORK/tiles_manifest.json"
+    else
+      echo "[effigies] WARN: tile $TID failed; skipping (manifest keeps it resumable)" >&2
+      python3 "$(dirname "$0")/helpers/tiling.py" --mark "$TID" failed --manifest "$WORK/tiles_manifest.json"
+    fi
+    DONE=$((DONE + 1))
+    [[ "$TOTAL" -gt 0 ]] && progress $((44 + DONE * 51 / TOTAL))
+  done
+  # Merge per-tile meshes + clouds into the canonical $WORK assets (shared local
+  # frame); the downstream (georef -> LAZ -> ortho -> glTF -> report) then runs
+  # ONCE on $WORK exactly as the single-machine path.
+  python3 "$(dirname "$0")/helpers/tile_merge.py" --work "$WORK" \
+          --manifest "$WORK/tiles_manifest.json"
+  progress 78
+else
+  bash "$(dirname "$0")/pipeline/dense_openmvs.sh" "$WORK" "${DENSE_ARGS[@]}"
+fi
 
 # ---------------------------------------------------------------------------
 # 4. Georeferencing bridge  (local SfM frame -> projected CRS)
@@ -331,6 +382,9 @@ progress 99
 # ---------------------------------------------------------------------------
 if [[ "${OPT[keep-workdir]}" != "true" ]]; then
   echo "[effigies] cleaning intermediate workdir data (use --keep-workdir to keep)"
+  # per-tile workdirs first (their dense/images are symlinks to $WORK/dense — rm
+  # removes the links, not the shared target, which is cleaned next)
+  rm -rf "$WORK/tiles" 2>/dev/null || true
   rm -rf "$WORK/dense" "$WORK/entwine_pointcloud_tmp" 2>/dev/null || true
   rm -f "$WORK"/depth*.dmap "$WORK"/depth*.dmap.tmp "$WORK"/*.log         "$WORK"/scene.mvs "$WORK"/scene_dense.mvs "$WORK"/scene_dense.ply         "$WORK"/scene_dense_mesh.mvs "$WORK"/scene_dense_mesh.ply         "$WORK"/scene_dense_mesh_refine.mvs "$WORK"/scene_dense_mesh_refine.ply         "$WORK"/database.db "$WORK"/database.db-shm "$WORK"/database.db-wal         2>/dev/null || true
 fi

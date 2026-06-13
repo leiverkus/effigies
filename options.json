@@ -291,6 +291,22 @@
     "help": "Disable the engine's automatic adaptation to large image sets. By default, for options you did not set explicitly, Effigies adapts to the image count: above ~150 images it switches the COLMAP matcher away from the O(n^2) 'exhaustive' strategy to 'vocab_tree'; above ~500 it also prefers the global (GLOMAP) mapper and bounds full-resolution densify — each decision is logged and any explicit choice always wins. Check this to keep your selected options exactly as set, with no count-based adaptation. Default: %(default)s"
   },
   {
+    "name": "tiles",
+    "title": "Split-merge tiling",
+    "value": "off",
+    "domain": "string",
+    "type": "string",
+    "help": "Split the dense reconstruction into spatial tiles to stay within a memory budget on large image sets (the open-source analogue of Metashape chunks / ODM split-merge). SfM runs once on all images; the cameras are partitioned in that one shared frame, only the dense->mesh->texture chain runs per tile, and the results are merged into one set of assets (alignment is free, no GPS needed). 'off' (default): never tile. 'auto': tile only when the estimated dense-point total exceeds the per-tile budget (below it the run is byte-identical to non-tiled). A positive integer N: force exactly N tiles. Tiling is COLMAP-only; the mesh has hairline seams at tile borders (v1 limitation). Default: %(default)s"
+  },
+  {
+    "name": "tile-budget",
+    "title": "Per-tile memory budget (points)",
+    "value": "auto",
+    "domain": "string",
+    "type": "string",
+    "help": "Target dense-point count per tile for 'tiles=auto' — the knob that trades tile size against the dense-stage peak RAM (ReconstructMesh's Delaunay is the wall). 'auto' uses the built-in default (or the EFFIGIES_TILE_BUDGET env var); a positive integer sets it explicitly. Larger = fewer, bigger tiles (more RAM); smaller = more tiles (more border seams + overhead). The default is a conservative placeholder pending calibration against measured RAM. Default: %(default)s"
+  },
+  {
     "name": "keep-workdir",
     "title": "Keep Workdir Intermediates",
     "value": false,

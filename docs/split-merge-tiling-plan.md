@@ -1,5 +1,18 @@
 # Plan — Split-merge tiling (ROADMAP v0.5.0 core)
 
+> **STATUS: Phases 1–4 DONE** (opt-in `tiles=off|auto|N`, default off). Implemented:
+> `helpers/tiling.py` (pure grid partition + manifest + pycolmap/struct subset
+> writer), `pipeline/tile.sh` (per-tile InterfaceCOLMAP + unchanged
+> `dense_openmvs.sh`, HARMONIZE off), `helpers/tile_merge.py` (crop-to-core mesh +
+> cloud concat, atlas namespacing), `run.sh` gating + tile loop (resumable) + merge,
+> `options.json` (tiles, tile-budget). Exposure harmonised once on the shared
+> undistorted images before splitting; the geometry merge runs upstream so the whole
+> downstream runs once on `$WORK` byte-identically to the non-tiled path. Unit-tested
+> in `tests/test_tiling.py` + `tests/test_tile_merge.py`. **Open / deferred** (need a
+> real large run — no GPU/large set here): **Phase 0** (one tile reconstructs
+> correctly from the global sparse), **Phase 5** (tiled ≈ single-machine + bounded
+> per-tile RAM), tile-budget/densify-mult calibration, and the v2 mesh-seam stitch.
+
 Goal: reconstruct image sets too large for one machine's memory by partitioning
 the **expensive dense→mesh→texture** work into spatial tiles, processing each
 within a fixed memory budget, and merging the results into one set of WebODM

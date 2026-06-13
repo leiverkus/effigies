@@ -38,6 +38,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **Split-merge tiling for large image sets (`tiles=off|auto|N`, `tile-budget`).**
+  The open-source analogue of Metashape chunks / ODM split-merge — the path past
+  the single-machine RAM wall (Densify + ReconstructMesh's Delaunay). SfM runs once
+  on all images; the cameras are partitioned spatially **in that one shared sparse
+  frame**, only the dense→mesh→texture chain runs per tile within a memory budget,
+  and the per-tile results are merged — alignment is free (every tile inherited the
+  same poses; no GPS, no per-tile registration). New `helpers/tiling.py` (pure grid
+  partition over camera centres + resumable JSON manifest + per-tile subset COLMAP
+  model writer, pycolmap with a struct fallback), `pipeline/tile.sh` (per-tile
+  `InterfaceCOLMAP` + the **unchanged** `dense_openmvs.sh` on a tile workdir that
+  symlinks the shared undistorted images), and `helpers/tile_merge.py` (crop each
+  tile's mesh + cloud to its core bound and concatenate, with atlas/material
+  **namespacing** so the merged multi-page OBJ resolves explicitly — never via the
+  parsers' glob fallback). Exposure is **harmonised once** on the shared images
+  before splitting (sentinel-guarded), so tiles never texture at mismatched
+  exposures. The geometry merge runs upstream, so the entire existing downstream
+  (georef → LAZ → ortho/DSM → glTF → report → map_outputs) runs **once on the
+  merged `$WORK`, byte-identical to the non-tiled path**. **Opt-in, default off**;
+  `auto` engages only above the dense-point budget (below it the run is
+  byte-identical to today — zero overhead); COLMAP path only. The v1 mesh has
+  hairline seams at tile borders (crop-and-concatenate; Metashape/ODM share it).
+  Unit-tested end-to-end (partition coverage invariant, halo membership, subset
+  model, merge namespacing/anti-collision + multi-atlas consumability, PDAL cloud
+  crop+merge); real-data validation (single tile correctness, tiled ≈ single-machine,
+  bounded per-tile RAM) deferred to the reference-data campaign.
 - **GCP-constrained bundle adjustment (`gcp-bundle-adjust`: `off` / `on` / `auto`).**
   A stronger georeferencing path than the default post-hoc Umeyama similarity: a
   rigid 7-DoF similarity cannot absorb reconstruction **drift** (bending /

@@ -233,13 +233,25 @@ RealityScan out-of-core **components**, and ODM's own **split-merge**
       RSS. The large reduced-res high-count RSS confirmation run is a deferred
       manual step (a toy-scene RSS assertion can't prove N-independence). Landed
       before tiling, as required.
-- [ ] **Split-merge tiling.** Run SfM once on the whole set, partition the
-      cameras spatially **in that shared sparse frame** (no GPS required, no
-      per-tile alignment), run the dense→mesh→texture chain per tile within a
-      memory budget, and merge cloud / mesh / orthophoto. The open-source
-      analogue of Metashape chunks; the only clean path past the single-machine
-      memory wall. Full architecture (shared-sparse anchor, global-harmonise
-      coupling, easiest-merge-first phasing, honest seam risks) in
+- [x] **Split-merge tiling** (`tiles=off|auto|N`, `tile-budget`; opt-in, default
+      off). SfM runs once on the whole set; the cameras are partitioned spatially
+      **in that one shared sparse frame** (no GPS, no per-tile alignment), only the
+      dense→mesh→texture chain runs per tile within a memory budget, and the
+      per-tile meshes + clouds are merged into one set of assets — alignment is free
+      because every tile inherited the same poses. `helpers/tiling.py` (pure grid
+      partition + manifest + pycolmap/struct subset writer), `pipeline/tile.sh`
+      (per-tile `InterfaceCOLMAP` + the **unchanged** `dense_openmvs.sh` on a tile
+      workdir that symlinks the shared, once-harmonised undistorted images),
+      `helpers/tile_merge.py` (crop-to-core mesh+cloud concat with atlas
+      namespacing). The merge runs upstream so the entire existing downstream
+      (georef → LAZ → ortho/DSM → glTF → report → map_outputs) runs **once on the
+      merged `$WORK`, byte-identical to the non-tiled path**; below the budget
+      threshold the run is byte-identical to today (zero overhead). Phases 1–4
+      (partition, per-tile orchestration, merge, gating/wiring) landed and unit-
+      tested; **Phase 0** (single tile reconstructs correctly from the global
+      sparse) and **Phase 5** (tiled ≈ single-machine + bounded per-tile RAM) need a
+      real large run and are deferred to the reference-data campaign. v1 mesh-seam
+      limitation at tile borders documented (Metashape/ODM share it). Architecture:
       [docs/split-merge-tiling-plan.md](docs/split-merge-tiling-plan.md).
 - [ ] Optional: out-of-core / cache-to-disk for the dense + Delaunay stages
       (the RealityScan approach) as an alternative to tiling for mid-size sets.
