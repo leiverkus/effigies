@@ -82,6 +82,28 @@ def _ortho_stats(tif):
     return W, H, gsd * 100.0, area, cov, thumb
 
 
+def _dsm_stats(tif):
+    """(width, height, gsd_cm, zmin, zmax) for the DSM, or None."""
+    if not os.path.exists(tif):
+        return None
+    try:
+        from osgeo import gdal
+    except ImportError:
+        return None
+    ds = gdal.Open(tif)
+    if ds is None:
+        return None
+    band = ds.GetRasterBand(1)
+    nodata = band.GetNoDataValue()
+    import numpy as np
+    arr = band.ReadAsArray()
+    valid = arr[arr != nodata] if nodata is not None else arr.ravel()
+    if valid.size == 0:
+        return None
+    gt = ds.GetGeoTransform()
+    return ds.RasterXSize, ds.RasterYSize, abs(gt[1]) * 100.0, float(valid.min()), float(valid.max())
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", required=True)
@@ -106,6 +128,7 @@ def main():
     if os.path.exists(trp):
         tr = json.load(open(trp))
     ortho = _ortho_stats(os.path.join(W, "odm_orthophoto.tif"))
+    dsm = _dsm_stats(os.path.join(W, "odm_dem", "dsm.tif"))
 
     rows = [["Dataset", args.name or os.path.basename(os.path.dirname(W)) or W]]
     if n_images is not None:
@@ -125,6 +148,9 @@ def main():
         Wpx, Hpx, gsd_cm, area, cov, _ = ortho
         rows.append(["Orthophoto", f"{Wpx} x {Hpx} px @ {gsd_cm:.1f} cm/px"])
         rows.append(["Area covered", f"{area:,.1f} m² ({cov:.0f}% of frame)"])
+    if dsm:
+        Wd, Hd, gsd_cm, zmin, zmax = dsm
+        rows.append(["DSM", f"{Wd} x {Hd} px @ {gsd_cm:.1f} cm/px, elev {zmin:.1f}..{zmax:.1f} m"])
     proc = [p for p in [args.sparse_engine and f"sparse={args.sparse_engine}",
                         args.matcher and f"matcher={args.matcher}",
                         args.mapper and f"mapper={args.mapper}",

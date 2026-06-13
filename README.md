@@ -52,6 +52,7 @@ WebODM ──HTTP──> NodeODM REST layer ──run.sh──> [ Effigies engin
         ├─ RefineMesh ×N     ← main quality lever  │
         └─ TextureMesh                             │
    georef_bridge.py  (local SfM frame -> CRS)      │
+   orthophoto.py     (-> ortho + DSM, one raster)  │
    map_outputs.py    (-> WebODM asset structure)   ┘
 ```
 
@@ -92,6 +93,7 @@ Advertised in [`options.json`](options.json) and surfaced in the WebODM task UI:
 | `crs` | `auto` | Target projected CRS (EPSG code, or `auto` UTM derivation). |
 | `crs-preset` | `none` | Named regional grids filling `crs` (Israeli TM, Palestine 1923, ETRS89 UTM 32/33N = Germany's official grid, OSGB, LV95); an explicit `crs` always wins. |
 | `gcp` | — | Optional path to an ODM-format `gcp_list.txt`. |
+| `skip-dsm` | `false` | Skip the DSM (`odm_dem/dsm.tif`), the nadir surface model emitted from the same z-buffer as the orthophoto (inherits RefineMesh detail; bare-earth DTM is a future output). |
 | `no-gpu` | `false` | Force CPU even when CUDA is available. |
 | `no-auto-scale` | `false` | Disable count-based adaptation of matcher/mapper/densify for large image sets (see below). |
 

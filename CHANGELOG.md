@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **DSM (digital surface model) output (`odm_dem/dsm.tif`).** Reaches parity with
+  ODM's DEM raster, nearly for free: `helpers/orthophoto.py` already computes a
+  per-pixel surface-height z-buffer to resolve occlusion for the orthophoto (the
+  z-winner = topmost surface). That height grid — previously discarded — is now
+  written as a georeferenced single-band Float32 GeoTIFF (nodata −9999) from the
+  **same** nadir rasterisation, so it inherits the RefineMesh detail at no extra
+  rasterisation cost and carries absolute elevations (georef keeps Z absolute).
+  On by default for georeferenced tasks, `skip-dsm` to disable, auto-skipped for
+  local-frame results; mapped to the WebODM `odm_dem/dsm.tif` asset path and
+  reported in the quality PDF (px @ cm/px, elevation range). This is the
+  *surface* model (buildings/vegetation included); a bare-earth DTM (PDAL ground
+  filter) remains a separate future output.
 - **Engine-side auto-scaling for large image sets (`pipeline/autoscale.sh`).**
   `run.sh` now counts the images at runtime and, for options the caller did not
   set explicitly, adapts to the count: above ~150 images it switches the COLMAP

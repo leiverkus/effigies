@@ -142,12 +142,16 @@ kept** (24.04 dropped it). Facts worth keeping:
       numpy pass each, z-buffer conflicts via lexsort; ~10x vs the per-face loop,
       pixel-identical). DSM/DTM and true-ortho hardening are broken out as their
       own items below (closing the gap to ODM's mature raster outputs).
-- [ ] **DSM (digital surface model) — low effort, building blocks present.**
-      `orthophoto.py` already rasterises the refined mesh nadir with a z-buffer
-      (z-winner lexsort) — the per-pixel surface height it computes *is* the DSM,
-      currently discarded. Emit the height grid as a georeferenced GeoTIFF
-      (`odm_dem/dsm.tif`) alongside the RGB ortho; it inherits RefineMesh detail
-      for free. The single best gap-to-ODM lever per unit effort.
+- [x] **DSM (digital surface model).** `orthophoto.py` already rasterises the
+      refined mesh nadir with a z-buffer (z-winner lexsort) — the per-pixel
+      surface height it computes *is* the DSM. That height grid is now emitted as
+      a georeferenced single-band Float32 GeoTIFF (`odm_dem/dsm.tif`, nodata
+      −9999) from the same rasterisation pass, so it inherits RefineMesh detail at
+      no extra cost; on by default, `skip-dsm` to disable, auto-skipped for
+      local-frame results. Terminology: **DEM** is the umbrella; this z-winner top
+      surface is specifically the **DSM** (roofs/vegetation included); the
+      bare-earth **DTM** is the separate item below. ODM's `odm_dem/` folder holds
+      both — same path.
 - [ ] **DTM (digital terrain model) — medium, no new dependency.** Needs ground
       classification (remove buildings/vegetation). PDAL — already built for the
       LAZ output — ships exactly the filters ODM uses (`filters.smrf` /

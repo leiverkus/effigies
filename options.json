@@ -235,6 +235,13 @@
     "help": "Skip generating the orthophoto GeoTIFF. By default a georeferenced orthophoto is nadir-rasterised from the refined textured mesh (odm_orthophoto/odm_orthophoto.tif); it is skipped automatically for non-georeferenced (local-frame) results. Default: %(default)s"
   },
   {
+    "name": "skip-dsm",
+    "title": "Skip DSM",
+    "value": false,
+    "type": "bool",
+    "help": "Skip generating the DSM (digital surface model). By default a georeferenced single-band Float32 GeoTIFF of the topmost surface elevation (odm_dem/dsm.tif) is written from the same nadir rasterisation as the orthophoto — so it inherits the RefineMesh detail at no extra cost; skipped automatically for non-georeferenced (local-frame) results. This is the surface model (buildings/vegetation included); a bare-earth DTM is a separate future output. Default: %(default)s"
+  },
+  {
     "name": "orthophoto-resolution",
     "title": "Orthophoto Resolution (cm/px)",
     "value": "auto",

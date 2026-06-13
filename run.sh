@@ -37,6 +37,7 @@ declare -A OPT=(
   [georeference]=auto
   [gcp]=""
   [skip-orthophoto]=false
+  [skip-dsm]=false
   [orthophoto-resolution]=auto
   [no-gpu]=false
   [no-auto-scale]=false
@@ -224,16 +225,19 @@ fi
 progress 88
 
 # ---------------------------------------------------------------------------
-# 5b. Orthophoto -> georeferenced GeoTIFF (nadir-rasterised from the textured mesh)
-#     ODM builds this from its DSM; we build a true orthophoto off the refined
-#     textured mesh so it inherits the RefineMesh detail. Self-skips when the
-#     result is not georeferenced (crs=local). Non-fatal: a failure here must not
-#     lose the 3D model + cloud that already succeeded.
+# 5b. Orthophoto + DSM -> georeferenced GeoTIFFs (one nadir rasterisation of the
+#     textured mesh). ODM builds the ortho from its DSM; we build a true ortho off
+#     the refined textured mesh so both inherit the RefineMesh detail. The DSM is
+#     the z-buffer that rasterisation already computes (odm_dem/dsm.tif). Both
+#     self-skip when not georeferenced (crs=local). Non-fatal: a failure here must
+#     not lose the 3D model + cloud that already succeeded.
 # ---------------------------------------------------------------------------
-if [[ "${OPT[skip-orthophoto]}" != "true" ]]; then
+if [[ "${OPT[skip-orthophoto]}" != "true" || "${OPT[skip-dsm]}" != "true" ]]; then
   if ! python3 "$(dirname "$0")/helpers/orthophoto.py" \
-       --work "$WORK" --resolution "${OPT[orthophoto-resolution]}"; then
-    echo "[effigies] WARN: orthophoto step failed; continuing without it" >&2
+       --work "$WORK" --resolution "${OPT[orthophoto-resolution]}" \
+       $([[ "${OPT[skip-orthophoto]}" == "true" ]] && echo --skip-orthophoto) \
+       $([[ "${OPT[skip-dsm]}" == "true" ]] && echo --skip-dsm); then
+    echo "[effigies] WARN: orthophoto/DSM step failed; continuing without it" >&2
   fi
 fi
 

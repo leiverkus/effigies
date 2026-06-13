@@ -247,7 +247,7 @@ def rasterize(V, VT, TV, TVT, TM, textures, gsd):
         rgb[r0 + rr, c0 + cc] = tex[ty[win], tx[win]]
         alpha[r0 + rr, c0 + cc] = 255
         sub[win] = z[win]
-    return rgb, alpha, xmin, ymax
+    return rgb, alpha, xmin, ymax, zbuf
 
 
 def write_geotiff(path, rgb, alpha, originx, originy, gsd, crs):
@@ -266,21 +266,49 @@ def write_geotiff(path, rgb, alpha, originx, originy, gsd, crs):
     ds.FlushCache(); ds = None
 
 
+def write_dem_geotiff(path, zbuf, originx, originy, gsd, crs, nodata=-9999.0):
+    """Write the per-pixel surface-height grid (`zbuf`, absolute elevations) as a
+    single-band Float32 DSM GeoTIFF — same geotransform/CRS as the orthophoto.
+    Uncovered pixels (zbuf == -inf) become `nodata`."""
+    from osgeo import gdal, osr
+    H, W = zbuf.shape
+    dem = np.where(np.isneginf(zbuf), nodata, zbuf).astype(np.float32)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    drv = gdal.GetDriverByName("GTiff")
+    ds = drv.Create(path, W, H, 1, gdal.GDT_Float32,
+                    options=["COMPRESS=DEFLATE", "TILED=YES"])
+    ds.SetGeoTransform([originx, gsd, 0.0, originy, 0.0, -gsd])
+    srs = osr.SpatialReference()
+    srs.SetFromUserInput(crs)
+    ds.SetProjection(srs.ExportToWkt())
+    band = ds.GetRasterBand(1)
+    band.SetNoDataValue(nodata)
+    band.WriteArray(dem)
+    ds.FlushCache(); ds = None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", required=True, help="OpenMVS workdir")
     ap.add_argument("--resolution", default="auto",
                     help="ground sample distance in cm/px, or 'auto' (~4k px wide)")
+    ap.add_argument("--skip-orthophoto", action="store_true",
+                    help="do not write the RGB orthophoto")
+    ap.add_argument("--skip-dsm", action="store_true",
+                    help="do not write the DSM (digital surface model)")
     args = ap.parse_args()
+
+    if args.skip_orthophoto and args.skip_dsm:
+        return
 
     tr_path = os.path.join(args.work, "georef_transform.json")
     if not os.path.exists(tr_path):
-        print("[ortho] no georef_transform.json; skipping orthophoto", file=sys.stderr)
+        print("[ortho] no georef_transform.json; skipping orthophoto/DSM", file=sys.stderr)
         return
     tr = json.load(open(tr_path))
     crs = tr.get("crs")
     if not crs or str(crs).lower() == "local":
-        print("[ortho] result is not georeferenced (crs=local); skipping orthophoto",
+        print("[ortho] result is not georeferenced (crs=local); skipping orthophoto/DSM",
               file=sys.stderr)
         return
     offset = np.asarray(tr.get("offset", [0, 0, 0]), dtype=np.float64)
@@ -306,13 +334,27 @@ def main():
     while (ext_x / gsd) * (ext_y / gsd) > 16000 * 16000:
         gsd *= 2.0
 
-    rgb, alpha, xmin, ymax = rasterize(V, VT, TV, TVT, TM, textures, gsd)
-    out = os.path.join(args.work, "odm_orthophoto.tif")
-    write_geotiff(out, rgb, alpha, offset[0] + xmin, offset[1] + ymax, gsd, crs)
+    rgb, alpha, xmin, ymax, zbuf = rasterize(V, VT, TV, TVT, TM, textures, gsd)
+    ox, oy = offset[0] + xmin, offset[1] + ymax
     cov = 100.0 * (alpha > 0).mean()
-    print(f"[ortho] wrote {os.path.basename(out)} "
-          f"({rgb.shape[1]}x{rgb.shape[0]} px @ {gsd*100:.1f} cm/px, "
-          f"{cov:.0f}% covered, crs={crs})")
+
+    if not args.skip_orthophoto:
+        out = os.path.join(args.work, "odm_orthophoto.tif")
+        write_geotiff(out, rgb, alpha, ox, oy, gsd, crs)
+        print(f"[ortho] wrote {os.path.basename(out)} "
+              f"({rgb.shape[1]}x{rgb.shape[0]} px @ {gsd*100:.1f} cm/px, "
+              f"{cov:.0f}% covered, crs={crs})")
+
+    if not args.skip_dsm:
+        # The z-buffer the rasteriser already computed IS the DSM: per-pixel
+        # topmost surface elevation (absolute, inherits RefineMesh detail).
+        dsm_out = os.path.join(args.work, "odm_dem", "dsm.tif")
+        write_dem_geotiff(dsm_out, zbuf, ox, oy, gsd, crs)
+        finite = zbuf[np.isfinite(zbuf)]
+        rng = (f"elev {finite.min():.1f}..{finite.max():.1f} m"
+               if finite.size else "no covered pixels")
+        print(f"[ortho] wrote odm_dem/dsm.tif "
+              f"({zbuf.shape[1]}x{zbuf.shape[0]} px @ {gsd*100:.1f} cm/px, {rng}, crs={crs})")
 
 
 if __name__ == "__main__":
