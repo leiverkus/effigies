@@ -88,7 +88,7 @@ kept** (24.04 dropped it). Facts worth keeping:
 - **OpenMVS 2.4.0 is a runtime fix, not just a feature**: 2.3.0's `DensifyPointCloud`
   heap-corrupts on arm64; 2.4.0 (FLANN → nanoflann) runs the full dense+mesh chain.
 
-## v0.3.0 — Georeferencing accuracy *(implemented — pending release tag)*
+## v0.3.0 — Georeferencing accuracy *(released — 2026-06-13)*
 
 - [x] **Multi-view GCP triangulation.** Marked pixels are undistorted (full COLMAP
       lens model, fixed-point inversion) into viewing rays and intersected in least
