@@ -47,11 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `[extra]` field) is held out of the solve and reported as an independent
     CP-RMSE in `georef_transform.json`.
   pycolmap is built from the pinned COLMAP source into both Dockerfiles (no wheel
-  for linux/aarch64+py3.12). **Default `off`** — the safe post-hoc Umeyama stays the
-  default; `on`/`auto` need a GCP file. Real-data accuracy validation (surveyed GCP
-  + held-out check points) is deferred to the v0.6.0 reference-data campaign; the
-  synthetic fixture and the in-image runs prove correctness. (`auto` is the natural
-  candidate for a future default once that campaign confirms the gain.)
+  for linux/aarch64+py3.12). **Default `auto`** — chosen for its never-worse-than-
+  post-hoc guarantee on the check metric: a GCP run with check points keeps the BA
+  only when it measurably wins, and a run without GCPs or check points behaves
+  exactly as before (post-hoc / EXIF / local), silently. `off` forces the old
+  post-hoc-only behaviour. Real-data accuracy validation (surveyed GCP + held-out
+  check points) is still deferred to the v0.6.0 reference-data campaign — that
+  campaign measures the *absolute* gain; the default flip rests on the *relative*
+  never-worse property, which the synthetic fixture and the in-image runs verify.
 - **True-ortho hardening — bounded orthophoto hole-fill.** The orthophoto was
   already a true-ortho (the mesh z-buffer resolves occlusion, no building lean);
   this hardens its coverage. `fill_ortho_holes` (scipy `ndimage`) fills only

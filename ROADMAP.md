@@ -108,7 +108,7 @@ kept** (24.04 dropped it). Facts worth keeping:
 ## v0.3.x — Deeper georeferencing rigor *(when the paper's accuracy claims need it)*
 
 - [x] **GCP-constrained bundle adjustment** (`--gcp-bundle-adjust off|on|auto`,
-      default `off`). The default GCP path drives a post-hoc Umeyama similarity on
+      default `auto`). The classic GCP path drives a post-hoc Umeyama similarity on
       triangulated marker points (`georef_bridge.py`); a rigid 7-DoF similarity
       cannot absorb reconstruction **drift**, so the check-point RMSE it leaves is
       a floor. The new path (`helpers/gcp_bundle_adjust.py`, **pycolmap** / COLMAP's
@@ -122,15 +122,17 @@ kept** (24.04 dropped it). Facts worth keeping:
       consumer unchanged). pycolmap is built from the pinned COLMAP source into both
       images. Check-point convention: a `gcp_list.txt` line ending in `check` is
       held out and reported as an independent CP-RMSE.
-      `auto` runs both paths and keeps the BA only if it beats the post-hoc
-      check-point RMSE (cheap sparse-model comparison, free model backed up and
-      restored on a loss) — *by construction never worse than the post-hoc path*,
-      which makes it the natural candidate for a future **default flip** once the
-      accuracy campaign confirms the gain. **Real-data validation deferred** to the
-      v0.6.0 reference-data campaign (needs a surveyed GCP + held-out check-point
-      dataset); the synthetic fixture + the in-image Stage-0 spike (real 70-image /
-      34 626-point reconstruction, BA converged in ~1 s) prove correctness,
-      real-data tuning of BA options is the open piece.
+      `auto` (the **default**) runs both paths and keeps the BA only if it beats the
+      post-hoc check-point RMSE (cheap sparse-model comparison, free model backed up
+      and restored on a loss) — *by construction never worse than the post-hoc path*
+      on the check metric, which is what justifies it as the default; a run without
+      GCPs / check points falls back silently. **Absolute-accuracy validation still
+      deferred** to the v0.6.0 reference-data campaign (needs a surveyed GCP +
+      held-out check-point dataset) — that measures the gain; the default rests on
+      the relative never-worse property, which the synthetic fixture + the in-image
+      Stage-0 spike (real 70-image / 34 626-point reconstruction, BA converged in
+      ~1 s) verify. Real-data tuning of BA options (gauge, intrinsics, margin) is
+      the open piece.
 
 ## v0.4.0 — Quality profiles & tuning
 

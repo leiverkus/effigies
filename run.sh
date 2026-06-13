@@ -36,7 +36,7 @@ declare -A OPT=(
   [crs-preset]=none
   [georeference]=auto
   [gcp]=""
-  [gcp-bundle-adjust]=off
+  [gcp-bundle-adjust]=auto
   [skip-orthophoto]=false
   [skip-dsm]=false
   [dtm]=false
@@ -165,19 +165,25 @@ if [[ -z "${OPT[gcp]}" && -f "${PROJ}/gcp_list.txt" ]]; then
   echo "[effigies] auto-detected GCP file: ${OPT[gcp]}"
 fi
 
-# GCP-constrained bundle adjustment is a GCP georeferencing method: only enable it
-# when georeferencing actually consumes GCPs (auto / gcp). Under exif/none it would
-# rewrite the sparse model into a world frame the later bridge then discards.
-# Mode: off (post-hoc similarity) / on (always BA) / auto (keep BA only if it beats
-# the post-hoc check-RMSE). Tolerate legacy bool spellings (true/false -> on/off).
+# GCP-constrained bundle adjustment is a GCP georeferencing method: it only does
+# anything when georeferencing consumes GCPs (auto / gcp) AND a GCP file is present.
+# Mode: off (post-hoc similarity) / on (always BA) / auto (default: keep the BA only
+# if it beats the post-hoc check-RMSE; no-op without check points). Tolerate legacy
+# bool spellings (true/false -> on/off). The default is auto, so the "not applicable"
+# cases (no GCP file, or georeference=exif/none) must stay SILENT — only warn when
+# the user EXPLICITLY set the option (GIVEN), otherwise it is just the normal
+# no-GCP run falling through to the default georeferencing.
 GCP_BA_OPT="${OPT[gcp-bundle-adjust]}"
 case "$GCP_BA_OPT" in true) GCP_BA_OPT=on ;; false) GCP_BA_OPT=off ;; esac
+explicit_ba="${GIVEN[gcp-bundle-adjust]:-}"
 GCP_BA=off
 if [[ "$GCP_BA_OPT" != "off" ]]; then
-  if [[ "${OPT[georeference]}" == "auto" || "${OPT[georeference]}" == "gcp" ]]; then
-    GCP_BA="$GCP_BA_OPT"
+  if [[ "${OPT[georeference]}" != "auto" && "${OPT[georeference]}" != "gcp" ]]; then
+    [[ -n "$explicit_ba" ]] && echo "[effigies] WARN: --gcp-bundle-adjust=$GCP_BA_OPT ignored with --georeference ${OPT[georeference]} (needs auto or gcp)" >&2
+  elif [[ -z "${OPT[gcp]}" || ! -f "${OPT[gcp]}" ]]; then
+    [[ -n "$explicit_ba" ]] && echo "[effigies] WARN: --gcp-bundle-adjust=$GCP_BA_OPT but no GCP file; using post-hoc georeferencing" >&2
   else
-    echo "[effigies] WARN: --gcp-bundle-adjust=$GCP_BA_OPT ignored with --georeference ${OPT[georeference]} (needs auto or gcp)" >&2
+    GCP_BA="$GCP_BA_OPT"
   fi
 fi
 
