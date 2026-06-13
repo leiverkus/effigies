@@ -218,15 +218,21 @@ RealityScan out-of-core **components**, and ODM's own **split-merge**
       mechanism: `/options` is static, so the engine adapts at runtime, not the
       (un-modifiable) dialog. The deeper levers (`number-views-fuse`, tiling)
       remain manual / below.
-- [ ] **Blend streaming refactor (precondition).** `helpers/texture_blend.py`
-      has three image-count-scaling memory consumers (dense `[faces×views]`
+- [x] **Blend streaming refactor (precondition).** `helpers/texture_blend.py`
+      had three image-count-scaling memory consumers (dense `[faces×views]`
       weight matrix ~29 GB, all source images in RAM ~32 GB, all depth maps held
-      at once) — a wall of our own making at 900 images. Fix: streaming top-K
-      view selection (depth maps rendered on the fly) + a view-major bake (one
-      image resident at a time). `seam_level.py` is *not* affected (it scales with
-      atlas + mesh, not image count). Full design with measured slopes and a
-      phased plan in [docs/blend-streaming-plan.md](docs/blend-streaming-plan.md).
-      Must land before tiling, or our own texture-quality stage becomes the wall.
+      at once) — a wall of our own making at 900 images. Fixed in two steps:
+      **streaming top-K view selection** (depth maps rendered on the fly, running
+      top-K instead of the matrix — bit-for-bit identical selection) and a
+      **view-major bake** (each page rasterised into a per-(face,texel) table and
+      sampled one image at a time — preserves the two-level accumulation, atol-1
+      identical). Peak RSS is now governed by mesh + atlas size only.
+      `seam_level.py` was *not* affected (scales with atlas + mesh, not image
+      count). Design in [docs/blend-streaming-plan.md](docs/blend-streaming-plan.md);
+      `tests/test_blend.py` proves equivalence; `EFFIGIES_BLEND_RSS` probes peak
+      RSS. The large reduced-res high-count RSS confirmation run is a deferred
+      manual step (a toy-scene RSS assertion can't prove N-independence). Landed
+      before tiling, as required.
 - [ ] **Split-merge tiling.** Run SfM once on the whole set, partition the
       cameras spatially **in that shared sparse frame** (no GPS required, no
       per-tile alignment), run the dense→mesh→texture chain per tile within a

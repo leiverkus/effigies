@@ -244,11 +244,14 @@ def blend(work):
           f"valid views (top-{TOP_K})")
     _log_rss("after view selection")
 
-    print(f"[blend] loading {len(names)} undistorted images ...")
-    imgs = [np.asarray(Image.open(os.path.join(img_dir, n)).convert("RGB"))
-            for n in names]
-
-    # bake per page, per bbox size class (same batching as the rasterisers)
+    # View-major bake, per page: (1) rasterise the page into a per-(face,texel)
+    # table {atlas pixel, 3D position P (float64), the face's top-K (vid,weight)};
+    # (2) group rows by view and, for each view used on the page, load that ONE
+    # image, sample all its rows, accumulate, discard it. Peak memory is
+    # O(atlas page + table + one image) — independent of the view count (vs the old
+    # all-images-resident bake). Each image is read at most once per page.
+    print(f"[blend] view-major bake of {len(tex_paths)} atlas page(s) "
+          f"(≤1 source image resident) ...")
     for m, tp in enumerate(tex_paths):
         fsel = np.nonzero((FM == m) & (FVT >= 0).all(1) & covered)[0]
         if not len(fsel):
@@ -265,12 +268,13 @@ def blend(work):
         AREA = ((xs[:, 1] - xs[:, 0]) * (ys[:, 2] - ys[:, 0])
                 - (xs[:, 2] - xs[:, 0]) * (ys[:, 1] - ys[:, 0]))
         ok = (C1 > C0) & (R1 > R0) & (np.abs(AREA) > 1e-9)
-        acc = np.zeros((H * W, 3), np.float32)
-        wgt = np.zeros(H * W, np.float32)
         Vf = V[FV[fsel]]                                  # [B,3corners,3]
         topf, twf = top[fsel], tw[fsel]
         BW, BH = C1 - C0, R1 - R0
         done = ~ok
+
+        # --- (1) rasterise pass: collect per-(face,texel) rows, no sampling yet ---
+        pix_parts, P_parts, vid_parts, w_parts = [], [], [], []
         for k in (2, 4, 8, 16, 32, 64):
             grp = np.nonzero(~done & (BW <= k) & (BH <= k))[0]
             done[grp] = True
@@ -294,47 +298,63 @@ def blend(work):
                 cand = inwin & (l0 >= eps) & (l1 >= eps) & (l2 >= eps)
                 if not cand.any():
                     continue
-                # 3D position of every candidate texel
+                # 3D position of every candidate texel (float64 — keeps the bilinear
+                # sample coords within atol of the reference)
                 P = (l0[..., None] * Vf[g, None, None, 0, :]
                      + l1[..., None] * Vf[g, None, None, 1, :]
                      + l2[..., None] * Vf[g, None, None, 2, :])
-                pix = (rr * W + cc)[cand]
-                Pc = P[cand]                              # [T,3]
-                # face index per candidate texel (within g)
                 fidx = np.broadcast_to(np.arange(len(g))[:, None, None],
-                                       cand.shape)[cand]
-                col = np.zeros((len(Pc), 3), np.float32)
-                wsum = np.zeros(len(Pc), np.float32)
-                for kk in range(TOP_K):
-                    vids = topf[g][fidx, kk]
-                    ws = twf[g][fidx, kk]
-                    active = ws > 0
-                    if not active.any():
-                        continue
-                    for vid in np.unique(vids[active]):
-                        sel = active & (vids == vid)
-                        n = names[vid]
-                        Rv, tv = poses[n]["R"], poses[n]["t"]
-                        _, Wd, Hd, K = cams[cam_of[n]]
-                        fx, fy, cx, cy = K
-                        Xc = Pc[sel] @ Rv.T + tv
-                        z = np.maximum(Xc[:, 2], 1e-6)
-                        u = fx * Xc[:, 0] / z + cx
-                        v = fy * Xc[:, 1] / z + cy
-                        smp = bilinear(imgs[vid], u, v)
-                        col[sel] += ws[sel, None] * smp
-                        wsum[sel] += ws[sel]
-                good = wsum > 1e-6
-                np.add.at(acc, pix[good],
-                          col[good] / wsum[good, None])
-                np.add.at(wgt, pix[good], 1.0)
+                                       cand.shape)[cand]      # face index within g
+                pix_parts.append((rr * W + cc)[cand])
+                P_parts.append(P[cand])                       # [t,3]
+                vid_parts.append(topf[g][fidx])               # [t,K]
+                w_parts.append(twf[g][fidx])                  # [t,K]
+        if not pix_parts:
+            del tex
+            continue
+        PIX = np.concatenate(pix_parts)                       # [T]
+        Prow = np.concatenate(P_parts)                        # [T,3] float64
+        VIDS = np.concatenate(vid_parts)                      # [T,K] int32
+        WS = np.concatenate(w_parts)                          # [T,K] float32
+        del pix_parts, P_parts, vid_parts, w_parts
+
+        # --- (2) sample pass: one image resident at a time ---
+        # per-(face,texel) accumulators preserve the original two-level scheme:
+        #   level 1 (here): col_r = Σ_k w·sample, wsum_r = Σ_k w   (per row)
+        #   level 2 (below): acc[pix] += col_r/wsum_r, wgt[pix] += 1 (per pixel)
+        col = np.zeros((len(PIX), 3), np.float32)
+        wsum = np.zeros(len(PIX), np.float32)
+        valid = WS > 0                                        # [T,K]; excludes -1 slots
+        for vid in np.unique(VIDS[valid]):
+            mask = valid & (VIDS == vid)                      # [T,K]
+            rows, slots = np.nonzero(mask)
+            n = names[vid]
+            Rv, tv = poses[n]["R"], poses[n]["t"]
+            _, Wd, Hd, K = cams[cam_of[n]]
+            fx, fy, cx, cy = K
+            Xc = Prow[rows] @ Rv.T + tv
+            z = np.maximum(Xc[:, 2], 1e-6)
+            u = fx * Xc[:, 0] / z + cx
+            v = fy * Xc[:, 1] / z + cy
+            img = np.asarray(Image.open(os.path.join(img_dir, n)).convert("RGB"))
+            smp = bilinear(img, u, v)                         # [M,3]
+            wr = WS[rows, slots]                              # [M]
+            np.add.at(col, rows, wr[:, None] * smp)
+            np.add.at(wsum, rows, wr)
+            del img
+
+        acc = np.zeros((H * W, 3), np.float32)
+        wgt = np.zeros(H * W, np.float32)
+        good = wsum > 1e-6
+        np.add.at(acc, PIX[good], col[good] / wsum[good, None])
+        np.add.at(wgt, PIX[good], 1.0)
         covered_px = wgt > 0
         out = tex.reshape(-1, 3).copy()
         out[covered_px] = acc[covered_px] / wgt[covered_px, None]
         Image.fromarray(np.clip(out.reshape(H, W, 3), 0, 255)
                         .astype(np.uint8)).save(tp, quality=95)
         print(f"[blend] page {m}: {covered_px.mean() * 100:.0f}% of texels re-baked")
-        del tex, acc, wgt
+        del tex, acc, wgt, col, wsum, PIX, Prow, VIDS, WS
     print(f"[blend] multi-view blend complete (top-{TOP_K}, cos²/d² weights)")
     _log_rss("exit")
     return True

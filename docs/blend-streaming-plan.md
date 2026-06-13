@@ -1,5 +1,14 @@
 # Plan — Blend streaming refactor (ROADMAP v0.5.0 precondition)
 
+> **STATUS: DONE.** Phase 1 (streaming top-K selection) and Phase 2 (view-major
+> bake) landed; selection is bit-for-bit identical to the old argsort path and the
+> bake matches the reference to atol 1 (verified bit-exact on the synthetic golden
+> scene in `tests/test_blend.py`). Peak RSS is governed by mesh + atlas size only;
+> the `EFFIGIES_BLEND_RSS` probe (Phase 0) is in place. **Open / deferred:** the
+> reduced-resolution high-count confirmation run (Phase 3 below) is a *manual* step
+> — a toy-scene RSS unit assertion cannot robustly prove N-independence (the
+> high-water mark is dominated by interpreter/numpy baseline), so it is not in CI.
+
 Goal: make `helpers/texture_blend.py` memory-bounded **independent of the image
 count**, so large sets (and, later, per-tile texturing under split-merge) do not
 OOM in our own texture-quality stage. Target: peak RSS governed by mesh + atlas

@@ -8,17 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **Blend memory — streaming top-K view selection (`texture_blend.py`).** The
-  multi-view texturing step's view selection no longer allocates a dense
-  `[faces × views]` weight matrix (~29 GB at 8 M faces × 900 views) or holds every
-  view's depth map at once. It now streams the views in a single pass — each depth
-  map rendered on the fly and discarded, a running top-K (`[faces × K]`, ~256 MB,
-  flat in the view count) replacing the matrix — giving the **same** top-K set and
-  normalised weights (proven bit-for-bit against the old argsort path on random
-  inputs and a synthetic golden scene). First half of the v0.5.0 blend-streaming
-  precondition; incidentally robust to fewer-than-K views (the old path crashed
-  the bake there). New `tests/test_blend.py` (kernel-equivalence + golden) and an
-  `EFFIGIES_BLEND_RSS` peak-RSS probe. No output or behaviour change.
+- **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
+  The multi-view texturing step had three consumers that scaled with the number of
+  views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at
+  8 M faces × 900 views), all source images resident (~32 GB), and all depth maps
+  at once. Two changes remove all three: **(1) streaming top-K view selection** —
+  views are streamed in one pass, each depth map rendered on the fly and discarded,
+  a running top-K (`[faces × K]`, ~256 MB, flat in the view count) replacing the
+  matrix; **(2) view-major bake** — each atlas page is rasterised into a
+  per-(face,texel) row table and sampled view-by-view, so at most **one source
+  image is resident at a time** (read ≤ once per page). Peak memory is now governed
+  by mesh + atlas size only. Output is preserved: selection is bit-for-bit
+  identical to the old argsort path; the view-major bake keeps the original
+  two-level accumulation (per-(face,texel) weighted blend, then equal per-pixel
+  averaging across overlapping faces) so it matches the reference to within float
+  rounding (atol 1 on uint8 — verified bit-exact on the golden scene). This
+  completes the ROADMAP v0.5.0 blend-streaming precondition for split-merge tiling.
+  Incidentally robust to fewer-than-K views (the old path crashed the bake there).
+  New `tests/test_blend.py` (kernel-equivalence + golden) and an `EFFIGIES_BLEND_RSS`
+  peak-RSS probe; the large reduced-resolution high-count RSS run is a documented
+  manual step. No behaviour change (skip conditions, coverage %, outputs identical).
 - **Base image: Ubuntu 22.04 → 24.04 (noble), CUDA 12.4.1 → 12.8.1.** No legacy
   base for new software: 22.04's standard support ends in under a year and forced
   workarounds (node v12 too old for obj2gltf, nanoflann header overlay, ancient
