@@ -127,7 +127,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       and restored on a loss) — *by construction never worse than the post-hoc path*
       on the check metric, which is what justifies it as the default; a run without
       GCPs / check points falls back silently. **Absolute-accuracy validation still
-      deferred** to the v0.6.0 reference-data campaign (needs a surveyed GCP +
+      deferred** to the v0.7.0 reference-data campaign (needs a surveyed GCP +
       held-out check-point dataset) — that measures the gain; the default rests on
       the relative never-worse property, which the synthetic fixture + the in-image
       Stage-0 spike (real 70-image / 34 626-point reconstruction, BA converged in
@@ -142,7 +142,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       of WebODM's preset JSON — those are per-install data keyed to ODM's option
       names and useless for Effigies. The bundle *values* are currently reasoned
       defaults; **empirically calibrating them** (esp. `RefineMesh`) per profile
-      against benchmark runs is deferred to **v0.6.0** (it needs the benchmark
+      against benchmark runs is deferred to **v0.7.0** (it needs the benchmark
       campaign).
 - [x] Expose key OpenMVS refine parameters as task options with documented
       effects: `refine-max-face-area`, `refine-gradient-step`, and
@@ -195,7 +195,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       roughness (local plane-fit residual, detail-vs-noise); with a prior-art
       review in [docs/benchmark-literature.md](docs/benchmark-literature.md)
       (BibTeX in `docs/references.bib`). The actual comparison **runs** against
-      stock ODM / Metashape / RealityScan are the **v0.6.0** campaign below.
+      stock ODM / Metashape / RealityScan are the **v0.7.0** campaign below.
 
 ## v0.5.0 — Scaling to large image sets (split-merge tiling)
 
@@ -266,7 +266,36 @@ RealityScan out-of-core **components**, and ODM's own **split-merge**
       the same rationale as `cpu-threads` for COLMAP SIFT — but explicitly does *not*
       touch the Delaunay wall.
 
-## v0.6.0 — Benchmark campaign & profile calibration *(needs reference data)*
+## v0.6.0 — Capability parity *(buildable gaps vs ODM / Metashape / RealityCapture)*
+
+Real capability gaps surfaced by a head-to-head review against the competition —
+features they ship and we don't (yet), but that are buildable. Distinct from the
+deliberate non-goals (multispectral / thermal / multi-camera rigs; GUI — that is
+WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
+
+- [ ] **Contours / iso-lines (DXF + GeoPackage).** ODM and Metashape export vector
+      contours; we produce DSM/DTM rasters but no vector lines. Cheap to add —
+      `gdal_contour` over `odm_dem/dtm.tif` (or the DSM) at a configurable interval
+      → `odm_dem/contours.{dxf,gpkg}`. GDAL is already in the image.
+- [ ] **3D Tiles / Cesium streaming.** ODM exports 3D Tiles for web-streaming large
+      models; we emit a single glTF only. Add a tiled 3D-Tiles export of the
+      textured mesh for large-scene web viewing.
+- [ ] **Point classification beyond ground.** Metashape classifies buildings /
+      vegetation / vehicles (ML); our DTM does SMRF **ground only**. Extend the
+      PDAL stage to multi-class classification, exposing a classified LAZ and
+      class-filtered DEMs.
+- [ ] **Multi-epoch / change detection / co-registration.** ODM's `--align` and
+      Metashape markers co-register datasets from different dates onto a shared
+      frame; we have none. Genuinely relevant for **multi-campaign excavation
+      documentation** (compare/measure change across seasons). Approach: ICP /
+      feature-based registration of a new dataset's cloud + cameras to a prior
+      reference, then differencing (M3C2-style).
+- [ ] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
+      (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
+      such control; expose colour-balance / blending knobs if real orthos show
+      residual tonal variation.
+
+## v0.7.0 — Benchmark campaign & profile calibration *(needs reference data)*
 
 The empirical work behind the paper, split out from v0.4.0 (the *tooling* is
 done; the *runs* are here). Gated on a dataset with **reference data** — a TLS
