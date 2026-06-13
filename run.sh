@@ -44,6 +44,7 @@ declare -A OPT=(
   [orthophoto-resolution]=auto
   [ortho-fill-holes]=0.25
   [contours-interval]=0
+  [3d-tiles]=false
   [no-gpu]=false
   [no-auto-scale]=false
   [tiles]=off
@@ -372,6 +373,18 @@ fi
 progress 93
 if ! python3 "$(dirname "$0")/helpers/mesh_to_gltf.py" --work "$WORK"; then
   echo "[effigies] WARN: glTF export failed; continuing without it" >&2
+fi
+
+# ---------------------------------------------------------------------------
+# 5d2. 3D Tiles -> odm_3d_tiles/ (Cesium/OGC LOD streaming tileset of the textured
+#      mesh, via Obj2Tiles). Opt-in (--3d-tiles); needs a georeferenced result.
+#      Non-fatal.
+# ---------------------------------------------------------------------------
+if [[ "${OPT[3d-tiles]}" == "true" ]]; then
+  progress 94
+  if ! python3 "$(dirname "$0")/helpers/mesh_to_3d_tiles.py" --work "$WORK"; then
+    echo "[effigies] WARN: 3D Tiles export failed; continuing without it" >&2
+  fi
 fi
 
 # ---------------------------------------------------------------------------

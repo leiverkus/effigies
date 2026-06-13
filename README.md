@@ -55,6 +55,7 @@ WebODM ──HTTP──> NodeODM REST layer ──run.sh──> [ Effigies engin
    orthophoto.py     (-> ortho + DSM, one raster)  │
    pointcloud_to_dtm.py (-> bare-earth DTM, opt-in)│
    contours.py       (-> DXF + GPKG contours, opt-in)
+   mesh_to_3d_tiles.py (-> Cesium 3D Tiles, opt-in)
    map_outputs.py    (-> WebODM asset structure)   ┘
 ```
 
@@ -100,6 +101,7 @@ Advertised in [`options.json`](options.json) and surfaced in the WebODM task UI:
 | `dtm` | `false` | Generate the bare-earth DTM (`odm_dem/dtm.tif`) by PDAL SMRF ground classification of the dense cloud (opt-in; costs ground-filter time, needs open ground). |
 | `ortho-fill-holes` | `0.25` | Max hole area (m²) filled in the orthophoto by nearest-valid colour; only small interior holes close, large voids + the edge stay nodata (`0` disables). DSM/DTM/cloud are never modified. |
 | `contours-interval` | `0` | Vector contour spacing (m; `0` = off) → `odm_dem/contours.{gpkg,dxf}`, from the DTM if present else the DSM. |
+| `3d-tiles` | `false` | Export an OGC 3D Tiles LOD tileset (`odm_3d_tiles/`) of the textured mesh for Cesium/web streaming, via Obj2Tiles (opt-in; needs georeferencing). |
 | `no-gpu` | `false` | Force CPU even when CUDA is available. |
 | `no-auto-scale` | `false` | Disable count-based adaptation of matcher/mapper/densify for large image sets (see below). |
 

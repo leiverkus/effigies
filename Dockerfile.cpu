@@ -123,6 +123,28 @@ RUN mkdir -p /usr/local/share/effigies && \
     echo "[effigies] COLMAP vocab tree baked in (FAISS, Flickr100K 256K words)"
 ENV EFFIGIES_VOCAB_TREE=/usr/local/share/effigies/vocab_tree.bin
 
+# --- Obj2Tiles (OpenDroneMap) for the 3D Tiles export (opt-in --3d-tiles) ---
+# Self-contained single-file binary (bundles its own .NET runtime — no runtime to
+# install); the SAME tool + version ODM uses for OGC 3D Tiles. Asset picked by
+# build arch (this CPU image is arm64; the CUDA image is x86_64). Pin per-arch sha.
+ARG OBJ2TILES_VERSION=v1.4.0
+ARG OBJ2TILES_SHA256_ARM64=1310d44c10eb3b149d2b5b07b8c2379a15262f64a34ef9d479c13de911e7508b
+ARG OBJ2TILES_SHA256_X64=ff09c26ba32fe6122dfd6e60adf258ca942fb1574a75a34927344d8ceedccc4a
+RUN set -eux; \
+    case "$(uname -m)" in \
+      aarch64) A=LinuxArm64; S="${OBJ2TILES_SHA256_ARM64}" ;; \
+      x86_64)  A=Linux64;    S="${OBJ2TILES_SHA256_X64}"   ;; \
+      *) echo "unsupported arch $(uname -m) for Obj2Tiles" >&2; exit 1 ;; \
+    esac; \
+    U="https://github.com/OpenDroneMap/Obj2Tiles/releases/download/${OBJ2TILES_VERSION}/Obj2Tiles-${A}.zip"; \
+    python3 -c "import urllib.request; urllib.request.urlretrieve('${U}', '/tmp/o2t.zip')"; \
+    echo "${S}  /tmp/o2t.zip" | sha256sum -c -; \
+    python3 -m zipfile -e /tmp/o2t.zip /tmp/o2t/; \
+    install -m755 /tmp/o2t/Obj2Tiles /usr/local/bin/Obj2Tiles; \
+    rm -rf /tmp/o2t /tmp/o2t.zip; \
+    Obj2Tiles --help >/dev/null 2>&1 || { rc=$?; [ "$rc" = 1 ] || { echo "Obj2Tiles exec failed (rc=$rc)"; exit 1; }; }; \
+    echo "[effigies] Obj2Tiles ${OBJ2TILES_VERSION} (${A}) baked in"
+
 # --- CGAL 6 (header-only, pinned; used via -DCGAL_DIR below) ---
 # The one dep newer than noble: OpenMVS 2.4.0 includes CGAL/AABB_traits_3.h
 # (CGAL >=6.0); noble ships 5.6.

@@ -293,6 +293,13 @@
     "help": "Generate vector contour lines at this spacing in metres (0 disables). Written to odm_dem/contours.gpkg (GeoPackage, for GIS) and odm_dem/contours.dxf (for CAD), as 3D lines at their elevation with an 'elev' attribute. Generated from the DTM if present (true bare-earth terrain contours — enable the DTM option), otherwise the DSM. Needs a georeferenced result. Default: %(default)s"
   },
   {
+    "name": "3d-tiles",
+    "title": "3D Tiles (Cesium streaming)",
+    "value": false,
+    "type": "bool",
+    "help": "Export an OGC 3D Tiles tileset (LOD tileset.json + b3dm tiles) of the textured mesh for web/Cesium streaming of large scenes, written to odm_3d_tiles/. Built with OpenDroneMap's Obj2Tiles (splits + decimates the mesh into level-of-detail tiles). Opt-in: it is an extra processing step that emits many files. Needs a georeferenced result. Default: %(default)s"
+  },
+  {
     "name": "no-gpu",
     "title": "No GPU",
     "value": false,

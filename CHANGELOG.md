@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **3D Tiles export (`helpers/mesh_to_3d_tiles.py`).** OGC 3D Tiles / Cesium
+  streaming LOD tileset of the textured mesh (`odm_3d_tiles/tileset.json` +
+  `*.b3dm`), closing a gap to ODM — a single glTF is too heavy to stream a large
+  scene. Built with OpenDroneMap's **Obj2Tiles** (the same tool ODM uses), baked
+  into the image as a pinned, self-contained binary picked by build arch
+  (`LinuxArm64` / `Linux64`) — no .NET runtime installed. Globe placement comes
+  from the georef offset (pyproj → WGS84 lat/lon, mean-Z altitude, Z-localised OBJ
+  = ODM's reference_lla contract). Opt-in via `3d-tiles`; needs a georeferenced
+  result; the tileset directory is mapped to `odm_3d_tiles/`.
 - **Contours / iso-lines (`helpers/contours.py`).** Vector contour lines from the
   DEM, closing a gap to ODM/Metashape — `odm_dem/contours.gpkg` (3D LineString +
   `elev` attribute, for GIS) and `odm_dem/contours.dxf` (lines at their elevation,

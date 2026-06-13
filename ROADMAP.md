@@ -280,9 +280,13 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       `elev` attribute, for GIS) and `odm_dem/contours.dxf` (lines at their
       elevation, for CAD). Self-skips for non-georeferenced results. Verified on
       real data (1805 terrain lines at 0.5 m from the DTM).
-- [ ] **3D Tiles / Cesium streaming.** ODM exports 3D Tiles for web-streaming large
-      models; we emit a single glTF only. Add a tiled 3D-Tiles export of the
-      textured mesh for large-scene web viewing.
+- [x] **3D Tiles / Cesium streaming.** `helpers/mesh_to_3d_tiles.py` runs
+      OpenDroneMap's **Obj2Tiles** (the same tool ODM uses; a pinned, self-contained
+      arm64/x64 binary baked into the image — no .NET runtime) over the textured
+      OBJ to build an OGC 3D Tiles LOD tileset (`odm_3d_tiles/tileset.json` +
+      `*.b3dm`) for web/Cesium streaming of large scenes. Placement from the georef
+      offset (pyproj → WGS84 lat/lon, mean-Z altitude, Z-localised OBJ — ODM's
+      reference_lla contract). Opt-in (`3d-tiles`); needs a georeferenced result.
 - [ ] **Point classification beyond ground.** Metashape classifies buildings /
       vegetation / vehicles (ML); our DTM does SMRF **ground only**. Extend the
       PDAL stage to multi-class classification, exposing a classified LAZ and

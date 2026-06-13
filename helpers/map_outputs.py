@@ -78,6 +78,15 @@ def main():
     if os.path.exists(glb):
         link_or_copy(glb, os.path.join(P, "odm_texturing", "odm_textured_model_geo.glb"))
 
+    # 3D Tiles tileset (a directory) -> odm_3d_tiles/ (Cesium/OGC streaming; opt-in)
+    tiles_src = os.path.join(W, "odm_3d_tiles")
+    if os.path.isdir(tiles_src):
+        tiles_dst = os.path.join(P, "odm_3d_tiles")
+        if os.path.exists(tiles_dst):
+            shutil.rmtree(tiles_dst)
+        shutil.copytree(tiles_src, tiles_dst)
+        print(f"[map] {tiles_src} -> {tiles_dst}")
+
     # 2. dense point cloud -> odm_georeferencing (WebODM expects .laz here).
     #    pointcloud_to_laz.py produces the georeferenced LAZ; fall back to the raw
     #    PLY only if the LAZ step could not run (e.g. PDAL unavailable).
