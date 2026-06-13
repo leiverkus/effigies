@@ -36,6 +36,7 @@ import argparse
 import os
 import sys
 import json
+import shutil
 import subprocess
 
 import numpy as np
@@ -67,6 +68,57 @@ def split_control_check(entries):
     control = [e for e in entries if not e.get("check")]
     check = [e for e in entries if e.get("check")]
     return control, check
+
+
+# 'auto' mode: the BA must beat the post-hoc Umeyama by a real margin to win — a
+# negligible gain does not justify the BA's extra cost, its hard-constraint warp
+# risk on imperfect GCPs, or its slightly weaker reproducibility. Both a RELATIVE
+# margin (default 10 %) and a MINIMUM ABSOLUTE gain (default 1 mm) must be cleared,
+# so a consistent block (both RMSEs ~0) deterministically keeps the safe path.
+_DEFAULT_MARGIN = float(os.environ.get("EFFIGIES_GCP_BA_MARGIN", "0.10"))
+_MIN_ABS_GAIN_M = float(os.environ.get("EFFIGIES_GCP_BA_MIN_GAIN_M", "0.001"))
+
+
+def _arbitrate_decision(cp_umeyama, cp_ba, n_check,
+                        margin=_DEFAULT_MARGIN, min_abs_gain=_MIN_ABS_GAIN_M):
+    """Decide the winning georeferencing path from the two held-out check-point
+    RMSEs (metres). Returns 'ba', 'umeyama', or 'fallback' (no usable comparison).
+
+    The bundle adjustment wins only if it lowers the independent CP-RMSE by both the
+    relative margin AND the absolute floor — otherwise the conservative post-hoc
+    similarity is kept. With no check points there is no honest metric (the BA
+    drives its CONTROL residuals to ~0 by construction), so we fall back."""
+    if not n_check or cp_umeyama is None or cp_ba is None:
+        return "fallback"
+    gain = cp_umeyama - cp_ba
+    if gain > margin * cp_umeyama and gain > min_abs_gain:
+        return "ba"
+    return "umeyama"
+
+
+def _write_arbitration(work, record):
+    """Drop the arbitration sidecar (read back by georef_bridge for audit)."""
+    with open(os.path.join(work, "gcp_ba_arbitration.json"), "w") as f:
+        json.dump(record, f, indent=2)
+
+
+def _backup_model(model_dir):
+    """Copy the free sparse model aside so a losing BA can be rolled back. The
+    sparse model (cameras/images/points3D, bin+txt) is small — a few MB."""
+    bdir = model_dir.rstrip("/") + ".free_backup"
+    if os.path.exists(bdir):
+        shutil.rmtree(bdir)
+    shutil.copytree(model_dir, bdir)
+    return bdir
+
+
+def _restore_model(model_dir, bdir):
+    shutil.rmtree(model_dir)
+    shutil.move(bdir, model_dir)
+
+
+def _discard_backup(bdir):
+    shutil.rmtree(bdir, ignore_errors=True)
 
 
 def _rmat_to_quat_xyzw(R):
@@ -132,7 +184,8 @@ def _ceres_cost(summary, attr):
 # ---------------------------------------------------------------------------
 # Core
 # ---------------------------------------------------------------------------
-def run_gcp_bundle_adjust(work, gcp_path, crs="auto", refine_intrinsics=False):
+def run_gcp_bundle_adjust(work, gcp_path, crs="auto", refine_intrinsics=False,
+                          write_transform=True):
     """Run a GCP-constrained bundle adjustment on ``<work>/sparse/0``.
 
     Steps:
@@ -300,12 +353,86 @@ def run_gcp_bundle_adjust(work, gcp_path, crs="auto", refine_intrinsics=False):
         "crs": resolved_crs,
         "residuals": residuals,
     }
-    tr_path = os.path.join(work, "georef_transform.json")
-    with open(tr_path, "w") as f:
-        json.dump(transform, f, indent=2)
-    print(f"[gcp-ba] wrote {tr_path} (source=colmap-gcp-ba, "
-          f"t=offset={offset[:2].tolist()}, crs={resolved_crs})")
+    # The sparse model on disk is always rewritten (the corrected, world-frame poses
+    # are what downstream consumes). Writing georef_transform.json is optional: in
+    # 'auto' mode the arbiter defers it until the BA has won the check-RMSE contest.
+    if write_transform:
+        tr_path = os.path.join(work, "georef_transform.json")
+        with open(tr_path, "w") as f:
+            json.dump(transform, f, indent=2)
+        print(f"[gcp-ba] wrote {tr_path} (source=colmap-gcp-ba, "
+              f"t=offset={offset[:2].tolist()}, crs={resolved_crs})")
     return transform
+
+
+def run_arbitrated(work, gcp_path, crs="auto", refine_intrinsics=False,
+                   margin=_DEFAULT_MARGIN):
+    """'auto' mode: run BOTH the post-hoc Umeyama and the GCP-BA, keep whichever
+    gives the lower INDEPENDENT check-point RMSE.
+
+    The comparison is a cheap SPARSE-model metric (no double OpenMVS run): both
+    paths triangulate the held-out check GCPs and measure them against the surveyed
+    coords. The BA always rewrites sparse/0 in place, so we back it up first and
+    restore the free model if the post-hoc path wins. Auditability: both RMSEs and
+    the decision land in a sidecar (folded into georef_transform.json by
+    georef_bridge) — on a BA win, directly in the colmap-gcp-ba transform.
+
+    Returns the arbitration record. Raises only on hard pycolmap/IO errors (the
+    caller treats GCP-BA as non-fatal and falls back to the post-hoc path)."""
+    model_dir = gb._find_colmap_model(work)
+    if model_dir is None:
+        raise RuntimeError(f"no COLMAP text model under {work}/sparse")
+
+    _, entries = gb.parse_gcp_list(gcp_path)
+    control, check = split_control_check(entries)
+    n_check_groups = len({tuple(np.round(e["world"], 4)) for e in check})
+
+    # No held-out check points -> no honest metric to arbitrate on. Keep the safe
+    # post-hoc path (the bridge solves it later) and record why.
+    if n_check_groups == 0:
+        rec = {"winner": "umeyama", "reason": "no check points to compare on "
+               "(mark a gcp_list.txt line with a trailing 'check' to enable auto)",
+               "margin": margin, "cp_umeyama": None, "cp_ba": None, "n_check": 0}
+        _write_arbitration(work, rec)
+        print(f"[gcp-ba] auto: {rec['reason']}; keeping post-hoc similarity",
+              file=sys.stderr)
+        return rec
+
+    # (A) post-hoc Umeyama check-RMSE on the FREE model (measure only)
+    cp_umeyama = gb.evaluate_umeyama_cp(model_dir, control, check)
+
+    # (B) GCP-BA: rewrites sparse/0 -> back it up first so we can roll back
+    backup = _backup_model(model_dir)
+    try:
+        transform = run_gcp_bundle_adjust(work, gcp_path, crs=crs,
+                                          refine_intrinsics=refine_intrinsics,
+                                          write_transform=False)
+    except Exception:
+        _restore_model(model_dir, backup)   # never leave a half-written model
+        raise
+    cp_ba = transform["residuals"].get("check_rms_3d")
+
+    decision = _arbitrate_decision(cp_umeyama, cp_ba, n_check_groups, margin)
+    rec = {"winner": "ba" if decision == "ba" else "umeyama",
+           "decision": decision, "margin": margin,
+           "cp_umeyama": cp_umeyama, "cp_ba": cp_ba, "n_check": n_check_groups}
+    print(f"[gcp-ba] auto arbitration: check-RMSE umeyama={cp_umeyama:.4f} m vs "
+          f"ba={cp_ba:.4f} m (margin {margin:.0%}) -> winner={rec['winner']}")
+
+    if decision == "ba":
+        transform["arbitration"] = rec
+        transform["residuals"]["alternative"] = {
+            "source": "colmap-gcp-umeyama", "check_rms_3d": cp_umeyama}
+        with open(os.path.join(work, "georef_transform.json"), "w") as f:
+            json.dump(transform, f, indent=2)
+        _discard_backup(backup)
+        print("[gcp-ba] auto: BA wins; kept the bundle-adjusted sparse model")
+    else:
+        _restore_model(model_dir, backup)   # undo the BA rewrite of sparse/0
+        print("[gcp-ba] auto: post-hoc similarity wins; restored the free sparse "
+              "model (the georef bridge will solve it)")
+    _write_arbitration(work, rec)
+    return rec
 
 
 def main():
@@ -314,11 +441,18 @@ def main():
     ap.add_argument("--work", required=True, help="OpenMVS/COLMAP workdir (holds sparse/0)")
     ap.add_argument("--gcp", required=True, help="path to gcp_list.txt (ODM format)")
     ap.add_argument("--crs", default="auto", help="target CRS (EPSG); 'auto' uses the gcp_list header")
+    ap.add_argument("--mode", default="on", choices=["on", "auto"],
+                    help="'on': always bundle-adjust; 'auto': keep BA only if it beats "
+                         "the post-hoc similarity on the held-out check-point RMSE")
     ap.add_argument("--refine-intrinsics", action="store_true",
                     help="also refine camera intrinsics (default: keep them fixed)")
     args = ap.parse_args()
-    run_gcp_bundle_adjust(args.work, args.gcp, crs=args.crs,
-                          refine_intrinsics=args.refine_intrinsics)
+    if args.mode == "auto":
+        run_arbitrated(args.work, args.gcp, crs=args.crs,
+                       refine_intrinsics=args.refine_intrinsics)
+    else:
+        run_gcp_bundle_adjust(args.work, args.gcp, crs=args.crs,
+                              refine_intrinsics=args.refine_intrinsics)
 
 
 if __name__ == "__main__":

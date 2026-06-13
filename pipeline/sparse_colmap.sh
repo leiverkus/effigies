@@ -139,24 +139,26 @@ if [[ ! -f "$WORK/sparse/0/images.txt" ]]; then
   exit 1
 fi
 
-# GCP-constrained bundle adjustment (opt-in: --gcp-bundle-adjust). Anchors the
-# marked GCPs at their surveyed world coordinates and re-optimises cameras + tie
+# GCP-constrained bundle adjustment (opt-in: --gcp-bundle-adjust on|auto). Anchors
+# the marked GCPs at their surveyed world coordinates and re-optimises cameras + tie
 # points (pycolmap / COLMAP's Ceres BA) on the sparse model BEFORE undistortion, so
 # densify / mesh / texture / ortho all inherit the corrected, world-frame poses.
 # Rewrites sparse/0 (offset-world frame) and writes georef_transform.json
 # (source=colmap-gcp-ba), which the georef bridge then honors instead of solving a
-# post-hoc Umeyama. NON-FATAL: on any failure the free sparse model is kept and the
-# default post-hoc georeferencing (georef_bridge.py) still runs.
-if [[ "$GCP_BA" == "true" && -n "$GCP_FILE" && -f "$GCP_FILE" ]]; then
-  echo "[colmap] GCP-constrained bundle adjustment (pycolmap) on sparse/0"
+# post-hoc Umeyama. 'auto' runs both and keeps the GCP-BA only if it beats the
+# post-hoc similarity on the held-out check-point RMSE (else it restores the free
+# model). NON-FATAL: on any failure the free sparse model is kept and the default
+# post-hoc georeferencing (georef_bridge.py) still runs.
+if [[ ( "$GCP_BA" == "on" || "$GCP_BA" == "auto" ) && -n "$GCP_FILE" && -f "$GCP_FILE" ]]; then
+  echo "[colmap] GCP-constrained bundle adjustment (pycolmap, mode=$GCP_BA) on sparse/0"
   if python3 "$(dirname "$0")/../helpers/gcp_bundle_adjust.py" \
-       --work "$WORK" --gcp "$GCP_FILE" --crs "$CRS"; then
-    echo "[colmap] GCP-BA done; sparse/0 rewritten in the offset-world frame"
+       --work "$WORK" --gcp "$GCP_FILE" --crs "$CRS" --mode "$GCP_BA"; then
+    echo "[colmap] GCP-BA (mode=$GCP_BA) done"
   else
     echo "[colmap] WARN: GCP-BA failed; keeping the free sparse model and falling back to post-hoc georeferencing" >&2
   fi
-elif [[ "$GCP_BA" == "true" ]]; then
-  echo "[colmap] WARN: --gcp-bundle-adjust set but no GCP file ('$GCP_FILE'); skipping GCP-BA" >&2
+elif [[ "$GCP_BA" == "on" || "$GCP_BA" == "auto" ]]; then
+  echo "[colmap] WARN: --gcp-bundle-adjust=$GCP_BA but no GCP file ('$GCP_FILE'); skipping GCP-BA" >&2
 fi
 
 # Undistort into the workspace layout OpenMVS' InterfaceCOLMAP expects:

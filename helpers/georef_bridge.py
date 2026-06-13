@@ -455,6 +455,21 @@ def solve_residuals(s, R, t, local, world):
     return out
 
 
+def evaluate_umeyama_cp(model_dir, control, check):
+    """Independent check-point RMSE (3D, metres) of the post-hoc Umeyama similarity
+    on the FREE (un-adjusted) model, WITHOUT applying anything. Fits the similarity
+    on the control GCPs, then measures how far the held-out check GCPs land from
+    their surveyed coords. Used by the GCP-BA arbiter (gcp_bundle_adjust.py) to
+    compare the two georeferencing paths on the same held-out metric.
+
+    Raises (like gcp_correspondences) if the control set is unsolvable or no check
+    point can be localized — the arbiter treats that as 'cannot compare'."""
+    lc, wc, _ = gcp_correspondences(model_dir, control)
+    s, R, t = umeyama_similarity(lc, wc)
+    lk, wk, _ = gcp_correspondences(model_dir, check, min_points=1)
+    return solve_residuals(s, R, t, lk, wk)["rms_3d"]
+
+
 def _xy_offset(world):
     """2D (x, y, 0) float-precision offset — ODM's convention. Only easting and
     northing are large enough to break float32 vertex precision; Z stays ABSOLUTE
@@ -504,6 +519,27 @@ def apply_to_obj(work, s, R, t, offset):
 
 
 # ---------------------------------------------------------------------------
+# GCP-BA arbitration sidecar (written by gcp_bundle_adjust.py in 'auto' mode)
+# ---------------------------------------------------------------------------
+def _read_arbitration(work):
+    """Return the GCP-BA arbitration record if present, else None.
+
+    In 'auto' mode the arbiter compares the bundle-adjustment vs the post-hoc
+    similarity on the held-out check points and drops a small sidecar recording the
+    decision and both RMSEs. We fold it into whatever transform we write so the
+    decision is auditable even when the post-hoc path won (BA-wins records it in its
+    own transform directly)."""
+    p = os.path.join(work, "gcp_ba_arbitration.json")
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p) as f:
+            return json.load(f)
+    except (ValueError, OSError):
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -521,6 +557,9 @@ def main():
     mode = args.georeference
 
     def write(tr):
+        arb = _read_arbitration(args.work)
+        if arb:
+            tr.setdefault("arbitration", arb)
         with open(transform_path, "w") as f:
             json.dump(tr, f, indent=2)
         print(f"[georef] wrote {transform_path} (source={tr['source']})")

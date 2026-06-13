@@ -94,7 +94,7 @@ Advertised in [`options.json`](options.json) and surfaced in the WebODM task UI:
 | `crs` | `auto` | Target projected CRS (EPSG code, or `auto` UTM derivation). |
 | `crs-preset` | `none` | Named regional grids filling `crs` (Israeli TM, Palestine 1923, ETRS89 UTM 32/33N = Germany's official grid, OSGB, LV95); an explicit `crs` always wins. |
 | `gcp` | — | Optional path to an ODM-format `gcp_list.txt`. |
-| `gcp-bundle-adjust` | `false` | Anchor the GCPs in a constrained bundle adjustment (pycolmap) on the sparse model before densification, instead of the post-hoc similarity — removes drift, tightens CP-RMSE. Opt-in; needs a GCP file (see below). |
+| `gcp-bundle-adjust` | `off` | `off` / `on` / `auto`. Anchor the GCPs in a constrained bundle adjustment (pycolmap) on the sparse model before densification, instead of the post-hoc similarity — removes drift, tightens CP-RMSE. `auto` keeps the BA only if it beats the post-hoc check-point RMSE. Opt-in; needs a GCP file (see below). |
 | `skip-dsm` | `false` | Skip the DSM (`odm_dem/dsm.tif`), the nadir surface model emitted from the same z-buffer as the orthophoto (inherits RefineMesh detail). |
 | `dtm` | `false` | Generate the bare-earth DTM (`odm_dem/dtm.tif`) by PDAL SMRF ground classification of the dense cloud (opt-in; costs ground-filter time, needs open ground). |
 | `ortho-fill-holes` | `0.25` | Max hole area (m²) filled in the orthophoto by nearest-valid colour; only small interior holes close, large voids + the edge stay nodata (`0` disables). DSM/DTM/cloud are never modified. |
@@ -134,16 +134,16 @@ solves also the per-method localization counts), echoed in the task log and the
 quality-report PDF. GCP residuals reflect marking + reconstruction quality;
 EXIF residuals are dominated by consumer-GPS noise.
 
-### GCP-constrained bundle adjustment (`--gcp-bundle-adjust`)
+### GCP-constrained bundle adjustment (`--gcp-bundle-adjust off|on|auto`)
 
 The default GCP path is **post-hoc and rigid** — COLMAP reconstructs freely and a
 single 7-DoF Umeyama similarity maps the block to the surveyed world. A rigid
 similarity cannot absorb reconstruction **drift** (bending / non-uniform scale
 across the block), so the check-point RMSE it leaves is a floor.
 
-With `--gcp-bundle-adjust` (opt-in, needs a GCP file) the marked GCPs are anchored
-at their surveyed coordinates as constant 3D points and the cameras + tie points
-are re-optimised to be consistent with them
+With `--gcp-bundle-adjust on` (opt-in, needs a GCP file) the marked GCPs are
+anchored at their surveyed coordinates as constant 3D points and the cameras + tie
+points are re-optimised to be consistent with them
 ([`helpers/gcp_bundle_adjust.py`](helpers/gcp_bundle_adjust.py), via **pycolmap** /
 COLMAP's own Ceres bundle adjustment). This runs on the **sparse** model *before*
 undistortion, so the dense cloud, mesh, texture and orthophoto are all built from
@@ -152,11 +152,27 @@ into the projected offset-world frame and `georef_transform.json` becomes the
 identity-with-offset transform (`source=colmap-gcp-ba`), so the LAZ still lands in
 full UTM and the OBJ/ortho/DSM in the offset frame — no downstream change.
 
+- **`off`** (default) — always the post-hoc similarity. Well-tested, rigid, and
+  forgiving of imperfect GCPs (a bad marker inflates residuals but a least-squares
+  fit does not let it bend the geometry).
+- **`on`** — always the bundle adjustment.
+- **`auto`** — run **both** and keep whichever gives the lower independent
+  check-point RMSE. The comparison is a cheap sparse-model metric (no double dense
+  run): the free model is backed up, the BA runs, and the BA is kept only if it
+  beats the post-hoc path by a real margin (10 % relative **and** 1 mm absolute);
+  otherwise the free model is restored and the post-hoc path runs. **By
+  construction never worse than `off` on the check metric** — the safe choice if
+  you want the BA's upside without its downside on messy GCPs. The decision and
+  both RMSEs are written to `gcp_ba_arbitration.json` (and folded into
+  `georef_transform.json`) for audit. `auto` needs `check`-flagged GCPs; with none
+  it falls back to the post-hoc path.
+
 **Check points:** a `gcp_list.txt` line whose trailing token is `check` (the ODM
 `[extra]` field) is **held out** of the solve and reported as an independent
-CP-RMSE (`residuals.check_rms_3d/…`) — the honest accuracy estimate. Mark each GCP
-in **2+ images** (single-view GCPs still inform the initial alignment but cannot be
-BA anchors). The post-hoc Umeyama remains the default; this is strictly additive.
+CP-RMSE (`residuals.check_rms_3d/…`) — the honest accuracy estimate, and the metric
+`auto` arbitrates on. Mark each GCP in **2+ images** (single-view GCPs still inform
+the initial alignment but cannot be BA anchors). The post-hoc Umeyama remains the
+default; this is strictly additive.
 
 ## Large image sets (auto-scaling)
 

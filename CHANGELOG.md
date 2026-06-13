@@ -18,28 +18,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
-- **GCP-constrained bundle adjustment (`gcp-bundle-adjust`, opt-in).** A stronger
-  georeferencing path than the default post-hoc Umeyama similarity: a rigid 7-DoF
-  similarity cannot absorb reconstruction **drift** (bending / non-uniform scale
-  across the block), leaving a check-point-RMSE floor. `helpers/gcp_bundle_adjust.py`
-  (**pycolmap** / COLMAP's own Ceres BA) anchors the marked GCPs at their surveyed
-  world coordinates as constant 3D points and re-optimises the cameras + tie points
-  to be consistent with them. It runs on the **sparse** model *before*
-  `image_undistorter` (injection point in `pipeline/sparse_colmap.sh`, after
-  `model_converter`), so densify → mesh → texture → ortho all inherit the
-  corrected, world-frame poses. The model is rewritten into the offset-world frame
-  and `georef_transform.json` becomes the identity-with-offset transform
-  (`source=colmap-gcp-ba`, `s=1, R=I, t=offset`) — the **offset trick** keeps every
-  downstream consumer (`pointcloud_to_laz`, `apply_to_obj`, ortho/DSM, `coords.txt`)
-  unchanged; `georef_bridge.py` honors that transform instead of re-solving.
-  **Check-point convention:** a `gcp_list.txt` line ending in `check` (ODM `[extra]`
-  field) is held out of the solve and reported as an independent CP-RMSE in
-  `georef_transform.json`. pycolmap is built from the pinned COLMAP source into both
-  Dockerfiles (no wheel for linux/aarch64+py3.12). **Default off** — the safe
-  post-hoc Umeyama stays the default; opt-in needs a GCP file. Real-data accuracy
-  validation (surveyed GCP + held-out check points) is deferred to the v0.6.0
-  reference-data campaign; the synthetic fixture and the in-image API spike prove
-  correctness.
+- **GCP-constrained bundle adjustment (`gcp-bundle-adjust`: `off` / `on` / `auto`).**
+  A stronger georeferencing path than the default post-hoc Umeyama similarity: a
+  rigid 7-DoF similarity cannot absorb reconstruction **drift** (bending /
+  non-uniform scale across the block), leaving a check-point-RMSE floor.
+  `helpers/gcp_bundle_adjust.py` (**pycolmap** / COLMAP's own Ceres BA) anchors the
+  marked GCPs at their surveyed world coordinates as constant 3D points and
+  re-optimises the cameras + tie points to be consistent with them. It runs on the
+  **sparse** model *before* `image_undistorter` (injection point in
+  `pipeline/sparse_colmap.sh`, after `model_converter`), so densify → mesh → texture
+  → ortho all inherit the corrected, world-frame poses. The model is rewritten into
+  the offset-world frame and `georef_transform.json` becomes the identity-with-offset
+  transform (`source=colmap-gcp-ba`, `s=1, R=I, t=offset`) — the **offset trick**
+  keeps every downstream consumer (`pointcloud_to_laz`, `apply_to_obj`, ortho/DSM,
+  `coords.txt`) unchanged; `georef_bridge.py` honors that transform instead of
+  re-solving.
+  - **`auto` mode (compare-and-keep-better).** Runs *both* paths and keeps whichever
+    gives the lower **independent check-point RMSE** — a cheap sparse-model
+    comparison (no double OpenMVS run): the free model is backed up, the BA is run,
+    and the BA is kept only if it beats the post-hoc similarity by both a relative
+    margin (10 %, `EFFIGIES_GCP_BA_MARGIN`) and a 1 mm absolute floor
+    (`EFFIGIES_GCP_BA_MIN_GAIN_M`); otherwise the free sparse model is restored and
+    the post-hoc path runs. **Never worse than the post-hoc path on the check
+    metric, by construction.** Needs `check`-flagged GCPs (no honest metric without
+    them → falls back to post-hoc). Both RMSEs and the decision are recorded
+    (`gcp_ba_arbitration.json`, folded into `georef_transform.json`) for audit.
+  - **Check-point convention:** a `gcp_list.txt` line ending in `check` (ODM
+    `[extra]` field) is held out of the solve and reported as an independent
+    CP-RMSE in `georef_transform.json`.
+  pycolmap is built from the pinned COLMAP source into both Dockerfiles (no wheel
+  for linux/aarch64+py3.12). **Default `off`** — the safe post-hoc Umeyama stays the
+  default; `on`/`auto` need a GCP file. Real-data accuracy validation (surveyed GCP
+  + held-out check points) is deferred to the v0.6.0 reference-data campaign; the
+  synthetic fixture and the in-image runs prove correctness. (`auto` is the natural
+  candidate for a future default once that campaign confirms the gain.)
 - **True-ortho hardening — bounded orthophoto hole-fill.** The orthophoto was
   already a true-ortho (the mesh z-buffer resolves occlusion, no building lean);
   this hardens its coverage. `fill_ortho_holes` (scipy `ndimage`) fills only

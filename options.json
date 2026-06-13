@@ -230,9 +230,14 @@
   {
     "name": "gcp-bundle-adjust",
     "title": "GCP-constrained bundle adjustment",
-    "value": false,
-    "type": "bool",
-    "help": "Anchor the marked GCPs at their surveyed world coordinates in a constrained bundle adjustment (pycolmap / COLMAP's Ceres BA) on the sparse model BEFORE densification, instead of the default post-hoc 7-DoF similarity. A rigid similarity cannot absorb reconstruction drift; pulling the GCPs into the BA re-optimises cameras and tie points to be consistent with them, removing drift and tightening the check-point RMSE. Requires a GCP file (this option is ignored without one). More accurate but slightly slower. Mark GCPs in 2+ images; a gcp_list.txt line ending in 'check' is held out for an independent accuracy estimate. Default: %(default)s"
+    "value": "off",
+    "domain": [
+      "off",
+      "on",
+      "auto"
+    ],
+    "type": "enum",
+    "help": "Anchor the marked GCPs at their surveyed world coordinates in a constrained bundle adjustment (pycolmap / COLMAP's Ceres BA) on the sparse model BEFORE densification, instead of the default post-hoc 7-DoF similarity. A rigid similarity cannot absorb reconstruction drift; pulling the GCPs into the BA re-optimises cameras and tie points to be consistent with them, removing drift and tightening the check-point RMSE. 'off' (default): always the post-hoc similarity. 'on': always the bundle adjustment. 'auto': run both and keep whichever gives the lower INDEPENDENT check-point RMSE (needs 'check'-flagged GCPs; falls back to the post-hoc similarity if none are marked) - never worse than the post-hoc path on the check metric. Requires a GCP file (ignored without one); mark GCPs in 2+ images, and end a gcp_list.txt line in 'check' to hold it out for the accuracy estimate. Default: %(default)s"
   },
   {
     "name": "skip-orthophoto",

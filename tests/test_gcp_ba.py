@@ -52,6 +52,24 @@ def test_split_control_check():
     print("ok  split_control_check separates control from held-out check points")
 
 
+def test_arbitrate_decision():
+    """'auto' keeps the BA only if it beats the post-hoc similarity by BOTH the
+    relative margin and the absolute floor; no check points -> fallback."""
+    m = 0.10            # default margin (10 %)
+    # clear win: 0.10 -> 0.05 (gain 0.05 > 0.01 and > 1 mm)
+    assert ba._arbitrate_decision(0.10, 0.05, 2, margin=m) == "ba"
+    # marginal gain below the relative margin -> keep post-hoc
+    assert ba._arbitrate_decision(0.10, 0.095, 2, margin=m) == "umeyama"
+    # sub-millimetre absolute gain on an already-tiny error -> keep post-hoc
+    assert ba._arbitrate_decision(0.0011, 0.0001, 2, margin=m) == "umeyama"
+    # consistent block: both ~0 -> deterministically post-hoc (no spurious flip)
+    assert ba._arbitrate_decision(1e-7, 6e-8, 2, margin=m) == "umeyama"
+    # no check points / no metric -> fallback
+    assert ba._arbitrate_decision(0.10, 0.01, 0, margin=m) == "fallback"
+    assert ba._arbitrate_decision(None, 0.01, 2, margin=m) == "fallback"
+    print("ok  _arbitrate_decision: relative margin + absolute floor + fallback")
+
+
 def test_rmat_to_quat_roundtrip():
     """_rmat_to_quat_xyzw must produce a unit quaternion that reconstructs R
     (via the same q->R convention georef_bridge uses), for a few rotations."""
@@ -235,10 +253,66 @@ def test_gcp_ba_end_to_end():
     print("ok  gcp-ba end-to-end (BA converges, offset convention, held-out CP-RMSE)")
 
 
+def test_arbitration_consistent_keeps_umeyama():
+    """'auto' on a consistent block: BA and post-hoc both land the check points at
+    ~0, so neither clears the margin -> the safe post-hoc path is kept, sparse/0 is
+    RESTORED to the free model, no colmap-gcp-ba transform is written, and the
+    decision (both RMSEs) is recorded in the sidecar for audit."""
+    if not _have_pycolmap():
+        print("skip arbitration-consistent (needs pycolmap)")
+        return
+    with tempfile.TemporaryDirectory() as work:
+        _build_synthetic_colmap_model(work)
+        gcp = os.path.join(work, "gcp_list.txt")
+        free_images = open(os.path.join(work, "sparse", "0", "images.txt")).read()
+
+        rec = ba.run_arbitrated(work, gcp, crs="auto")
+
+        assert rec["winner"] == "umeyama", rec
+        assert rec["n_check"] == 2 and rec["cp_ba"] is not None, rec
+        # no colmap-gcp-ba transform committed (the bridge solves the post-hoc later)
+        assert not os.path.exists(os.path.join(work, "georef_transform.json"))
+        # sparse/0 restored to the free model (BA rewrite rolled back, backup gone)
+        assert open(os.path.join(work, "sparse", "0", "images.txt")).read() == free_images
+        assert not os.path.exists(os.path.join(work, "sparse", "0.free_backup"))
+        # sidecar records both RMSEs for audit
+        side = json.load(open(os.path.join(work, "gcp_ba_arbitration.json")))
+        assert side["winner"] == "umeyama" and "cp_umeyama" in side and "cp_ba" in side
+    print("ok  auto arbitration keeps post-hoc on a consistent block (sparse restored)")
+
+
+def test_arbitration_no_check_falls_back():
+    """'auto' with no check points has no honest metric -> fall back to post-hoc,
+    leave sparse/0 untouched, write no transform, record the reason."""
+    if not _have_pycolmap():
+        print("skip arbitration-no-check (needs pycolmap)")
+        return
+    with tempfile.TemporaryDirectory() as work:
+        _build_synthetic_colmap_model(work)
+        gcp = os.path.join(work, "gcp_list.txt")
+        # strip the trailing 'check' tokens -> every GCP becomes control
+        stripped = [l.rsplit(" check", 1)[0].rstrip() + "\n" if l.rstrip().lower().endswith("check")
+                    else l for l in open(gcp)]
+        open(gcp, "w").writelines(stripped)
+        _, entries = gb.parse_gcp_list(gcp)
+        assert not any(e["check"] for e in entries)             # sanity: no check left
+
+        rec = ba.run_arbitrated(work, gcp, crs="auto")
+        assert rec["winner"] == "umeyama" and rec["n_check"] == 0, rec
+        assert "check" in rec["reason"].lower(), rec
+        assert not os.path.exists(os.path.join(work, "georef_transform.json"))
+        side = json.load(open(os.path.join(work, "gcp_ba_arbitration.json")))
+        assert side["n_check"] == 0
+    print("ok  auto arbitration falls back to post-hoc when no check points marked")
+
+
 if __name__ == "__main__":
     test_parse_gcp_list_check_flag()
     test_split_control_check()
+    test_arbitrate_decision()
     test_rmat_to_quat_roundtrip()
     test_georef_honors_existing_gcp_ba()
     test_gcp_ba_end_to_end()
+    test_arbitration_consistent_keeps_umeyama()
+    test_arbitration_no_check_falls_back()
     print("\nall gcp-ba tests passed")

@@ -36,7 +36,7 @@ declare -A OPT=(
   [crs-preset]=none
   [georeference]=auto
   [gcp]=""
-  [gcp-bundle-adjust]=false
+  [gcp-bundle-adjust]=off
   [skip-orthophoto]=false
   [skip-dsm]=false
   [dtm]=false
@@ -168,12 +168,16 @@ fi
 # GCP-constrained bundle adjustment is a GCP georeferencing method: only enable it
 # when georeferencing actually consumes GCPs (auto / gcp). Under exif/none it would
 # rewrite the sparse model into a world frame the later bridge then discards.
-GCP_BA=false
-if [[ "${OPT[gcp-bundle-adjust]}" == "true" ]]; then
+# Mode: off (post-hoc similarity) / on (always BA) / auto (keep BA only if it beats
+# the post-hoc check-RMSE). Tolerate legacy bool spellings (true/false -> on/off).
+GCP_BA_OPT="${OPT[gcp-bundle-adjust]}"
+case "$GCP_BA_OPT" in true) GCP_BA_OPT=on ;; false) GCP_BA_OPT=off ;; esac
+GCP_BA=off
+if [[ "$GCP_BA_OPT" != "off" ]]; then
   if [[ "${OPT[georeference]}" == "auto" || "${OPT[georeference]}" == "gcp" ]]; then
-    GCP_BA=true
+    GCP_BA="$GCP_BA_OPT"
   else
-    echo "[effigies] WARN: --gcp-bundle-adjust ignored with --georeference ${OPT[georeference]} (needs auto or gcp)" >&2
+    echo "[effigies] WARN: --gcp-bundle-adjust=$GCP_BA_OPT ignored with --georeference ${OPT[georeference]} (needs auto or gcp)" >&2
   fi
 fi
 
