@@ -285,6 +285,14 @@
     "help": "Maximum hole area (in m²) filled in the orthophoto with the nearest valid colour. Only small INTERIOR holes below this size are closed (pinholes, thin triangle seams, tiny mesh gaps); large voids (e.g. missing walls) and the outer boundary stay transparent (honest nodata). 0 disables filling. Affects only the visual orthophoto — the DSM, DTM and point cloud are never modified. Default: %(default)s"
   },
   {
+    "name": "contours-interval",
+    "title": "Contour Interval (m)",
+    "value": "0",
+    "domain": "float >= 0.0",
+    "type": "float",
+    "help": "Generate vector contour lines at this spacing in metres (0 disables). Written to odm_dem/contours.gpkg (GeoPackage, for GIS) and odm_dem/contours.dxf (for CAD), as 3D lines at their elevation with an 'elev' attribute. Generated from the DTM if present (true bare-earth terrain contours — enable the DTM option), otherwise the DSM. Needs a georeferenced result. Default: %(default)s"
+  },
+  {
     "name": "no-gpu",
     "title": "No GPU",
     "value": false,

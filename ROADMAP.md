@@ -273,10 +273,13 @@ features they ship and we don't (yet), but that are buildable. Distinct from the
 deliberate non-goals (multispectral / thermal / multi-camera rigs; GUI — that is
 WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
 
-- [ ] **Contours / iso-lines (DXF + GeoPackage).** ODM and Metashape export vector
-      contours; we produce DSM/DTM rasters but no vector lines. Cheap to add —
-      `gdal_contour` over `odm_dem/dtm.tif` (or the DSM) at a configurable interval
-      → `odm_dem/contours.{dxf,gpkg}`. GDAL is already in the image.
+- [x] **Contours / iso-lines (DXF + GeoPackage).** `helpers/contours.py` runs the
+      GDAL contour API (no new dependency, no subprocess) over the DTM if present
+      (bare-earth terrain contours), else the DSM, at a configurable
+      `contours-interval` (m; 0 = off) → `odm_dem/contours.gpkg` (3D LineString +
+      `elev` attribute, for GIS) and `odm_dem/contours.dxf` (lines at their
+      elevation, for CAD). Self-skips for non-georeferenced results. Verified on
+      real data (1805 terrain lines at 0.5 m from the DTM).
 - [ ] **3D Tiles / Cesium streaming.** ODM exports 3D Tiles for web-streaming large
       models; we emit a single glTF only. Add a tiled 3D-Tiles export of the
       textured mesh for large-scene web viewing.

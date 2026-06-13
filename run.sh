@@ -43,6 +43,7 @@ declare -A OPT=(
   [dtm]=false
   [orthophoto-resolution]=auto
   [ortho-fill-holes]=0.25
+  [contours-interval]=0
   [no-gpu]=false
   [no-auto-scale]=false
   [tiles]=off
@@ -340,6 +341,18 @@ if [[ "${OPT[skip-orthophoto]}" != "true" || "${OPT[skip-dsm]}" != "true" ]]; th
        $([[ "${OPT[skip-orthophoto]}" == "true" ]] && echo --skip-orthophoto) \
        $([[ "${OPT[skip-dsm]}" == "true" ]] && echo --skip-dsm); then
     echo "[effigies] WARN: orthophoto/DSM step failed; continuing without it" >&2
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 5b2. Contour lines -> odm_dem/contours.{gpkg,dxf}. Opt-in (contours-interval>0):
+#      GDAL contours from the DTM if present (bare earth), else the DSM. Runs after
+#      both DEMs exist. Self-skips when not georeferenced. Non-fatal.
+# ---------------------------------------------------------------------------
+if [[ "$(awk "BEGIN{print (${OPT[contours-interval]}>0)?1:0}")" == "1" ]]; then
+  if ! python3 "$(dirname "$0")/helpers/contours.py" \
+       --work "$WORK" --interval "${OPT[contours-interval]}"; then
+    echo "[effigies] WARN: contours step failed; continuing without it" >&2
   fi
 fi
 

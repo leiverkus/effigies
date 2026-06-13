@@ -38,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **Contours / iso-lines (`helpers/contours.py`).** Vector contour lines from the
+  DEM, closing a gap to ODM/Metashape — `odm_dem/contours.gpkg` (3D LineString +
+  `elev` attribute, for GIS) and `odm_dem/contours.dxf` (lines at their elevation,
+  for CAD). Pure GDAL (the contour API was already in the image — no new
+  dependency, no subprocess). Source: the DTM if present (true bare-earth terrain
+  contours), else the DSM, logged. Opt-in via `contours-interval` (metres, 0 =
+  off); self-skips for non-georeferenced results; nodata is excluded. Verified on
+  real drone data (1805 terrain lines at 0.5 m from the DTM).
 - **OpenMVS dense thread cap (`dense-max-threads`, default 0 = all cores).** Caps the
   worker threads of DensifyPointCloud / ReconstructMesh / RefineMesh / TextureMesh
   (`--max-threads`) to bound the **densify/refine peak** RAM on many-core but
