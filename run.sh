@@ -38,6 +38,7 @@ declare -A OPT=(
   [gcp]=""
   [skip-orthophoto]=false
   [skip-dsm]=false
+  [dtm]=false
   [orthophoto-resolution]=auto
   [no-gpu]=false
   [no-auto-scale]=false
@@ -223,6 +224,19 @@ if ! python3 "$(dirname "$0")/helpers/pointcloud_to_laz.py" --work "$WORK" --ept
   echo "[effigies] WARN: LAZ/EPT step failed; map_outputs will fall back to the raw PLY" >&2
 fi
 progress 88
+
+# ---------------------------------------------------------------------------
+# 5a2. DTM (bare earth) -> odm_dem/dtm.tif. Opt-in (--dtm): PDAL SMRF ground
+#      classification of the georeferenced LAZ, then rasterise the ground returns.
+#      Off by default (ground filter costs time; meaningless without open ground).
+#      Self-skips when not georeferenced. Non-fatal.
+# ---------------------------------------------------------------------------
+if [[ "${OPT[dtm]}" == "true" ]]; then
+  if ! python3 "$(dirname "$0")/helpers/pointcloud_to_dtm.py" \
+       --work "$WORK" --resolution "${OPT[orthophoto-resolution]}"; then
+    echo "[effigies] WARN: DTM step failed; continuing without it" >&2
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # 5b. Orthophoto + DSM -> georeferenced GeoTIFFs (one nadir rasterisation of the

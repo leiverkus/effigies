@@ -152,11 +152,14 @@ kept** (24.04 dropped it). Facts worth keeping:
       surface is specifically the **DSM** (roofs/vegetation included); the
       bare-earth **DTM** is the separate item below. ODM's `odm_dem/` folder holds
       both — same path.
-- [ ] **DTM (digital terrain model) — medium, no new dependency.** Needs ground
-      classification (remove buildings/vegetation). PDAL — already built for the
-      LAZ output — ships exactly the filters ODM uses (`filters.smrf` /
-      `filters.pmf` / CSF). Pipeline: dense cloud → SMRF ground filter → rasterise
-      ground returns → `odm_dem/dtm.tif`. Reuses the DSM rasteriser.
+- [x] **DTM (digital terrain model — bare earth).** `helpers/pointcloud_to_dtm.py`
+      runs a PDAL pipeline over the georeferenced LAZ (already built for the cloud
+      output): statistical outlier removal → SMRF ground classification (the same
+      filter ODM uses) → keep ground → `writers.gdal` IDW raster → `odm_dem/dtm.tif`
+      (single-band Float32, nodata −9999). No new dependency. **Opt-in** (`dtm`,
+      default off): the ground filter costs time and a bare-earth model is
+      meaningless without open ground. Verified on real data — strips ~3.7 m of
+      building tops vs the DSM. Completes the `odm_dem/` pair with the DSM.
 - [ ] **True-ortho hardening.** We are closer than it looks: rasterising the real
       3D mesh with the z-buffer already yields true-ortho occlusion (no building
       lean), unlike a DSM-only ortho. The remaining gap to ODM is robustness /

@@ -239,7 +239,14 @@
     "title": "Skip DSM",
     "value": false,
     "type": "bool",
-    "help": "Skip generating the DSM (digital surface model). By default a georeferenced single-band Float32 GeoTIFF of the topmost surface elevation (odm_dem/dsm.tif) is written from the same nadir rasterisation as the orthophoto — so it inherits the RefineMesh detail at no extra cost; skipped automatically for non-georeferenced (local-frame) results. This is the surface model (buildings/vegetation included); a bare-earth DTM is a separate future output. Default: %(default)s"
+    "help": "Skip generating the DSM (digital surface model). By default a georeferenced single-band Float32 GeoTIFF of the topmost surface elevation (odm_dem/dsm.tif) is written from the same nadir rasterisation as the orthophoto — so it inherits the RefineMesh detail at no extra cost; skipped automatically for non-georeferenced (local-frame) results. This is the surface model (buildings/vegetation included); the bare-earth DTM is the 'dtm' option. Default: %(default)s"
+  },
+  {
+    "name": "dtm",
+    "title": "DTM (bare earth)",
+    "value": false,
+    "type": "bool",
+    "help": "Generate a DTM (digital terrain model): a bare-earth elevation GeoTIFF (odm_dem/dtm.tif) made by PDAL ground classification (SMRF) of the dense point cloud — buildings and vegetation removed, the complement of the DSM. OFF by default: the ground filter costs extra time and a bare-earth model is meaningless for close-range / object captures with no open ground. Requires a georeferenced result. Default: %(default)s"
   },
   {
     "name": "orthophoto-resolution",

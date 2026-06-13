@@ -108,6 +108,11 @@ def main():
     if os.path.exists(dsm):
         link_or_copy(dsm, os.path.join(P, "odm_dem", "dsm.tif"))
 
+    # 2c1a. DTM -> odm_dem/ (bare-earth model; opt-in, only present when --dtm)
+    dtm = os.path.join(W, "odm_dem", "dtm.tif")
+    if os.path.exists(dtm):
+        link_or_copy(dtm, os.path.join(P, "odm_dem", "dtm.tif"))
+
     # 2c2. coords.txt -> odm_georeferencing/ (WebODM's 3D viewer reads the offset
     #      from line 2 to place the textured model next to the point cloud)
     coords = os.path.join(W, "coords.txt")

@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **DTM (digital terrain model / bare earth) output (`odm_dem/dtm.tif`).** The
+  complement of the DSM: `helpers/pointcloud_to_dtm.py` ground-classifies the
+  georeferenced dense cloud with PDAL (statistical outlier → SMRF → keep ground)
+  and rasterises the ground returns via `writers.gdal` (IDW, single-band Float32,
+  nodata −9999) — the same approach ODM uses, with no new dependency (PDAL is
+  already built for the LAZ). **Opt-in** (`dtm` option, default off): the ground
+  filter costs real time and a bare-earth model is meaningless for close-range /
+  object captures with no open ground. Self-skips for non-georeferenced results
+  and emits nothing when no ground is found (no bogus all-nodata file). Verified
+  on real drone data: the DTM strips ~3.7 m of building roofs vs the DSM. Mapped
+  to `odm_dem/dtm.tif` and reported in the quality PDF.
 - **DSM (digital surface model) output (`odm_dem/dsm.tif`).** Reaches parity with
   ODM's DEM raster, nearly for free: `helpers/orthophoto.py` already computes a
   per-pixel surface-height z-buffer to resolve occlusion for the orthophoto (the

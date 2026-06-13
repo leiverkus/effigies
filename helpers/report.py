@@ -129,6 +129,7 @@ def main():
         tr = json.load(open(trp))
     ortho = _ortho_stats(os.path.join(W, "odm_orthophoto.tif"))
     dsm = _dsm_stats(os.path.join(W, "odm_dem", "dsm.tif"))
+    dtm = _dsm_stats(os.path.join(W, "odm_dem", "dtm.tif"))   # generic single-band DEM reader
 
     rows = [["Dataset", args.name or os.path.basename(os.path.dirname(W)) or W]]
     if n_images is not None:
@@ -151,6 +152,9 @@ def main():
     if dsm:
         Wd, Hd, gsd_cm, zmin, zmax = dsm
         rows.append(["DSM", f"{Wd} x {Hd} px @ {gsd_cm:.1f} cm/px, elev {zmin:.1f}..{zmax:.1f} m"])
+    if dtm:
+        Wd, Hd, gsd_cm, zmin, zmax = dtm
+        rows.append(["DTM", f"{Wd} x {Hd} px @ {gsd_cm:.1f} cm/px, elev {zmin:.1f}..{zmax:.1f} m (bare earth)"])
     proc = [p for p in [args.sparse_engine and f"sparse={args.sparse_engine}",
                         args.matcher and f"matcher={args.matcher}",
                         args.mapper and f"mapper={args.mapper}",
