@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-stage Docker build (builder → slim runtime) — CPU image 3.24 GB → 1.65 GB (−49 %).**
   Both `Dockerfile` and `Dockerfile.cpu` are now two-stage. The `engine` builder is
   unchanged (full toolchain + `-dev` headers, compiles COLMAP/OpenMVS/PDAL/entwine/
-  pycolmap/py4dgeo, plus Obj2Tiles/OpenPointClass on CPU); a new `runtime` stage
+  pycolmap/py4dgeo, plus Obj2Tiles/OpenPointClass in both images); a new `runtime` stage
   starts from a clean base (`ubuntu:24.04` for CPU, `nvidia/cuda:…-runtime` instead
   of `-devel` for GPU), installs **only the runtime shared libraries**, and copies
   the built artifacts (`/usr/local`, the pip Python packages, `/opt/NodeODM`). The
@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *inside* the image, NodeODM serves `/info` + `/options`. The CUDA image mirrors the
   structure (lock-step) and passes `docker build --check`; its CUDA runtime-exercise
   is deferred to a GPU host.
+- **GPU production image: Obj2Tiles + OpenPointClass restored (lock-step with the CPU image).**
+  The CUDA `Dockerfile` previously omitted both tools, so `--3d-tiles` (Obj2Tiles) and
+  `--classify` (OpenPointClass / `pcclassify`) silently failed on the *production* image
+  while the CPU test image had them. Both build blocks are now in the `engine` stage,
+  with their runtime libs (`libtbb12`, `libicu74`), the baked OPC model + `EFFIGIES_OPC_MODEL`
+  env, and `pcclassify` / `Obj2Tiles` added to the runtime exercise gate — matching
+  `Dockerfile.cpu`. Lints clean (`docker build --check`); full CUDA build/runtime
+  verification is on a GPU host.
 - **`InterfaceCOLMAP` resolved through a fail-loud alias lookup (`pipeline/openmvs_bin.sh`).**
   Both `run.sh` and `pipeline/tile.sh` now resolve the OpenMVS COLMAP-interface binary
   via `resolve_openmvs_bin` (tries `InterfaceCOLMAP`, `InterfaceColmap`; aborts with a

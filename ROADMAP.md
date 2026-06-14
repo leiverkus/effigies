@@ -81,7 +81,7 @@ Made the image trustworthy and the output cloud web-ready.
 - [x] Slim the image with a multi-stage (devel build → runtime copy) layout.
       **Done.** Both Dockerfiles are now two-stage: an `engine` builder (full
       toolchain + `-dev` headers, compiles COLMAP/OpenMVS/PDAL/entwine/pycolmap/
-      py4dgeo — plus Obj2Tiles/OpenPointClass on CPU) and a slim `runtime` stage
+      py4dgeo — plus Obj2Tiles/OpenPointClass, both images) and a slim `runtime` stage
       that installs only the **runtime** shared libraries and copies the built
       artifacts. The runtime apt set was derived **empirically** (`readelf -d`
       NEEDED over every engine binary + the pycolmap/py4dgeo extension modules;
