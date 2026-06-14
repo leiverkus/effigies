@@ -135,6 +135,16 @@ def main():
         if os.path.exists(src):
             link_or_copy(src, os.path.join(P, "odm_dem", c))
 
+    # 2c1d. Change-detection products (opt-in; only present with --align-to):
+    #       the DEM-of-Difference raster (odm_dem/) and the M3C2 change cloud
+    #       (odm_change/). The JSON report is mapped with odm_report below.
+    dem_diff = os.path.join(W, "odm_dem", "dem_difference.tif")
+    if os.path.exists(dem_diff):
+        link_or_copy(dem_diff, os.path.join(P, "odm_dem", "dem_difference.tif"))
+    m3c2 = os.path.join(W, "odm_change", "m3c2.laz")
+    if os.path.exists(m3c2):
+        link_or_copy(m3c2, os.path.join(P, "odm_change", "m3c2.laz"))
+
     # 2c2. coords.txt -> odm_georeferencing/ (WebODM's 3D viewer reads the offset
     #      from line 2 to place the textured model next to the point cloud)
     coords = os.path.join(W, "coords.txt")
@@ -154,6 +164,11 @@ def main():
     report = os.path.join(W, "report.pdf")
     if os.path.exists(report):
         link_or_copy(report, os.path.join(P, "odm_report", "report.pdf"))
+
+    # change-detection stats JSON -> odm_report/ (opt-in; only with --align-to)
+    chg = os.path.join(W, "odm_report", "change_detection.json")
+    if os.path.exists(chg):
+        link_or_copy(chg, os.path.join(P, "odm_report", "change_detection.json"))
 
     print("[map] output mapping complete")
 

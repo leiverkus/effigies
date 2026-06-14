@@ -234,6 +234,19 @@ RUN git clone https://github.com/OpenDroneMap/entwine.git /opt/entwine && \
     rm -rf /opt/entwine && \
     command -v entwine
 
+# --- py4dgeo (M3C2 change detection) from pinned source ---
+# Multi-epoch change detection (helpers/change_detect.py, opt-in via --align-to)
+# uses py4dgeo's M3C2. PyPI ships wheels for macOS arm64 and Linux x86_64 only —
+# there is NO manylinux aarch64 wheel — so on linux/arm64 pip builds it from the
+# sdist (C++17; Eigen is already present from libeigen3-dev). Build deps
+# (scikit-build-core, pybind11, …) and runtime deps (laspy, …) are fetched by pip
+# build isolation. Pinned for reproducibility (same policy as every other
+# component). NOTE: the multithreaded path segfaults on arm64, so change_detect.py
+# pins py4dgeo.set_num_threads(1) before run() — do not remove that.
+ARG PY4DGEO_VERSION=1.1.0
+RUN pip install --break-system-packages --no-cache-dir py4dgeo==${PY4DGEO_VERSION} && \
+    python3 -c "import py4dgeo; print('[effigies] py4dgeo', py4dgeo.__version__)"
+
 # --- NodeODM REST layer (pinned upstream + one type-safety hotfix) ---
 # Pinned for reproducibility (same policy as every other component). The sed is a
 # minimal hotfix for an upstream regression introduced by NodeODM PR #268

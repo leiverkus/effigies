@@ -295,12 +295,21 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       and class-filtered surface rasters (`odm_dem/buildings.tif`, `canopy.tif`).
       The DTM reuses the ML ground (class 2) instead of re-running SMRF. Opt-in
       (`classify`); needs a georeferenced result.
-- [ ] **Multi-epoch / change detection / co-registration.** ODM's `--align` and
-      Metashape markers co-register datasets from different dates onto a shared
-      frame; we have none. Genuinely relevant for **multi-campaign excavation
-      documentation** (compare/measure change across seasons). Approach: ICP /
-      feature-based registration of a new dataset's cloud + cameras to a prior
-      reference, then differencing (M3C2-style).
+- [x] **Multi-epoch / change detection / co-registration.** `helpers/change_detect.py`
+      co-registers this epoch onto a prior epoch's reference cloud (PDAL `filters.icp`,
+      the same recipe `scripts/benchmark.sh compare` uses) and emits difference
+      products: a **DEM-of-Difference** (`odm_dem/dem_difference.tif`) with mean/max
+      change, changed area, and **cut/fill volumes** (Σ Δz·cell-area on a shared grid),
+      plus an **M3C2** change cloud (`odm_change/m3c2.laz`, signed normal-direction
+      distance + per-point level-of-detection, via **py4dgeo** built from source —
+      there is no manylinux aarch64 wheel) and a `odm_report/change_detection.json`
+      with the co-registration residual (ICP fitness + C2C before/after) and all
+      stats. Opt-in via the `align-to` path option (mirrors ODM's `--align`); needs a
+      georeferenced result; py4dgeo absent → DoD-only fallback. **v1 is additive
+      analysis** — epoch B's own cloud/mesh/ortho stay in their georef frame. v2:
+      re-land the mesh + ortho in the reference frame (full `--align` parity),
+      DEM-as-reference, and stable-area-masked ICP. Verified: M3C2 recovers a known
+      vertical shift, DoD volume math unit-tested.
 - [ ] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
       (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
       such control; expose colour-balance / blending knobs if real orthos show

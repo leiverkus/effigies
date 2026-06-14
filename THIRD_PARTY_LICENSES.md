@@ -30,6 +30,7 @@ component.
 | COLMAP         | Sparse SfM (default sparse engine)     | BSD-3-Clause | https://github.com/colmap/colmap |
 | OpenSfM        | Sparse SfM (optional, aerial sets)     | BSD-2-Clause | https://github.com/mapillary/OpenSfM |
 | PDAL           | Point-cloud conversion (planned)       | BSD-3-Clause | https://github.com/PDAL/PDAL |
+| py4dgeo        | M3C2 change detection (opt-in `align-to`) | MIT       | https://github.com/3dgeo-heidelberg/py4dgeo |
 | NumPy          | Georef solver dependency               | BSD-3-Clause | https://github.com/numpy/numpy |
 | Pillow         | EXIF parsing (optional path)           | MIT-CMU / HPND | https://github.com/python-pillow/Pillow |
 | pyproj         | CRS reprojection (optional path)       | MIT          | https://github.com/pyproj4/pyproj |

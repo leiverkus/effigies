@@ -42,6 +42,7 @@ declare -A OPT=(
   [skip-dsm]=false
   [dtm]=false
   [classify]=false
+  [align-to]=""
   [orthophoto-resolution]=auto
   [ortho-fill-holes]=0.25
   [contours-interval]=0
@@ -315,6 +316,23 @@ progress 83
 if [[ "${OPT[classify]}" == "true" ]]; then EPT_FLAG=""; else EPT_FLAG="--ept"; fi
 if ! python3 "$(dirname "$0")/helpers/pointcloud_to_laz.py" --work "$WORK" $EPT_FLAG; then
   echo "[effigies] WARN: LAZ/EPT step failed; map_outputs will fall back to the raw PLY" >&2
+fi
+
+# ---------------------------------------------------------------------------
+# 5a0. Multi-epoch change detection -> odm_dem/dem_difference.tif + odm_change/
+#      m3c2.laz + odm_report/change_detection.json. Opt-in (--align-to <ref cloud>):
+#      co-registers this epoch to a prior epoch's reference cloud (PDAL ICP) and
+#      writes DoD + M3C2 difference products. Additive analysis — epoch B's own
+#      deliverables are untouched. Self-gates (needs the reference, this epoch's
+#      LAZ, and PDAL). Non-fatal. py4dgeo absent -> DoD-only.
+# ---------------------------------------------------------------------------
+if [[ -n "${OPT[align-to]}" ]]; then
+  progress 85
+  if ! python3 "$(dirname "$0")/helpers/change_detect.py" \
+       --work "$WORK" --reference "${OPT[align-to]}" \
+       --resolution "${OPT[orthophoto-resolution]}"; then
+    echo "[effigies] WARN: change-detection step failed; continuing without it" >&2
+  fi
 fi
 
 # ---------------------------------------------------------------------------

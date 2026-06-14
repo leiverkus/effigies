@@ -155,6 +155,32 @@ def main():
     if dtm:
         Wd, Hd, gsd_cm, zmin, zmax = dtm
         rows.append(["DTM", f"{Wd} x {Hd} px @ {gsd_cm:.1f} cm/px, elev {zmin:.1f}..{zmax:.1f} m (bare earth)"])
+
+    # Multi-epoch change detection (opt-in; only present with --align-to)
+    chg_path = os.path.join(W, "odm_report", "change_detection.json")
+    if os.path.exists(chg_path):
+        try:
+            chg = json.load(open(chg_path))
+        except Exception:
+            chg = {}
+        cr = chg.get("coregistration") or {}
+        after = cr.get("c2c_after") or cr.get("c2c_before") or {}
+        if after.get("rms") is not None:
+            rows.append(["Change: co-registration",
+                         f"ICP residual {after['rms']*100:.1f} cm RMS "
+                         f"(fitness {cr.get('fitness', 'n/a')})"])
+        dod = chg.get("dod") or {}
+        if "net_volume_m3" in dod:
+            rows.append(["Change: DoD volume",
+                         f"net {dod['net_volume_m3']:+.1f} m³ "
+                         f"(fill {dod['volume_fill_m3']:.1f}, cut {dod['volume_cut_m3']:.1f}); "
+                         f"changed area {dod['changed_area_m2']:.0f} m²"])
+        m = chg.get("m3c2") or {}
+        if m.get("available") and m.get("median_change_m") is not None:
+            rows.append(["Change: M3C2",
+                         f"median {m['median_change_m']:+.3f} m, "
+                         f"{100*m['significant_fraction']:.0f}% significant "
+                         f"(LoD {m['lod_median_m']*100:.1f} cm)"])
     proc = [p for p in [args.sparse_engine and f"sparse={args.sparse_engine}",
                         args.matcher and f"matcher={args.matcher}",
                         args.mapper and f"mapper={args.mapper}",

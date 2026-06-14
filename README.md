@@ -57,6 +57,7 @@ WebODM ──HTTP──> NodeODM REST layer ──run.sh──> [ Effigies engin
    classify_cloud.py (-> ML classified LAZ, opt-in)│
    contours.py       (-> DXF + GPKG contours, opt-in)
    mesh_to_3d_tiles.py (-> Cesium 3D Tiles, opt-in)
+   change_detect.py  (-> DoD + M3C2 change, opt-in) │
    map_outputs.py    (-> WebODM asset structure)   ┘
 ```
 
@@ -104,6 +105,7 @@ Advertised in [`options.json`](options.json) and surfaced in the WebODM task UI:
 | `ortho-fill-holes` | `0.25` | Max hole area (m²) filled in the orthophoto by nearest-valid colour; only small interior holes close, large voids + the edge stay nodata (`0` disables). DSM/DTM/cloud are never modified. |
 | `contours-interval` | `0` | Vector contour spacing (m; `0` = off) → `odm_dem/contours.{gpkg,dxf}`, from the DTM if present else the DSM. |
 | `3d-tiles` | `false` | Export an OGC 3D Tiles LOD tileset (`odm_3d_tiles/`) of the textured mesh for Cesium/web streaming, via Obj2Tiles (opt-in; needs georeferencing). |
+| `align-to` | — | Multi-epoch change detection: path to a prior epoch's reference cloud (e.g. another task's `odm_georeferencing/odm_georeferenced_model.laz`). Co-registers this epoch to it (PDAL ICP) and writes a DEM-of-Difference (`odm_dem/dem_difference.tif`, with cut/fill volumes) + an M3C2 change cloud (`odm_change/m3c2.laz`) + `odm_report/change_detection.json` (opt-in; needs georeferencing; py4dgeo absent → DoD-only). Additive analysis — this epoch's own assets are unchanged. |
 | `no-gpu` | `false` | Force CPU even when CUDA is available. |
 | `no-auto-scale` | `false` | Disable count-based adaptation of matcher/mapper/densify for large image sets (see below). |
 

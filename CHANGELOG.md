@@ -38,6 +38,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **Multi-epoch change detection (`helpers/change_detect.py`).** Closes the v0.6.0
+  gap to ODM's `--align` / Metashape markers — co-register datasets from different
+  seasons onto a shared frame and *measure* the change. Opt-in via the `align-to`
+  path option (a node-filesystem path to a prior epoch's
+  `odm_georeferencing/odm_georeferenced_model.laz`, mirroring how ODM's `--align`
+  takes a reference). The step: **(1)** co-registers this epoch onto the reference
+  with PDAL `filters.icp` (the same recipe `scripts/benchmark.sh compare` uses),
+  applies the rigid 4×4 to a *working copy* (`odm_change/aligned.laz`), and reports
+  the residual (ICP fitness + cloud-to-cloud mean/RMS before vs. after); **(2)**
+  **DoD** — rasterises the reference and aligned epoch B to DSMs on a shared grid
+  and subtracts them → `odm_dem/dem_difference.tif` with mean/max change, changed
+  area, and **cut/fill volumes** (Σ Δz·cell-area); **(3)** **M3C2** (Lague et al.
+  2013, via **py4dgeo**) — signed normal-direction distance + per-point
+  level-of-detection → `odm_change/m3c2.laz` (extra dims `m3c2_distance` /
+  `m3c2_lod` / `significant`). All stats land in `odm_report/change_detection.json`
+  (+ rows in the quality-report PDF). Sign convention: positive = surface raised
+  (deposition), negative = lowered (excavation). **v1 is additive analysis** —
+  epoch B's own cloud/mesh/orthophoto are untouched (re-landing them in the
+  reference frame is v2). Non-fatal and self-gating (needs the reference, this
+  epoch's LAZ, and PDAL); **py4dgeo absent → DoD-only fallback** (DoD already meets
+  the archaeology need). py4dgeo is **built from pinned source** (`1.1.0`) in the
+  image — PyPI has no manylinux aarch64 wheel; its multithreaded path segfaults on
+  arm64, so the M3C2 call pins `set_num_threads(1)`. New `tests/test_change_detect.py`
+  (pure: ICP-metadata parse, DoD/volume math, gate logic; py4dgeo-gated: M3C2
+  recovers a known vertical shift). Option count 40 → 41.
 - **Multi-class point classification (`helpers/classify_cloud.py`).** Closes the
   v0.6.0 gap to Metashape/ODM — beyond SMRF ground-only. Runs OpenDroneMap's
   **OpenPointClass** (`pcclassify`, the same ML tool + default model ODM uses;

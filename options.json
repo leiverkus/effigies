@@ -248,6 +248,14 @@
     "help": "Anchor the marked GCPs at their surveyed world coordinates in a constrained bundle adjustment (pycolmap / COLMAP's Ceres BA) on the sparse model BEFORE densification, instead of the post-hoc 7-DoF similarity. A rigid similarity cannot absorb reconstruction drift; pulling the GCPs into the BA re-optimises cameras and tie points to be consistent with them, removing drift and tightening the check-point RMSE. 'auto' (default): run both and keep whichever gives the lower INDEPENDENT check-point RMSE - never worse than the post-hoc path on the check metric, and falls back to it when no 'check'-flagged GCPs are present (or there is no GCP file). 'on': always the bundle adjustment. 'off': always the post-hoc similarity. Mark GCPs in 2+ images, and end a gcp_list.txt line in 'check' to hold it out for the accuracy estimate. Default: %(default)s"
   },
   {
+    "name": "align-to",
+    "title": "Align to (change detection)",
+    "value": "",
+    "domain": "string",
+    "type": "string",
+    "help": "Path to a prior epoch's reference point cloud (e.g. another task's odm_georeferencing/odm_georeferenced_model.laz) on the node's data volume, for multi-epoch change detection. When set, this epoch is co-registered to the reference (PDAL ICP) and difference products are written: a DEM-of-Difference (odm_dem/dem_difference.tif, with cut/fill volumes) and an M3C2 change cloud (odm_change/m3c2.laz, signed distance + level-of-detection), plus odm_report/change_detection.json. Additive analysis only - this epoch's own cloud/mesh/orthophoto are unchanged. Default: none"
+  },
+  {
     "name": "skip-orthophoto",
     "title": "Skip Orthophoto",
     "value": false,
