@@ -300,6 +300,42 @@
     "help": "Maximum hole area (in m²) filled in the orthophoto with the nearest valid colour. Only small INTERIOR holes below this size are closed (pinholes, thin triangle seams, tiny mesh gaps); large voids (e.g. missing walls) and the outer boundary stay transparent (honest nodata). 0 disables filling. Affects only the visual orthophoto — the DSM, DTM and point cloud are never modified. Default: %(default)s"
   },
   {
+    "name": "ortho-color-balance",
+    "title": "Orthophoto: Colour Balance",
+    "value": "none",
+    "domain": [
+      "none",
+      "white-balance",
+      "auto"
+    ],
+    "type": "enum",
+    "help": "Radiometric finishing of the FINAL orthophoto raster (the single-mesh ortho has no seams, so there is nothing to seamline-edit; this is the colour-balance half of Metashape/ODM ortho finishing). 'none' (default): output unchanged. 'white-balance': gray-world cast removal (per-channel gain so neutral surfaces read neutral). 'auto': white-balance plus a 1–99 percentile luminance contrast stretch. Colour consistency between source views is already handled upstream at the texture atlas — this only normalises the assembled ortho. A residual-tonal-variation metric is always logged (odm_report/orthophoto_finishing.json) so you can tell whether balancing is even needed. Default: %(default)s"
+  },
+  {
+    "name": "ortho-brightness",
+    "title": "Orthophoto: Brightness",
+    "value": "0",
+    "domain": "float: -1.0 <= x <= 1.0",
+    "type": "float",
+    "help": "Manual additive brightness applied to the orthophoto, normalised to -1..1 (i.e. ±255 8-bit levels). 0 = off. Applied after colour balance. Default: %(default)s"
+  },
+  {
+    "name": "ortho-gamma",
+    "title": "Orthophoto: Gamma",
+    "value": "1.0",
+    "domain": "float > 0.0",
+    "type": "float",
+    "help": "Manual gamma tone curve for the orthophoto. 1.0 = off; >1 darkens mid-tones, <1 lifts them. Applied after colour balance and brightness. Default: %(default)s"
+  },
+  {
+    "name": "ortho-flatten",
+    "title": "Orthophoto: Large-Scale Flatten",
+    "value": "0",
+    "domain": "float: 0.0 <= x <= 1.0",
+    "type": "float",
+    "help": "Strength (0..1) of a large-scale luminance flatten that removes broad, low-frequency brightness gradients across the orthophoto (the Metashape-style radiometric balancing). 0 = off. WARNING: on an excavation ortho a genuine soil-colour / feature gradient IS data — flattening it destroys signal. Leave off unless the residual tonal-variation metric (odm_report/orthophoto_finishing.json) shows a real exposure gradient. Default: %(default)s"
+  },
+  {
     "name": "contours-interval",
     "title": "Contour Interval (m)",
     "value": "0",

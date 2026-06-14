@@ -310,10 +310,19 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       re-land the mesh + ortho in the reference frame (full `--align` parity),
       DEM-as-reference, and stable-area-masked ICP. Verified: M3C2 recovers a known
       vertical shift, DoD volume math unit-tested.
-- [ ] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
+- [x] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
       (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
       such control; expose colour-balance / blending knobs if real orthos show
-      residual tonal variation.
+      residual tonal variation. **Done (colour-balance half; seamlines N/A):**
+      `helpers/ortho_finish.py` adds an opt-in finishing pass on the rasterised ortho
+      — `ortho-color-balance` (gray-world white-balance / `auto` = + percentile
+      contrast), manual `ortho-brightness` / `ortho-gamma`, and an off-by-default,
+      explicitly-warned `ortho-flatten` (large-scale luminance flatten; can erase
+      real soil/feature albedo). A residual tonal-variation metric is always measured
+      and written to `odm_report/orthophoto_finishing.json` + the report, so the
+      "if real orthos show residual tonal variation" question is answered per dataset
+      rather than guessed. Default output is bit-for-bit unchanged; nodata-safe;
+      unit-tested incl. a gradient-removed-but-albedo-preserved flatten check.
 
 ## v0.7.0 — Benchmark campaign & profile calibration *(needs reference data)*
 

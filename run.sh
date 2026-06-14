@@ -45,6 +45,10 @@ declare -A OPT=(
   [align-to]=""
   [orthophoto-resolution]=auto
   [ortho-fill-holes]=0.25
+  [ortho-color-balance]=none
+  [ortho-brightness]=0
+  [ortho-gamma]=1.0
+  [ortho-flatten]=0
   [contours-interval]=0
   [3d-tiles]=false
   [no-gpu]=false
@@ -376,6 +380,10 @@ if [[ "${OPT[skip-orthophoto]}" != "true" || "${OPT[skip-dsm]}" != "true" ]]; th
   if ! python3 "$(dirname "$0")/helpers/orthophoto.py" \
        --work "$WORK" --resolution "${OPT[orthophoto-resolution]}" \
        --fill-holes "${OPT[ortho-fill-holes]}" \
+       --color-balance "${OPT[ortho-color-balance]}" \
+       --ortho-brightness "${OPT[ortho-brightness]}" \
+       --ortho-gamma "${OPT[ortho-gamma]}" \
+       --ortho-flatten "${OPT[ortho-flatten]}" \
        $([[ "${OPT[skip-orthophoto]}" == "true" ]] && echo --skip-orthophoto) \
        $([[ "${OPT[skip-dsm]}" == "true" ]] && echo --skip-dsm); then
     echo "[effigies] WARN: orthophoto/DSM step failed; continuing without it" >&2

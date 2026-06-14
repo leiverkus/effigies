@@ -38,6 +38,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **Orthomosaic finishing — radiometric colour balancing (`helpers/ortho_finish.py`).**
+  Closes the colour-balance half of the v0.6.0 ortho-finishing item. The single-mesh
+  ortho has no stitch seams (nothing to seamline-edit) and inter-view colour is
+  already harmonised upstream at the texture atlas, so what was missing was
+  *finishing control on the final raster*. New opt-in pass on the rasterised ortho
+  (after hole-fill, before GeoTIFF write), masked to valid pixels and nodata-safe:
+  `ortho-color-balance` = `white-balance` (gray-world cast removal) or `auto`
+  (white-balance + 1–99 percentile luminance contrast stretch); manual
+  `ortho-brightness` / `ortho-gamma`; and `ortho-flatten` (0..1), a large-scale
+  luminance flatten for a genuine residual exposure gradient — **off by default and
+  warned**, because on an excavation ortho a broad soil-colour / feature gradient is
+  *data*, not noise. A residual tonal-variation metric (low-frequency luminance std)
+  is **always** computed and written to `odm_report/orthophoto_finishing.json`
+  (before/after + applied gains/steps), logged on the `[ortho]` line and surfaced in
+  the PDF report — directly answering the roadmap's "*if* real orthos show residual
+  tonal variation" gate. Default (no options) leaves the ortho bit-for-bit unchanged.
+  `tests/test_ortho_finish.py` verifies cast removal, contrast stretch, the
+  gradient-removed-but-albedo-preserved flatten (archaeology-safety), the diagnostic,
+  and the identity default.
 - **Multi-epoch change detection (`helpers/change_detect.py`).** Closes the v0.6.0
   gap to ODM's `--align` / Metashape markers — co-register datasets from different
   seasons onto a shared frame and *measure* the change. Opt-in via the `align-to`

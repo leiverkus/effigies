@@ -33,6 +33,7 @@ import numpy as np
 # sibling module — resolve relative to this file so it works as a script and in tests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from openmvs_mesh import find_mesh_obj  # noqa: E402
+import ortho_finish  # noqa: E402
 
 
 def _parse_mtl(mtl_path):
@@ -331,6 +332,18 @@ def main():
                     help="do not write the DSM (digital surface model)")
     ap.add_argument("--fill-holes", type=float, default=0.25,
                     help="max hole area (m²) filled in the orthophoto (0 = off)")
+    ap.add_argument("--color-balance", default="none",
+                    choices=["none", "white-balance", "auto"],
+                    help="radiometric finishing of the ortho raster: 'none' (default, "
+                         "output unchanged), 'white-balance' (gray-world cast removal), "
+                         "'auto' (white-balance + percentile auto-contrast)")
+    ap.add_argument("--ortho-brightness", type=float, default=0.0,
+                    help="manual additive brightness, normalised -1..1 (0 = off)")
+    ap.add_argument("--ortho-gamma", type=float, default=1.0,
+                    help="manual gamma tone curve (1.0 = off; >1 darkens mid-tones)")
+    ap.add_argument("--ortho-flatten", type=float, default=0.0,
+                    help="large-scale luminance flatten strength 0..1 (0 = off). "
+                         "Removes broad tonal gradients but can erase real albedo signal")
     args = ap.parse_args()
 
     if args.skip_orthophoto and args.skip_dsm:
@@ -379,12 +392,26 @@ def main():
             max_hole_px = round(args.fill_holes / (gsd * gsd))
             rgb, alpha, filled = fill_ortho_holes(rgb, alpha, max_hole_px)
             cov = 100.0 * (alpha > 0).mean()
+        # Radiometric finishing: always measure residual tonal variation (the
+        # roadmap's "if real orthos show residual tonal variation" gate); apply
+        # balancing only when opted in. A no-op leaves the raster untouched.
+        rgb, finfo = ortho_finish.finish(
+            rgb, alpha, gsd, color_balance=args.color_balance,
+            brightness=args.ortho_brightness, gamma=args.ortho_gamma,
+            flatten=args.ortho_flatten)
+        finfo["gsd_cm"] = gsd * 100.0
+        fin_json = os.path.join(args.work, "odm_report", "orthophoto_finishing.json")
+        os.makedirs(os.path.dirname(fin_json), exist_ok=True)
+        json.dump(finfo, open(fin_json, "w"), indent=2)
         out = os.path.join(args.work, "odm_orthophoto.tif")
         write_geotiff(out, rgb, alpha, ox, oy, gsd, crs)
         fmsg = f", filled {filled} hole px (<{args.fill_holes:g} m²)" if filled else ""
+        bal = (", balanced: " + "+".join(finfo["steps"])) if finfo["steps"] else ""
         print(f"[ortho] wrote {os.path.basename(out)} "
               f"({rgb.shape[1]}x{rgb.shape[0]} px @ {gsd*100:.1f} cm/px, "
-              f"{cov:.0f}% covered{fmsg}, crs={crs})")
+              f"{cov:.0f}% covered{fmsg}, "
+              f"tonal-var {finfo['before']['lowfreq_std']:.1f}->"
+              f"{finfo['after']['lowfreq_std']:.1f}{bal}, crs={crs})")
 
     if not args.skip_dsm:
         # The z-buffer the rasteriser already computed IS the DSM: per-pixel

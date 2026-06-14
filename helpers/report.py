@@ -149,6 +149,22 @@ def main():
         Wpx, Hpx, gsd_cm, area, cov, _ = ortho
         rows.append(["Orthophoto", f"{Wpx} x {Hpx} px @ {gsd_cm:.1f} cm/px"])
         rows.append(["Area covered", f"{area:,.1f} m² ({cov:.0f}% of frame)"])
+        # Orthophoto finishing (always written by orthophoto.py: residual tonal
+        # variation + any radiometric balancing applied).
+        fin_path = os.path.join(W, "odm_report", "orthophoto_finishing.json")
+        if os.path.exists(fin_path):
+            try:
+                fin = json.load(open(fin_path))
+            except Exception:
+                fin = {}
+            before = (fin.get("before") or {}).get("lowfreq_std")
+            if before is not None:
+                steps = fin.get("steps") or []
+                applied = "+".join(steps) if steps else "none (diagnostic only)"
+                after = (fin.get("after") or {}).get("lowfreq_std", before)
+                rows.append(["Ortho finishing",
+                             f"tonal variation {before:.1f} → {after:.1f} "
+                             f"(8-bit luma std); balance: {applied}"])
     if dsm:
         Wd, Hd, gsd_cm, zmin, zmax = dsm
         rows.append(["DSM", f"{Wd} x {Hd} px @ {gsd_cm:.1f} cm/px, elev {zmin:.1f}..{zmax:.1f} m"])
