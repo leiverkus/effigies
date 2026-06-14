@@ -158,7 +158,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       and restored on a loss) — *by construction never worse than the post-hoc path*
       on the check metric, which is what justifies it as the default; a run without
       GCPs / check points falls back silently. **Absolute-accuracy validation still
-      deferred** to the v0.8.0 reference-data campaign (needs a surveyed GCP +
+      deferred** to the v0.9.0 reference-data campaign (needs a surveyed GCP +
       held-out check-point dataset) — that measures the gain; the default rests on
       the relative never-worse property, which the synthetic fixture + the in-image
       Stage-0 spike (real 70-image / 34 626-point reconstruction, BA converged in
@@ -173,7 +173,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       of WebODM's preset JSON — those are per-install data keyed to ODM's option
       names and useless for Effigies. The bundle *values* are currently reasoned
       defaults; **empirically calibrating them** (esp. `RefineMesh`) per profile
-      against benchmark runs is deferred to **v0.8.0** (it needs the benchmark
+      against benchmark runs is deferred to **v0.9.0** (it needs the benchmark
       campaign).
 - [x] Expose key OpenMVS refine parameters as task options with documented
       effects: `refine-max-face-area`, `refine-gradient-step`, and
@@ -226,7 +226,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       roughness (local plane-fit residual, detail-vs-noise); with a prior-art
       review in [docs/benchmark-literature.md](docs/benchmark-literature.md)
       (BibTeX in `docs/references.bib`). The actual comparison **runs** against
-      stock ODM / Metashape / RealityScan are the **v0.8.0** campaign below.
+      stock ODM / Metashape / RealityScan are the **v0.9.0** campaign below.
 
 ## v0.5.0 — Scaling to large image sets (split-merge tiling) *(released — 2026-06-14)*
 
@@ -355,7 +355,7 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       rather than guessed. Default output is bit-for-bit unchanged; nodata-safe;
       unit-tested incl. a gradient-removed-but-albedo-preserved flatten check.
 
-## v0.7.0 — Learned SfM front-end (LightGlue) *(planned — pushes the benchmark campaign to v0.8.0)*
+## v0.7.0 — Learned SfM front-end (LightGlue) *(planned)*
 
 Effigies' only SfM front-end is COLMAP's classic SIFT + handcrafted matchers
 (`exhaustive` / `sequential` / `spatial` / `vocab_tree`). SIFT is structurally
@@ -397,12 +397,54 @@ front-end, **not** a flag: `--matcher lightglue` does not exist in COLMAP's CLI.
       guidance if `--features aliked` is requested without the front-end present —
       the `vocab_tree`-missing pattern in `sparse_colmap.sh`).
 - [ ] **Validation folds into the benchmark campaign.** The gain is claimed
-      exactly on the three hard surface types, so quantify it there (v0.8.0):
+      exactly on the three hard surface types, so quantify it there (v0.9.0):
       registered-image count, sparse-point count and downstream completeness for
       SIFT vs ALIKED+LightGlue on planum / profile / stone-setting datasets. Needs
       a **GPU** (none on this host → parked for validation like the CUDA image).
 
-## v0.8.0 — Benchmark campaign & profile calibration *(needs reference data)*
+## v0.8.0 — MASt3R sparse-engine *(planned — pushes the benchmark campaign to v0.9.0)*
+
+COLMAP — including the v0.7.0 learned front-end — is still **correspondence-based**
+SfM: it needs enough matchable points across enough overlap. That breaks down on
+small, low-overlap, textureless/glossy object sets — exactly **artefacts,
+ceramics, statues, fine architectural detail**. **MASt3R** (Naver, the DUSt3R
+line) regresses dense pointmaps directly from image pairs and reconstructs poses +
+a sparse model *without* keypoint matching, robust where correspondence SfM has no
+signal at all. **Not a replacement** — an additional `--sparse-engine` value for
+the close-range / small-N regime where it wins. This is a different architectural
+layer from LightGlue: LightGlue lifts the SIFT *matcher* feeding `colmap mapper`;
+MASt3R replaces the whole SfM *front-end*.
+
+- [ ] **`--sparse-engine mast3r`, re-activating the multi-valued option.**
+      `sparse-engine` is currently colmap-only (`domain: ["colmap"]`); this
+      re-introduces real alternatives. MASt3R-SfM runs, then **exports a
+      COLMAP-format sparse model into `$WORK/sparse/0`** — the exact seam the parked
+      OpenSfM backend would use — so `image_undistorter` + the entire OpenMVS chain
+      run **unchanged**. Shares its integration contract with the OpenSfM park item.
+- [ ] **Sparse stage only — RefineMesh stays the point.** MASt3R also yields dense
+      pointmaps, but short-circuiting OpenMVS would drop ReconstructMesh/RefineMesh
+      — the entire reason this node exists. MASt3R supplies **poses + sparse cloud
+      only**; the unchanged Densify → Reconstruct → Refine → Texture chain consumes
+      it. Scale stays the existing georef job (MASt3R is up-to-scale; the GCP/EXIF +
+      offset/Umeyama machinery applies unchanged).
+- [ ] **Close-range / small-N only — not a scaling path.** Pairwise dense inference
+      + ~O(n²) global alignment: designed for tens of images, not hundreds.
+      `autoscale.sh` / split-merge tiling stay COLMAP's domain; `mast3r` is gated to
+      the small-set regime (objects / finds) and fails loud (or auto-declines) above
+      a sane image count rather than thrashing.
+- [ ] **Licensing — non-commercial, opt-in only.** DUSt3R/MASt3R code **and**
+      weights (Naver) are **CC BY-NC-SA 4.0 (non-commercial)** — the same blocker as
+      SuperPoint: not bakeable into the MIT image, never a default. Gated behind an
+      explicit opt-in with user-provided weights / license acknowledgment; nothing
+      ships in the image, so `THIRD_PARTY_LICENSES.md` is unaffected. (Verify the
+      exact license at adoption.)
+- [ ] **GPU-only validation; maturity risk.** ViT backbone, ~2 GB weights, CPU
+      impractical → validation parked like the CUDA image. MASt3R-SfM is recent
+      research; robustness / reproducibility vs COLMAP on production object sets is
+      unproven — this is the higher-risk, Priorität-2 bet, to be quantified on
+      artefact / ceramic / statue datasets in the v0.9.0 campaign.
+
+## v0.9.0 — Benchmark campaign & profile calibration *(needs reference data)*
 
 The empirical work behind the paper, split out from v0.4.0 (the *tooling* is
 done; the *runs* are here). Gated on a dataset with **reference data** — a TLS
