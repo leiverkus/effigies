@@ -55,6 +55,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `opensfm export_openmvs`) for very large GPS-only nadir missions is ROADMAP-parked.
 
 ### Changed
+- **Multi-stage Docker build (builder → slim runtime) — CPU image 3.24 GB → 1.65 GB (−49 %).**
+  Both `Dockerfile` and `Dockerfile.cpu` are now two-stage. The `engine` builder is
+  unchanged (full toolchain + `-dev` headers, compiles COLMAP/OpenMVS/PDAL/entwine/
+  pycolmap/py4dgeo, plus Obj2Tiles/OpenPointClass on CPU); a new `runtime` stage
+  starts from a clean base (`ubuntu:24.04` for CPU, `nvidia/cuda:…-runtime` instead
+  of `-devel` for GPU), installs **only the runtime shared libraries**, and copies
+  the built artifacts (`/usr/local`, the pip Python packages, `/opt/NodeODM`). The
+  runtime apt set was derived empirically with `readelf -d` NEEDED over every engine
+  binary (apt then pulls the GDAL/OpenCV transitive tree); the missing-from-runtime
+  pure-Python deps (`six`/`requests`/`setuptools`, apt-provided in the builder) were
+  added back. The runtime stage **exercises every binary** (`--help` + Python
+  imports + `node`) so a missing `.so` fails the *build*, not a user task, and sets
+  `WORKDIR /opt/NodeODM` (NodeODM reads `config-default.json` relative to cwd).
+  Verified on this host for the CPU image: build gate green, `scripts/test.sh` passes
+  *inside* the image, NodeODM serves `/info` + `/options`. The CUDA image mirrors the
+  structure (lock-step) and passes `docker build --check`; its CUDA runtime-exercise
+  is deferred to a GPU host.
 - **`InterfaceCOLMAP` resolved through a fail-loud alias lookup (`pipeline/openmvs_bin.sh`).**
   Both `run.sh` and `pipeline/tile.sh` now resolve the OpenMVS COLMAP-interface binary
   via `resolve_openmvs_bin` (tries `InterfaceCOLMAP`, `InterfaceColmap`; aborts with a

@@ -14,6 +14,14 @@
 # In a task, set the "Use GPU" option to OFF (this build has no CUDA).
 #
 # See docs/DEPLOYMENT.md for the GPU production path.
+#
+# MULTI-STAGE (builder -> slim runtime). The `engine` stage builds COLMAP/OpenMVS/
+# PDAL/entwine/OpenPointClass/Obj2Tiles/pycolmap/py4dgeo from pinned source with the
+# full toolchain + -dev headers; the `runtime` stage starts from a clean base, installs
+# only the runtime shared libraries (derived empirically via readelf -d NEEDED on the
+# built binaries — apt pulls the transitive GDAL/OpenCV tree), copies the built
+# artifacts from `engine`, and EXERCISES every binary so a missing runtime .so fails
+# the build, not the user. Keep this in lock-step with the CUDA Dockerfile.
 
 # Ubuntu 24.04 (noble) — the current LTS base. Noble dropped PDAL from its repos,
 # so PDAL is built from pinned source below (same policy as COLMAP/OpenMVS: pin +
@@ -263,10 +271,89 @@ RUN git clone https://github.com/OpenDroneMap/NodeODM.git && \
 WORKDIR /opt/NodeODM
 RUN npm install --production
 
-# --- our engine ---
+# ===========================================================================
+# Runtime stage — slim image: only runtime shared libs + the built artifacts.
+# Drops the entire build toolchain (cmake/ninja/build-essential/git/npm/pip) and
+# every -dev header package, which is the bulk of the single-stage bloat.
+# ===========================================================================
+FROM ubuntu:${UBUNTU_VERSION} AS runtime
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Runtime shared libraries. This top-level set was derived empirically from
+# `readelf -d` NEEDED entries on every engine binary (colmap, the OpenMVS tools,
+# pdal, entwine, pcclassify, Obj2Tiles) plus the pycolmap/py4dgeo extension
+# modules; apt resolves the transitive closure (GDAL and OpenCV pull a large tree
+# of codec/format libs). The version suffixes (406, t64, 1.83.0) are noble's and
+# stable for the LTS lifetime. libtbb12 (OpenPointClass) and libicu74 (Obj2Tiles'
+# bundled .NET) are belt-and-braces; the exercise gate below catches any miss.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      libblas3 liblapack3 libgomp1 \
+      libboost-iostreams1.83.0 libboost-program-options1.83.0 libboost-serialization1.83.0 \
+      libceres4t64 libcholmod5 libmetis5 libgoogle-glog0v6t64 \
+      libgmp10 \
+      libgdal34t64 libgeotiff5 libproj25 \
+      libopencv-calib3d406t64 libopencv-core406t64 libopencv-imgcodecs406t64 libopencv-imgproc406t64 \
+      libopenimageio2.4t64 \
+      libjpeg-turbo8 libpng16-16t64 libtiff6 \
+      libsqlite3-0 libssl3t64 libxml2 zlib1g libcurl4t64 \
+      libtbb12 libicu74 \
+      python3 python3-numpy python3-scipy python3-pil python3-pyproj python3-gdal python3-reportlab \
+      python3-six python3-requests python3-setuptools \
+      nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Built artifacts from the engine stage: binaries (/usr/local/bin incl. OpenMVS/,
+# colmap, pdal, entwine, pcclassify, Obj2Tiles), our shared libs (libpdalcpp,
+# libentwine, PDAL plugins), the pip-installed Python packages (pycolmap, py4dgeo
+# + their deps under dist-packages), and baked-in data (vocab tree, OPC model).
+COPY --from=engine /usr/local /usr/local
+# NodeODM REST layer + its node_modules (built with npm in the engine stage).
+COPY --from=engine /opt/NodeODM /opt/NodeODM
+# Drop build-only leftovers that rode along in /usr/local: static archives, dev
+# headers, and cmake/pkgconfig metadata are not needed at runtime (the COLMAP
+# static libs alone are large; pycolmap already linked them in).
+RUN rm -rf /usr/local/include /usr/local/lib/cmake /usr/local/lib/pkgconfig \
+           /usr/local/lib/*.a /usr/local/lib/python3.12/dist-packages/**/*.a 2>/dev/null; \
+    ldconfig
+
+ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
+ENV EFFIGIES_VOCAB_TREE=/usr/local/share/effigies/vocab_tree.bin
+ENV EFFIGIES_OPC_MODEL=/usr/local/share/effigies/opc_model.bin
+
+# --- our engine code (last layer, so source edits never bust the heavy ones) ---
 COPY . /opt/effigies
 ENV ODM_PATH=/opt/effigies
 RUN ln -sf /opt/effigies/helpers/optionsToJson.py /opt/NodeODM/helpers/odmOptionsToJson.py || true
 
+# --- Exercise every engine binary: a missing runtime .so fails the BUILD here,
+#     not at task time. Runs each tool's help/version (loader errors surface as
+#     "cannot open shared object"), then imports the Python extension modules. ---
+RUN set -eu; \
+    fail=0; \
+    exercise() { \
+      out="$("$@" --help 2>&1 || true)"; \
+      case "$out" in \
+        *"cannot open shared object"*|*"loading shared libraries"*|*"symbol lookup error"*) \
+          echo "FATAL: $1 fails to load: $out" >&2; fail=1 ;; \
+      esac; \
+    }; \
+    command -v colmap >/dev/null || { echo "FATAL: colmap missing"; fail=1; }; \
+    out="$(colmap -h 2>&1 || true)"; case "$out" in *"shared object"*|*"loading shared libraries"*) echo "FATAL: colmap loader: $out"; fail=1;; esac; \
+    for b in DensifyPointCloud ReconstructMesh RefineMesh TextureMesh InterfaceCOLMAP TransformScene; do \
+      command -v "$b" >/dev/null || { echo "FATAL: OpenMVS $b missing"; fail=1; continue; }; \
+      exercise "$b"; \
+    done; \
+    exercise pdal; exercise entwine; \
+    out="$(pcclassify 2>&1 </dev/null || true)"; case "$out" in *"shared object"*|*"loading shared libraries"*) echo "FATAL: pcclassify loader: $out"; fail=1;; esac; \
+    out="$(Obj2Tiles --help 2>&1 || true)"; case "$out" in *"shared object"*|*"loading shared libraries"*|*"libicu"*) echo "FATAL: Obj2Tiles loader: $out"; fail=1;; esac; \
+    python3 -c "import pycolmap, py4dgeo, numpy, scipy, osgeo.gdal, pyproj, PIL, reportlab; print('[effigies] python extension imports OK')" || fail=1; \
+    node -e "process.exit(0)" || { echo "FATAL: node broken"; fail=1; }; \
+    [ "$fail" = 0 ] || { echo "FATAL: runtime binary verification failed" >&2; exit 1; }; \
+    echo "[effigies] runtime image: all engine binaries load and run (CPU slim)"
+
+# NodeODM reads config-default.json relative to its working dir — run from there
+# (the single-stage image inherited this cwd from the build WORKDIR).
+WORKDIR /opt/NodeODM
 EXPOSE 3000
 CMD ["node", "/opt/NodeODM/index.js", "--odm_path", "/opt/effigies"]

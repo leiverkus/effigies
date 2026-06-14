@@ -59,7 +59,6 @@ Made the image trustworthy and the output cloud web-ready.
       `NODEODM_REF` to the fixed commit and remove the build-time sed. The repo
       policy stays "no NodeODM patches" — this is a pinned, documented exception
       for an upstream crash.
-- [ ] Slim the image with a multi-stage (devel build → runtime copy) layout.
 - [x] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
       builds and handle the variants. **Done.** Verified against the pinned source:
       OpenMVS v2.4.0 ships `InterfaceCOLMAP` (build-verified in both Dockerfiles)
@@ -79,6 +78,21 @@ Made the image trustworthy and the output cloud web-ready.
       materialise, add it for real: install OpenSfM in both images and convert via
       `opensfm export_openmvs` (NOT the nonexistent `InterfaceOpenSfM`), then
       re-add `opensfm` to the `sparse-engine` option.
+- [x] Slim the image with a multi-stage (devel build → runtime copy) layout.
+      **Done.** Both Dockerfiles are now two-stage: an `engine` builder (full
+      toolchain + `-dev` headers, compiles COLMAP/OpenMVS/PDAL/entwine/pycolmap/
+      py4dgeo — plus Obj2Tiles/OpenPointClass on CPU) and a slim `runtime` stage
+      that installs only the **runtime** shared libraries and copies the built
+      artifacts. The runtime apt set was derived **empirically** (`readelf -d`
+      NEEDED over every engine binary + the pycolmap/py4dgeo extension modules;
+      apt resolves the GDAL/OpenCV transitive tree), and the runtime stage
+      **exercises every binary** (`--help` + Python imports) so a missing `.so`
+      fails the build, not the user. The CPU image is verified end-to-end on this
+      host: build gate green, full `scripts/test.sh` passes *inside* the image,
+      NodeODM serves `/info` + `/options`, and the size drops **3.24 GB → 1.65 GB
+      (−49 %)**. The CUDA image mirrors the structure on the `-runtime` base
+      (vs `-devel`); its CUDA runtime-exercise is deferred to a GPU host (none
+      here), but the loader gate + `docker build --check` pass.
 
 ## COLMAP 4 migration *(done — folded into v0.2.0)*
 
