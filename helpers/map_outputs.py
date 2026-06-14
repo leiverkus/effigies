@@ -128,6 +128,13 @@ def main():
         if os.path.exists(src):
             link_or_copy(src, os.path.join(P, "odm_dem", c))
 
+    # 2c1c. Class-filtered surface rasters -> odm_dem/ (opt-in; only with --classify;
+    #       the classified cloud itself is the LAZ above, with ASPRS Classification)
+    for c in ("buildings.tif", "canopy.tif"):
+        src = os.path.join(W, "odm_dem", c)
+        if os.path.exists(src):
+            link_or_copy(src, os.path.join(P, "odm_dem", c))
+
     # 2c2. coords.txt -> odm_georeferencing/ (WebODM's 3D viewer reads the offset
     #      from line 2 to place the textured model next to the point cloud)
     coords = os.path.join(W, "coords.txt")

@@ -269,6 +269,13 @@
     "help": "Generate a DTM (digital terrain model): a bare-earth elevation GeoTIFF (odm_dem/dtm.tif) made by PDAL ground classification (SMRF) of the dense point cloud — buildings and vegetation removed, the complement of the DSM. OFF by default: the ground filter costs extra time and a bare-earth model is meaningless for close-range / object captures with no open ground. Requires a georeferenced result. Default: %(default)s"
   },
   {
+    "name": "classify",
+    "title": "Classify Point Cloud (ML)",
+    "value": false,
+    "type": "bool",
+    "help": "ML multi-class classification of the point cloud (OpenPointClass, the same tool ODM uses): tags every point with an ASPRS class — ground, low/medium/high vegetation, building, vehicle — written into the LAZ (so viewers can colour by class), plus class-filtered surface rasters (odm_dem/buildings.tif, odm_dem/canopy.tif). When on, the DTM reuses the ML ground class instead of re-running SMRF. Opt-in: an extra ML step (~2 min per 15M points). Requires a georeferenced result. Default: %(default)s"
+  },
+  {
     "name": "orthophoto-resolution",
     "title": "Orthophoto Resolution (cm/px)",
     "value": "auto",

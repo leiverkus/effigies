@@ -33,17 +33,22 @@ import sys
 NODATA = -9999.0
 
 
-def build_dtm_pipeline(laz_path, dtm_path, gsd, nodata=NODATA):
+def build_dtm_pipeline(laz_path, dtm_path, gsd, nodata=NODATA, pre_classified=False):
     """The PDAL pipeline dict: outlier -> SMRF ground -> keep ground -> rasterise.
 
-    Pure (no I/O); returned as a dict so it is unit-testable without PDAL."""
-    return {"pipeline": [
-        {"type": "readers.las", "filename": laz_path},
+    When ``pre_classified`` (the cloud already carries ML classes from
+    OpenPointClass), skip the outlier+SMRF stages and use the existing ground
+    class (2) directly. Pure (no I/O); returned as a dict, unit-testable."""
+    ground = [
         # statistical outlier removal flags noise as Classification 7 so SMRF
         # does not anchor the ground surface to stray low points
         {"type": "filters.outlier"},
         {"type": "filters.smrf", "ignore": "Classification[7:7]"},
-        # keep only the ground returns SMRF labelled (Classification 2)
+    ] if not pre_classified else []
+    return {"pipeline": [
+        {"type": "readers.las", "filename": laz_path},
+        *ground,
+        # keep only the ground returns (SMRF- or ML-labelled Classification 2)
         {"type": "filters.range", "limits": "Classification[2:2]"},
         {"type": "writers.gdal",
          "filename": dtm_path,
@@ -98,9 +103,10 @@ def _valid_pixel_count(tif):
         return None
 
 
-def run_dtm(work, resolution="auto", laz=None):
+def run_dtm(work, resolution="auto", laz=None, pre_classified=False):
     """Produce ``<work>/odm_dem/dtm.tif`` from the georeferenced LAZ. Non-fatal:
-    returns True on success, False (with a reason) when skipped/failed."""
+    returns True on success, False (with a reason) when skipped/failed.
+    ``pre_classified`` reuses the cloud's existing ML ground (class 2)."""
     tr_path = os.path.join(work, "georef_transform.json")
     if not os.path.exists(tr_path):
         print("[dtm] no georef_transform.json; skipping DTM", file=sys.stderr)
@@ -123,7 +129,7 @@ def run_dtm(work, resolution="auto", laz=None):
     dtm = os.path.join(work, "odm_dem", "dtm.tif")
     os.makedirs(os.path.dirname(dtm), exist_ok=True)
 
-    pipeline = json.dumps(build_dtm_pipeline(laz, dtm, gsd))
+    pipeline = json.dumps(build_dtm_pipeline(laz, dtm, gsd, pre_classified=pre_classified))
     proc = subprocess.run(["pdal", "pipeline", "--stdin"],
                           input=pipeline, text=True, capture_output=True)
     if proc.returncode != 0:
@@ -152,8 +158,10 @@ def main():
                     help="ground sample distance in cm/px, or 'auto' (~4k px wide)")
     ap.add_argument("--laz", default=None,
                     help="georeferenced LAZ (default: <work>/odm_georeferenced_model.laz)")
+    ap.add_argument("--pre-classified", action="store_true",
+                    help="reuse the cloud's existing ground class (skip SMRF)")
     args = ap.parse_args()
-    run_dtm(args.work, args.resolution, args.laz)
+    run_dtm(args.work, args.resolution, args.laz, args.pre_classified)
 
 
 if __name__ == "__main__":

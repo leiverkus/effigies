@@ -145,6 +145,33 @@ RUN set -eux; \
     Obj2Tiles --help >/dev/null 2>&1 || { rc=$?; [ "$rc" = 1 ] || { echo "Obj2Tiles exec failed (rc=$rc)"; exit 1; }; }; \
     echo "[effigies] Obj2Tiles ${OBJ2TILES_VERSION} (${A}) baked in"
 
+# --- OpenPointClass for ML point classification (opt-in --classify) ---
+# ODM's classifier; no prebuilt binary, so build pcclassify from pinned source
+# (links our installed PDAL; LightGBM is fetched+built by its cmake). AGPL, invoked
+# as a separate process (mere aggregation, as with OpenMVS). Pinned model baked in.
+ARG OPC_REF=dd6a560a1d43cb709f7b220b19a436e25a889e3e
+ARG OPC_MODEL_URL=https://github.com/uav4geo/OpenPointClass/releases/download/v1.1.3/vehicles-vegetation-buildings.zip
+ARG OPC_MODEL_SHA256=258f67f02a9d2c329c61726a227281f3ac0af9dd4c274c5c893975beb9dc191a
+RUN apt-get update && apt-get install -y --no-install-recommends libtbb-dev libeigen3-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone https://github.com/uav4geo/OpenPointClass.git /opt/opc && \
+    git -C /opt/opc checkout ${OPC_REF} && \
+    cmake -S /opt/opc -B /opt/opc/build -DCMAKE_BUILD_TYPE=Release \
+      -DWITH_GBT=ON -DBUILD_PCTRAIN=OFF -DPDAL_DIR=/usr/local/lib/cmake/PDAL && \
+    cmake --build /opt/opc/build -j"$(nproc)" --target pcclassify && \
+    install -m755 /opt/opc/build/pcclassify /usr/local/bin/pcclassify && \
+    rm -rf /opt/opc && \
+    pcclassify </dev/null >/dev/null 2>&1; rc=$?; [ "$rc" -lt 126 ] || { echo "pcclassify exec failed (rc=$rc)"; exit 1; }; \
+    echo "[effigies] OpenPointClass pcclassify (${OPC_REF}) baked in"
+RUN mkdir -p /usr/local/share/effigies && \
+    python3 -c "import urllib.request; urllib.request.urlretrieve('${OPC_MODEL_URL}', '/tmp/opc_model.zip')" && \
+    echo "${OPC_MODEL_SHA256}  /tmp/opc_model.zip" | sha256sum -c - && \
+    python3 -m zipfile -e /tmp/opc_model.zip /tmp/opc_model/ && \
+    install -m644 /tmp/opc_model/model.bin /usr/local/share/effigies/opc_model.bin && \
+    rm -rf /tmp/opc_model /tmp/opc_model.zip && \
+    echo "[effigies] OpenPointClass model (vehicles-vegetation-buildings v1.1.3) baked in"
+ENV EFFIGIES_OPC_MODEL=/usr/local/share/effigies/opc_model.bin
+
 # --- CGAL 6 (header-only, pinned; used via -DCGAL_DIR below) ---
 # The one dep newer than noble: OpenMVS 2.4.0 includes CGAL/AABB_traits_3.h
 # (CGAL >=6.0); noble ships 5.6.

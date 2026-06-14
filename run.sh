@@ -41,6 +41,7 @@ declare -A OPT=(
   [skip-orthophoto]=false
   [skip-dsm]=false
   [dtm]=false
+  [classify]=false
   [orthophoto-resolution]=auto
   [ortho-fill-holes]=0.25
   [contours-interval]=0
@@ -309,20 +310,38 @@ python3 "$(dirname "$0")/helpers/georef_bridge.py" \
 #    Applies the georef transform to scene_dense.ply and writes LAZ via PDAL.
 # ---------------------------------------------------------------------------
 progress 83
-if ! python3 "$(dirname "$0")/helpers/pointcloud_to_laz.py" --work "$WORK" --ept; then
+# When classifying, skip the EPT here — the classify step rebuilds it from the
+# classified cloud so the Potree viewer can colour by class.
+if [[ "${OPT[classify]}" == "true" ]]; then EPT_FLAG=""; else EPT_FLAG="--ept"; fi
+if ! python3 "$(dirname "$0")/helpers/pointcloud_to_laz.py" --work "$WORK" $EPT_FLAG; then
   echo "[effigies] WARN: LAZ/EPT step failed; map_outputs will fall back to the raw PLY" >&2
+fi
+
+# ---------------------------------------------------------------------------
+# 5a1. Multi-class classification (OpenPointClass). Opt-in (--classify): tags the
+#      cloud with ground/vegetation/building/vehicle classes (in place), rebuilds
+#      the EPT, and writes class rasters (odm_dem/buildings.tif, canopy.tif).
+#      Self-skips when not georeferenced. Non-fatal.
+# ---------------------------------------------------------------------------
+if [[ "${OPT[classify]}" == "true" ]]; then
+  progress 86
+  if ! python3 "$(dirname "$0")/helpers/classify_cloud.py" \
+       --work "$WORK" --resolution "${OPT[orthophoto-resolution]}"; then
+    echo "[effigies] WARN: classification step failed; continuing without it" >&2
+  fi
 fi
 progress 88
 
 # ---------------------------------------------------------------------------
 # 5a2. DTM (bare earth) -> odm_dem/dtm.tif. Opt-in (--dtm): PDAL SMRF ground
 #      classification of the georeferenced LAZ, then rasterise the ground returns.
-#      Off by default (ground filter costs time; meaningless without open ground).
-#      Self-skips when not georeferenced. Non-fatal.
+#      When --classify ran, reuse the ML ground class instead of re-running SMRF.
+#      Off by default. Self-skips when not georeferenced. Non-fatal.
 # ---------------------------------------------------------------------------
 if [[ "${OPT[dtm]}" == "true" ]]; then
+  PRECLASS=""; [[ "${OPT[classify]}" == "true" ]] && PRECLASS="--pre-classified"
   if ! python3 "$(dirname "$0")/helpers/pointcloud_to_dtm.py" \
-       --work "$WORK" --resolution "${OPT[orthophoto-resolution]}"; then
+       --work "$WORK" --resolution "${OPT[orthophoto-resolution]}" $PRECLASS; then
     echo "[effigies] WARN: DTM step failed; continuing without it" >&2
   fi
 fi

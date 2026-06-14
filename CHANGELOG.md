@@ -38,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
 ### Added
+- **Multi-class point classification (`helpers/classify_cloud.py`).** Closes the
+  v0.6.0 gap to Metashape/ODM — beyond SMRF ground-only. Runs OpenDroneMap's
+  **OpenPointClass** (`pcclassify`, the same ML tool + default model ODM uses;
+  built from source for arm64 — no prebuilt binary — and the model baked in, both
+  pinned) over the georeferenced LAZ, tagging every point with an ASPRS class
+  (2 ground, 3/4/5 vegetation, 6 building, 64 vehicle) **in place** so viewers
+  colour by class; the EPT is rebuilt from the classified cloud, and class-filtered
+  surface rasters (`odm_dem/buildings.tif`, `odm_dem/canopy.tif`) are written. The
+  DTM step reuses the ML ground (class 2) instead of re-running SMRF when
+  classification ran. Opt-in via `classify`; needs a georeferenced result. AGPL
+  tool invoked as a separate process (mere aggregation, as with OpenMVS).
 - **3D Tiles export (`helpers/mesh_to_3d_tiles.py`).** OGC 3D Tiles / Cesium
   streaming LOD tileset of the textured mesh (`odm_3d_tiles/tileset.json` +
   `*.b3dm`), closing a gap to ODM — a single glTF is too heavy to stream a large

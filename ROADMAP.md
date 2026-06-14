@@ -287,10 +287,14 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       `*.b3dm`) for web/Cesium streaming of large scenes. Placement from the georef
       offset (pyproj → WGS84 lat/lon, mean-Z altitude, Z-localised OBJ — ODM's
       reference_lla contract). Opt-in (`3d-tiles`); needs a georeferenced result.
-- [ ] **Point classification beyond ground.** Metashape classifies buildings /
-      vegetation / vehicles (ML); our DTM does SMRF **ground only**. Extend the
-      PDAL stage to multi-class classification, exposing a classified LAZ and
-      class-filtered DEMs.
+- [x] **Point classification beyond ground.** `helpers/classify_cloud.py` runs
+      OpenDroneMap's **OpenPointClass** (the ML classifier ODM uses; built from
+      source for arm64 + a pinned model baked into the image) over the
+      georeferenced LAZ → ASPRS classes (ground, low/med/high vegetation, building,
+      vehicle) written into the cloud, the EPT rebuilt so Potree colours by class,
+      and class-filtered surface rasters (`odm_dem/buildings.tif`, `canopy.tif`).
+      The DTM reuses the ML ground (class 2) instead of re-running SMRF. Opt-in
+      (`classify`); needs a georeferenced result.
 - [ ] **Multi-epoch / change detection / co-registration.** ODM's `--align` and
       Metashape markers co-register datasets from different dates onto a shared
       frame; we have none. Genuinely relevant for **multi-campaign excavation
