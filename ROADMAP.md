@@ -364,11 +364,26 @@ earth surfaces / planum**, **section profiles** (homogeneous, low-contrast
 sediment bands) and **repetitive stone settings** (self-similar corners the
 matcher mis-assigns). A learned detector + matcher — ALIKED/SuperPoint features
 matched by **LightGlue** — is markedly more robust there, so this is the most
-visible single quality lever still open for close-range capture. It is a new
-front-end, **not** a flag: `--matcher lightglue` does not exist in COLMAP's CLI.
+visible single quality lever still open for close-range capture. Historically this
+was a new front-end, **not** a flag — `--matcher lightglue` did not exist in COLMAP
+**4.0.4**. **COLMAP 4.1 changes that** (native ALIKED + LightGlue via ONNX), so there
+are now **two integration paths** below.
 
-- [ ] **Learned front-end as a `--features` option** (`sift` default; `aliked` /
-      `superpoint` / `disk`). The path mirrors `hloc`: extract learned keypoints,
+- [ ] **Path A (preferred once stable) — native via a COLMAP 4.1 bump.** COLMAP **4.1**
+      (dev `4.1.0.dev0`, ~2026-03) builds **ALIKED feature extraction + LightGlue
+      matching natively via ONNX** (for SIFT *and* ALIKED), plus Python bindings for the
+      extractor/matcher. That collapses most of this item to a **version bump
+      (4.0.4 → stable 4.1) + wiring the native flags** in `sparse_colmap.sh` — no
+      hloc/torch pipeline, no manual `database.db` import. **ONNX (not torch)** is a far
+      lighter dependency, and ONNX Runtime has CPU **and** GPU execution providers
+      (CUDA / CoreML) → softens the GPU requirement. License-clean: COLMAP took **ALIKED
+      + LightGlue** (both permissive), **not** SuperPoint. **Gated on a *stable* 4.1** —
+      the repo pins known-good and forbids `latest`/dev, so this waits for the 4.1
+      release; until then Path B is the bridge. (4.1 also brings division/fisheye camera
+      models, model clustering, QEM mesh decimation, EXIF auto-rotate, ~10–15 % faster BA
+      — none required here, but they ride along with the bump.)
+- [ ] **Path B (bridge until 4.1 is stable) — hloc-style `--features` option** (`sift`
+      default; `aliked` / `superpoint` / `disk`). The path mirrors `hloc`: extract learned keypoints,
       match pairs with LightGlue, **import the matches into the existing
       `database.db`** — then the unchanged `colmap mapper` writes `sparse/0`.
       Architecturally clean because the engine contract is already "populate
@@ -389,13 +404,14 @@ front-end, **not** a flag: `--matcher lightglue` does not exist in COLMAP's CLI.
       default; `superpoint` stays gated behind an explicit opt-in and is **not**
       baked into the image. `THIRD_PARTY_LICENSES.md` updated for whatever weights
       ship (ALIKED/DISK license verified before adoption).
-- [ ] **Dependency & image cost — keep it off the default path.** The learned
-      front-end pulls in **torch** (large) and strongly prefers a **GPU** (CPU
-      LightGlue runs but is slow). It must stay opt-in and out of the lean CPU
-      image's default install, so the byte-identical SIFT path and the 1.65 GB CPU
-      image are unaffected (optional install / separate build stage; fail loud with
-      guidance if `--features aliked` is requested without the front-end present —
-      the `vocab_tree`-missing pattern in `sparse_colmap.sh`).
+- [ ] **Dependency & image cost — keep it off the default path.** *Path B* pulls in
+      **torch** (large) and strongly prefers a **GPU** (CPU LightGlue runs but is slow);
+      *Path A* (COLMAP/ONNX) **avoids torch entirely** — another reason to prefer it once
+      4.1 is stable. Either way it stays opt-in and out of the lean CPU image's default
+      install, so the byte-identical SIFT path and the 1.65 GB CPU image are unaffected
+      (optional install / separate build stage; fail loud with guidance if
+      `--features aliked` is requested without the front-end present — the
+      `vocab_tree`-missing pattern in `sparse_colmap.sh`).
 - [ ] **Validation folds into the benchmark campaign.** The gain is claimed
       exactly on the three hard surface types, so quantify it there (v0.10.0):
       registered-image count, sparse-point count and downstream completeness for
