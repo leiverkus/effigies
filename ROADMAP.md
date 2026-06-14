@@ -411,7 +411,7 @@ ceramics, statues, fine architectural detail**. **MASt3R** (Naver, the DUSt3R
 line) regresses dense pointmaps directly from image pairs and reconstructs poses +
 a sparse model *without* keypoint matching, robust where correspondence SfM has no
 signal at all. **Not a replacement** — an additional `--sparse-engine` value for
-the close-range / small-N regime where it wins. This is a different architectural
+the **low-overlap / textureless** regime where it wins. This is a different architectural
 layer from LightGlue: LightGlue lifts the SIFT *matcher* feeding `colmap mapper`;
 MASt3R replaces the whole SfM *front-end*.
 
@@ -427,21 +427,30 @@ MASt3R replaces the whole SfM *front-end*.
       only**; the unchanged Densify → Reconstruct → Refine → Texture chain consumes
       it. Scale stays the existing georef job (MASt3R is up-to-scale; the GCP/EXIF +
       offset/Umeyama machinery applies unchanged).
-- [ ] **Close-range / small-N only — not a scaling path.** Pairwise dense inference
-      + ~O(n²) global alignment: designed for tens of images, not hundreds.
-      `autoscale.sh` / split-merge tiling stay COLMAP's domain; `mast3r` is gated to
-      the small-set regime (objects / finds) and fails loud (or auto-declines) above
-      a sane image count rather than thrashing.
-- [ ] **Licensing — non-commercial, opt-in only.** DUSt3R/MASt3R code **and**
-      weights (Naver) are **CC BY-NC-SA 4.0 (non-commercial)** — the same blocker as
-      SuperPoint: not bakeable into the MIT image, never a default. Gated behind an
-      explicit opt-in with user-provided weights / license acknowledgment; nothing
-      ships in the image, so `THIRD_PARTY_LICENSES.md` is unaffected. (Verify the
-      exact license at adoption.)
+- [ ] **Cost, not a scaling wall (corrected 2026-06-14).** The earlier "quadratic,
+      small-N-only" framing is **outdated**: MASt3R-**SfM** (arXiv 2409.19152) uses
+      foundation-model **image retrieval** to bring the scene graph to **~linear** and
+      handles up to **~1000 images**. The real limit is **cost**, not image count — it
+      is GPU-heavy and slow (≈ 200 images / 27 min on GPU vs COLMAP), and those are
+      benchmark conditions, not robustness on arbitrary excavation data. So `mast3r` is
+      gated by cost + the blockers below (licence, maturity), **not** by N;
+      `autoscale.sh` / split-merge tiling stay COLMAP's domain regardless.
+- [ ] **Licensing — the hard blocker (verified 2026-06-14).** DUSt3R/MASt3R code
+      **and** weights (Naver) are **CC BY-NC-SA 4.0 (non-commercial)**, and there is
+      **no public commercial-licence option** — commercial use needs a direct agreement
+      with Naver. The **weights are even more encumbered than the code**: using a
+      checkpoint also means agreeing to the licences of every training dataset and base
+      checkpoint, and the **mapfree dataset licence in particular is very restrictive**.
+      So: never bakeable into the MIT image, never a default — opt-in with user-provided
+      weights + licence acknowledgment only; `THIRD_PARTY_LICENSES.md` unaffected because
+      nothing ships. This (with maturity) is the real reason `mast3r` stays opt-in —
+      not scaling.
 - [ ] **GPU-only validation; maturity risk.** ViT backbone, ~2 GB weights, CPU
-      impractical → validation parked like the CUDA image. MASt3R-SfM is recent
-      research; robustness / reproducibility vs COLMAP on production object sets is
-      unproven — this is the higher-risk, Priorität-2 bet, to be quantified on
+      impractical → validation parked like the CUDA image. MASt3R-SfM (Sept 2024) is
+      recent research and the line is moving fast (e.g. the feed-forward **Light3R-SfM**,
+      Jan 2025); robustness / reproducibility vs COLMAP on production object sets is
+      unproven, and a heavy, evolving neural model sits in tension with Effigies'
+      reproducible-reference identity. Higher-risk, Priorität-2 bet, to be quantified on
       artefact / ceramic / statue datasets in the v0.10.0 campaign.
 
 ## v0.9.0 — Semantic field (`--semantic`) *(planned — mechanism only; the fine-class model is a Structura deliverable; pushes the benchmark campaign to v0.10.0)*
