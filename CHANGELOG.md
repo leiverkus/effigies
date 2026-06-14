@@ -37,6 +37,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of distro roulette. The only vendored header remains CGAL 6.0.1
   (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
+### Removed
+- **The non-functional `--sparse-engine opensfm` path.** Verifying the
+  `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names (ROADMAP item) revealed the
+  OpenSfM path was advertised but could never run: OpenMVS **never shipped an
+  `InterfaceOpenSfM`** (its v2.4.0 interface apps are InterfaceCOLMAP / MVSNet /
+  Metashape / OpenMVG / Polycam; OpenSfM converts via its own `export_openmvs`),
+  **and** OpenSfM itself is not installed in either image — so `run.sh` and
+  `pipeline/sparse_opensfm.sh` both called missing binaries. Selecting it crashed
+  with "command not found", violating the no-fabricated-behaviour rule. Removed:
+  the `opensfm` value from the `sparse-engine` option, `pipeline/sparse_opensfm.sh`,
+  the `run.sh` OpenSfM/`InterfaceOpenSfM` branch (now fails loudly on any non-colmap
+  engine), and the unreachable OpenSfM identity-transform branch in `georef_bridge.py`
+  (it wrote `source=opensfm` + an identity matrix claiming success). COLMAP is the
+  only SfM front-end; it already covers aerial/GPS sets (EXIF/GCP georef +
+  GCP-constrained BA + split-merge tiling). A *real* OpenSfM backend (via
+  `opensfm export_openmvs`) for very large GPS-only nadir missions is ROADMAP-parked.
+
+### Changed
+- **`InterfaceCOLMAP` resolved through a fail-loud alias lookup (`pipeline/openmvs_bin.sh`).**
+  Both `run.sh` and `pipeline/tile.sh` now resolve the OpenMVS COLMAP-interface binary
+  via `resolve_openmvs_bin` (tries `InterfaceCOLMAP`, `InterfaceColmap`; aborts with a
+  clear FATAL if none is on PATH) instead of hard-coding the name, so a future OpenMVS
+  rename/relocation fails clearly rather than as a raw "command not found". The
+  Dockerfiles already build-verify `InterfaceCOLMAP` with `command -v`.
+
 ### Added
 - **Orthomosaic finishing — radiometric colour balancing (`helpers/ortho_finish.py`).**
   Closes the colour-balance half of the v0.6.0 ortho-finishing item. The single-mesh

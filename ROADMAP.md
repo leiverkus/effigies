@@ -59,9 +59,26 @@ Made the image trustworthy and the output cloud web-ready.
       `NODEODM_REF` to the fixed commit and remove the build-time sed. The repo
       policy stays "no NodeODM patches" — this is a pinned, documented exception
       for an upstream crash.
-- [ ] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
-      builds and handle the variants.
 - [ ] Slim the image with a multi-stage (devel build → runtime copy) layout.
+- [x] Verify `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names across OpenMVS
+      builds and handle the variants. **Done.** Verified against the pinned source:
+      OpenMVS v2.4.0 ships `InterfaceCOLMAP` (build-verified in both Dockerfiles)
+      but **no `InterfaceOpenSfM`** — that app has never existed (the apps are
+      InterfaceCOLMAP / InterfaceMVSNet / InterfaceMetashape / InterfaceOpenMVG /
+      InterfacePolycam; OpenSfM converts to `.mvs` via its own `export_openmvs`).
+      The `--sparse-engine opensfm` path was doubly dead (OpenSfM not installed in
+      the image; `InterfaceOpenSfM` nonexistent) yet advertised, so it was removed
+      (see below). `InterfaceCOLMAP` is now resolved through
+      `pipeline/openmvs_bin.sh` (known-alias lookup via `command -v`, fail-loud on
+      mismatch) in `run.sh` and `tile.sh`, so a future OpenMVS rename fails clearly
+      instead of with a raw "command not found".
+- [ ] **OpenSfM sparse backend (real).** COLMAP already covers aerial/GPS sets
+      (EXIF/GCP georef + GCP-constrained BA + split-merge tiling). OpenSfM's only
+      distinctive win is very large GPS-only nadir/corridor missions (its
+      GPS-prior incremental SfM drifts less and is CPU-native). If such datasets
+      materialise, add it for real: install OpenSfM in both images and convert via
+      `opensfm export_openmvs` (NOT the nonexistent `InterfaceOpenSfM`), then
+      re-add `opensfm` to the `sparse-engine` option.
 
 ## COLMAP 4 migration *(done — folded into v0.2.0)*
 

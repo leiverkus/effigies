@@ -143,6 +143,8 @@ effigies_autoscale "$N_IMAGES"
 # WebODM progress bar (UDP to NodeODM); see pipeline/progress.sh
 export EFFIGIES_TASK_UUID="$PROJECT_NAME"
 source "$(dirname "$0")/pipeline/progress.sh"
+# OpenMVS binary-name resolver (handles InterfaceCOLMAP naming variants).
+source "$(dirname "$0")/pipeline/openmvs_bin.sh"
 progress 1
 
 echo "[effigies] project: $PROJ ($N_IMAGES images)"
@@ -206,32 +208,35 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Sparse reconstruction  ->  produces $WORK/sparse  (+ scene.mvs)
 # ---------------------------------------------------------------------------
-# Decide whether to split the dense chain into spatial tiles (large sets exceed
-# the single-machine RAM wall in Densify/ReconstructMesh). Only the COLMAP path
-# tiles (OpenSfM is already geo-aligned and used for small/aerial sets); the
-# decision needs the global dense/sparse, so it runs after sparse_colmap.sh.
-TILE_N=0
-if [[ "${OPT[sparse-engine]}" == "colmap" ]]; then
-  bash "$(dirname "$0")/pipeline/sparse_colmap.sh" \
-       "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG" "${OPT[mapper]}" \
-       "${OPT[gcp]}" "${OPT[crs]}" "$GCP_BA"
-  TILE_N=$(python3 "$(dirname "$0")/helpers/tiling.py" --decide --work "$WORK" \
-             --tiles "${OPT[tiles]}" --budget "${OPT[tile-budget]}" \
-             --res-level "${OPT[densify-resolution-level]}" 2>/dev/null || echo 0)
-  if [[ "$TILE_N" -le 1 ]]; then
-    # Single-machine path: build the global OpenMVS scene. InterfaceCOLMAP reads
-    # the undistorted dense workspace (dense/sparse + dense/images) from
-    # image_undistorter — not the raw sparse/0. --image-folder is recorded relative
-    # to -w ($WORK) as "dense/images/...", which the dense stage (also -w $WORK)
-    # resolves; without it DensifyPointCloud looks under $WORK/images and fails.
-    InterfaceCOLMAP -i "$WORK/dense" --image-folder "$WORK/dense/images/" \
-                    -o "$WORK/scene.mvs" -w "$WORK"
-  fi
-  progress 44
-else
-  bash "$(dirname "$0")/pipeline/sparse_opensfm.sh" "$IMAGES" "$WORK"
-  InterfaceOpenSfM -i "$WORK/opensfm" -o "$WORK/scene.mvs" -w "$WORK"
+# COLMAP is the only supported SfM front-end. OpenSfM was advertised but never
+# worked (OpenMVS ships no InterfaceOpenSfM, and OpenSfM itself is not in the
+# image); a real OpenSfM path would go via `opensfm export_openmvs` — parked on
+# the ROADMAP. Fail loudly rather than fabricate if an unknown engine is forced.
+# The split-merge tiling decision (large sets exceed the single-machine RAM wall
+# in Densify/ReconstructMesh) needs the global dense/sparse, so it runs after
+# sparse_colmap.sh.
+if [[ "${OPT[sparse-engine]}" != "colmap" ]]; then
+  echo "[effigies] FATAL: sparse-engine='${OPT[sparse-engine]}' is not supported; only 'colmap' is available" >&2
+  exit 1
 fi
+TILE_N=0
+bash "$(dirname "$0")/pipeline/sparse_colmap.sh" \
+     "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG" "${OPT[mapper]}" \
+     "${OPT[gcp]}" "${OPT[crs]}" "$GCP_BA"
+TILE_N=$(python3 "$(dirname "$0")/helpers/tiling.py" --decide --work "$WORK" \
+           --tiles "${OPT[tiles]}" --budget "${OPT[tile-budget]}" \
+           --res-level "${OPT[densify-resolution-level]}" 2>/dev/null || echo 0)
+if [[ "$TILE_N" -le 1 ]]; then
+  # Single-machine path: build the global OpenMVS scene. InterfaceCOLMAP reads
+  # the undistorted dense workspace (dense/sparse + dense/images) from
+  # image_undistorter — not the raw sparse/0. --image-folder is recorded relative
+  # to -w ($WORK) as "dense/images/...", which the dense stage (also -w $WORK)
+  # resolves; without it DensifyPointCloud looks under $WORK/images and fails.
+  IFACE_COLMAP="$(resolve_openmvs_bin InterfaceCOLMAP InterfaceColmap)"
+  "$IFACE_COLMAP" -i "$WORK/dense" --image-folder "$WORK/dense/images/" \
+                  -o "$WORK/scene.mvs" -w "$WORK"
+fi
+progress 44
 
 # ---------------------------------------------------------------------------
 # 3. OpenMVS dense + the steps ODM skips (ReconstructMesh / RefineMesh)

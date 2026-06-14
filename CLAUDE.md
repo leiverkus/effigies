@@ -116,4 +116,9 @@ Run `./scripts/test.sh`.
   packages may lack `RefineMesh`.
 - Point cloud is passed through as `.ply`; convert to `.laz` + EPT (PDAL) for the
   Potree viewer.
-- `InterfaceCOLMAP`/`InterfaceOpenSfM` binary names vary by OpenMVS build — verify.
+- OpenMVS interface binary names: verified against pinned v2.4.0 — `InterfaceCOLMAP`
+  exists (build-verified), `InterfaceOpenSfM` never has (OpenMVS has no OpenSfM
+  reader; use `opensfm export_openmvs`). `InterfaceCOLMAP` is resolved via
+  `pipeline/openmvs_bin.sh` (alias lookup, fail-loud) so a future rename is caught.
+  The non-functional `--sparse-engine opensfm` path was removed; COLMAP is the only
+  SfM front-end. A real OpenSfM backend is ROADMAP-parked for large GPS-only sets.

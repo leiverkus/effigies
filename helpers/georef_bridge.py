@@ -571,13 +571,6 @@ def main():
                "t": [0, 0, 0], "offset": [0, 0, 0], "crs": "local"})
         return
 
-    # ---- OpenSfM already geo-aligned --------------------------------------
-    if args.sparse_engine == "opensfm" and mode in ("auto", "exif", "gcp"):
-        print("[georef] OpenSfM path: reconstruction already geo-aligned")
-        write({"source": "opensfm", "s": 1.0, "R": np.eye(3).tolist(),
-               "t": [0, 0, 0], "offset": [0, 0, 0], "crs": args.crs})
-        return
-
     model_dir = _find_colmap_model(args.work)
     if model_dir is None:
         print("[georef] no COLMAP text model found; cannot georeference.", file=sys.stderr)

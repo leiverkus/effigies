@@ -11,6 +11,9 @@ set -euo pipefail
 WORK="$1"; TILE_ID="$2"; shift 2
 HELPERS="$(cd "$(dirname "$0")/../helpers" && pwd)"
 TILE="$WORK/tiles/$TILE_ID"
+# OpenMVS binary-name resolver (InterfaceCOLMAP naming variants); fail loudly.
+source "$(dirname "$0")/openmvs_bin.sh"
+IFACE_COLMAP="$(resolve_openmvs_bin InterfaceCOLMAP InterfaceColmap)"
 
 mkdir -p "$TILE/dense/sparse"
 # symlink the shared undistorted images (one global undistort; tiles never copy)
@@ -20,11 +23,11 @@ echo "[tile] $TILE_ID: writing subset COLMAP model"
 python3 "$HELPERS/tiling.py" --subset --work "$WORK" --tile "$TILE_ID" \
         --manifest "$WORK/tiles_manifest.json" --out "$TILE/dense/sparse"
 
-echo "[tile] $TILE_ID: InterfaceCOLMAP (subset model, shared image folder)"
-InterfaceCOLMAP -i "$TILE/dense" --image-folder "$TILE/dense/images/" \
+echo "[tile] $TILE_ID: $IFACE_COLMAP (subset model, shared image folder)"
+"$IFACE_COLMAP" -i "$TILE/dense" --image-folder "$TILE/dense/images/" \
                 -o "$TILE/scene.mvs" -w "$TILE"
 if [[ ! -f "$TILE/scene.mvs" ]]; then
-  echo "[tile] $TILE_ID: InterfaceCOLMAP produced no scene.mvs" >&2
+  echo "[tile] $TILE_ID: $IFACE_COLMAP produced no scene.mvs" >&2
   exit 1
 fi
 

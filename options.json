@@ -17,11 +17,10 @@
     "title": "Sparse Engine",
     "value": "colmap",
     "domain": [
-      "colmap",
-      "opensfm"
+      "colmap"
     ],
     "type": "enum",
-    "help": "Structure-from-Motion backend for the sparse reconstruction. 'colmap' is recommended for close-range / convergent imagery (objects, architecture); 'opensfm' for GPS-tagged aerial sets. Default: %(default)s"
+    "help": "Structure-from-Motion backend for the sparse reconstruction. 'colmap' handles both close-range / convergent imagery (objects, architecture) and aerial / GPS sets (with EXIF-GPS or GCP georeferencing and split-merge tiling for large counts). An OpenSfM backend for very large GPS-only nadir missions is planned but not yet available. Default: %(default)s"
   },
   {
     "name": "matcher",
