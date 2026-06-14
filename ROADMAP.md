@@ -228,7 +228,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       (BibTeX in `docs/references.bib`). The actual comparison **runs** against
       stock ODM / Metashape / RealityScan are the **v0.7.0** campaign below.
 
-## v0.5.0 — Scaling to large image sets (split-merge tiling)
+## v0.5.0 — Scaling to large image sets (split-merge tiling) *(released — 2026-06-14)*
 
 Single-machine reconstruction has two hard walls as image count grows toward
 300 / 600 / 900+: the COLMAP matcher (`exhaustive` is O(n²) — dead above ~150)
@@ -297,7 +297,7 @@ RealityScan out-of-core **components**, and ODM's own **split-merge**
       the same rationale as `cpu-threads` for COLMAP SIFT — but explicitly does *not*
       touch the Delaunay wall.
 
-## v0.6.0 — Capability parity *(buildable gaps vs ODM / Metashape / RealityCapture)*
+## v0.6.0 — Capability parity *(released — 2026-06-14; buildable gaps vs ODM / Metashape / RealityCapture)*
 
 Real capability gaps surfaced by a head-to-head review against the competition —
 features they ship and we don't (yet), but that are buildable. Distinct from the
