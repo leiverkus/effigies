@@ -19,6 +19,14 @@ sys.path.insert(0, os.path.join(HERE, "..", "helpers"))
 import ortho_finish as of  # noqa: E402
 
 
+def _have_scipy():
+    try:
+        import scipy.ndimage  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _full_alpha(h, w):
     return np.full((h, w), 255, np.uint8)
 
@@ -128,11 +136,18 @@ def test_finish_records_steps_and_metric():
 
 
 if __name__ == "__main__":
+    # white-balance / auto-contrast are pure numpy and always run.
     test_white_balance_removes_cast()
     test_white_balance_neutral_is_noop()
     test_auto_contrast_stretches_and_keeps_nodata()
-    test_local_flatten_keeps_albedo_drops_gradient()
-    test_tonal_variation_high_on_gradient_low_on_flat()
-    test_finish_default_is_identity()
-    test_finish_records_steps_and_metric()
-    print("\nall ortho_finish tests passed")
+    # the diagnostic, local flatten and finish() use scipy.ndimage (present in
+    # the Effigies image); skip when scipy is unavailable, like the other tests.
+    if _have_scipy():
+        test_local_flatten_keeps_albedo_drops_gradient()
+        test_tonal_variation_high_on_gradient_low_on_flat()
+        test_finish_default_is_identity()
+        test_finish_records_steps_and_metric()
+        print("\nall ortho_finish tests passed")
+    else:
+        print("skip ortho_finish scipy tests (diagnostic/flatten/finish — "
+              "needs scipy, present in the Effigies image)")
