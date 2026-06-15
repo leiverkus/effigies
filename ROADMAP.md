@@ -413,14 +413,17 @@ propagate — and **never bakes an archaeological-material model into the MIT im
       (majority + ASPRS→v0 + write round-trip) and image-validated end-to-end. The fine
       material classes below remain the trained-model step.
 - [ ] **Fine archaeological classes = bring-your-own model (Structura's
-      deliverable).** Stone / earth / paving / ceramic / mortar is a trained **2D
+      deliverable).** Stone / earth / ceramic / mortar is a trained **2D
       image** semantic model (labels are cheap in 2D; foundation-model leverage),
       run per-view and **fused onto the mesh via the existing multi-view blend**
       (`texture_blend.py`) to give one class per 3D point — multi-view-consistent,
       and it sees the **vertical / occluded surfaces (profiles)** the nadir ortho
       loses. The model is a **versioned weights asset** loaded like the vocab tree /
       OpenPointClass model, never baked in (likely non-commercial research weights —
-      same opt-in pattern as the SuperPoint / MASt3R items).
+      same opt-in pattern as the SuperPoint / MASt3R items). **Paving is not a field
+      class** — it is the same *material* as a single stone and differs only in
+      *arrangement*; Structura derives it in the object layer (a configuration of
+      stone instances), so the field stays material-only.
 - [x] **Multi-epoch propagation (the temporal kicker) — shipped (v0).** Because
       change detection re-lands this epoch into the reference frame, this epoch's
       semantic ortho is already co-registered with the reference epoch's, so
