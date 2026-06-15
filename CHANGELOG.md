@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-15
+
 ### Added
 - **Semantic orthophoto v0 (`helpers/semantic_ortho.py`, opt-in `--semantic`).** The
   geometry-derived first increment of the semantic field (ROADMAP v0.7.0): it
@@ -90,84 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set generously (`max(30·cyl_radius, 3 m)`). Found by the new end-to-end smoke
   (`scripts/smoke_change_detect.py`), which the fix takes from M3C2 0 %→significant on a
   0.4 m block.
-- **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
-  The multi-view texturing step had three consumers that scaled with the number of
-  views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at
-  8 M faces × 900 views), all source images resident (~32 GB), and all depth maps
-  at once. Two changes remove all three: **(1) streaming top-K view selection** —
-  views are streamed in one pass, each depth map rendered on the fly and discarded,
-  a running top-K (`[faces × K]`, ~256 MB, flat in the view count) replacing the
-  matrix; **(2) view-major bake** — each atlas page is rasterised into a
-  per-(face,texel) row table and sampled view-by-view, so at most **one source
-  image is resident at a time** (read ≤ once per page). Peak memory is now governed
-  by mesh + atlas size only. Output is preserved: selection is bit-for-bit
-  identical to the old argsort path; the view-major bake keeps the original
-  two-level accumulation (per-(face,texel) weighted blend, then equal per-pixel
-  averaging across overlapping faces) so it matches the reference to within float
-  rounding (atol 1 on uint8 — verified bit-exact on the golden scene). This
-  completes the ROADMAP v0.5.0 blend-streaming precondition for split-merge tiling.
-  Incidentally robust to fewer-than-K views (the old path crashed the bake there).
-  New `tests/test_blend.py` (kernel-equivalence + golden) and an `EFFIGIES_BLEND_RSS`
-  peak-RSS probe; the large reduced-resolution high-count RSS run is a documented
-  manual step. No behaviour change (skip conditions, coverage %, outputs identical).
-- **Base image: Ubuntu 22.04 → 24.04 (noble), CUDA 12.4.1 → 12.8.1.** No legacy
-  base for new software: 22.04's standard support ends in under a year and forced
-  workarounds (node v12 too old for obj2gltf, nanoflann header overlay, ancient
-  OpenCV). On noble the nanoflann vendoring is gone (1.5.4 in apt), node is 18,
-  OIIO/ceres/suitesparse are current. Noble dropped PDAL from its repos, so PDAL
-  is now **built from pinned source** (2.10.1) like COLMAP/OpenMVS — pin + verify
-  instead of distro roulette. The only vendored header remains CGAL 6.0.1
-  (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 
-### Removed
-- **The non-functional `--sparse-engine opensfm` path.** Verifying the
-  `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names (ROADMAP item) revealed the
-  OpenSfM path was advertised but could never run: OpenMVS **never shipped an
-  `InterfaceOpenSfM`** (its v2.4.0 interface apps are InterfaceCOLMAP / MVSNet /
-  Metashape / OpenMVG / Polycam; OpenSfM converts via its own `export_openmvs`),
-  **and** OpenSfM itself is not installed in either image — so `run.sh` and
-  `pipeline/sparse_opensfm.sh` both called missing binaries. Selecting it crashed
-  with "command not found", violating the no-fabricated-behaviour rule. Removed:
-  the `opensfm` value from the `sparse-engine` option, `pipeline/sparse_opensfm.sh`,
-  the `run.sh` OpenSfM/`InterfaceOpenSfM` branch (now fails loudly on any non-colmap
-  engine), and the unreachable OpenSfM identity-transform branch in `georef_bridge.py`
-  (it wrote `source=opensfm` + an identity matrix claiming success). COLMAP is the
-  only SfM front-end; it already covers aerial/GPS sets (EXIF/GCP georef +
-  GCP-constrained BA + split-merge tiling). A *real* OpenSfM backend (via
-  `opensfm export_openmvs`) for very large GPS-only nadir missions is ROADMAP-parked.
-
-### Changed
-- **Multi-stage Docker build (builder → slim runtime) — CPU image 3.24 GB → 1.65 GB (−49 %).**
-  Both `Dockerfile` and `Dockerfile.cpu` are now two-stage. The `engine` builder is
-  unchanged (full toolchain + `-dev` headers, compiles COLMAP/OpenMVS/PDAL/entwine/
-  pycolmap/py4dgeo, plus Obj2Tiles/OpenPointClass in both images); a new `runtime` stage
-  starts from a clean base (`ubuntu:24.04` for CPU, `nvidia/cuda:…-runtime` instead
-  of `-devel` for GPU), installs **only the runtime shared libraries**, and copies
-  the built artifacts (`/usr/local`, the pip Python packages, `/opt/NodeODM`). The
-  runtime apt set was derived empirically with `readelf -d` NEEDED over every engine
-  binary (apt then pulls the GDAL/OpenCV transitive tree); the missing-from-runtime
-  pure-Python deps (`six`/`requests`/`setuptools`, apt-provided in the builder) were
-  added back. The runtime stage **exercises every binary** (`--help` + Python
-  imports + `node`) so a missing `.so` fails the *build*, not a user task, and sets
-  `WORKDIR /opt/NodeODM` (NodeODM reads `config-default.json` relative to cwd).
-  Verified on this host for the CPU image: build gate green, `scripts/test.sh` passes
-  *inside* the image, NodeODM serves `/info` + `/options`. The CUDA image mirrors the
-  structure (lock-step) and passes `docker build --check`; its CUDA runtime-exercise
-  is deferred to a GPU host.
-- **GPU production image: Obj2Tiles + OpenPointClass restored (lock-step with the CPU image).**
-  The CUDA `Dockerfile` previously omitted both tools, so `--3d-tiles` (Obj2Tiles) and
-  `--classify` (OpenPointClass / `pcclassify`) silently failed on the *production* image
-  while the CPU test image had them. Both build blocks are now in the `engine` stage,
-  with their runtime libs (`libtbb12`, `libicu74`), the baked OPC model + `EFFIGIES_OPC_MODEL`
-  env, and `pcclassify` / `Obj2Tiles` added to the runtime exercise gate — matching
-  `Dockerfile.cpu`. Lints clean (`docker build --check`); full CUDA build/runtime
-  verification is on a GPU host.
-- **`InterfaceCOLMAP` resolved through a fail-loud alias lookup (`pipeline/openmvs_bin.sh`).**
-  Both `run.sh` and `pipeline/tile.sh` now resolve the OpenMVS COLMAP-interface binary
-  via `resolve_openmvs_bin` (tries `InterfaceCOLMAP`, `InterfaceColmap`; aborts with a
-  clear FATAL if none is on PATH) instead of hard-coding the name, so a future OpenMVS
-  rename/relocation fails clearly rather than as a raw "command not found". The
-  Dockerfiles already build-verify `InterfaceCOLMAP` with `command -v`.
+## [0.6.0] - 2026-06-14
 
 ### Added
 - **Orthomosaic finishing — radiometric colour balancing (`helpers/ortho_finish.py`).**
@@ -242,6 +168,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contours), else the DSM, logged. Opt-in via `contours-interval` (metres, 0 =
   off); self-skips for non-georeferenced results; nodata is excluded. Verified on
   real drone data (1805 terrain lines at 0.5 m from the DTM).
+
+### Changed
+- **Multi-stage Docker build (builder → slim runtime) — CPU image 3.24 GB → 1.65 GB (−49 %).**
+  Both `Dockerfile` and `Dockerfile.cpu` are now two-stage. The `engine` builder is
+  unchanged (full toolchain + `-dev` headers, compiles COLMAP/OpenMVS/PDAL/entwine/
+  pycolmap/py4dgeo, plus Obj2Tiles/OpenPointClass in both images); a new `runtime` stage
+  starts from a clean base (`ubuntu:24.04` for CPU, `nvidia/cuda:…-runtime` instead
+  of `-devel` for GPU), installs **only the runtime shared libraries**, and copies
+  the built artifacts (`/usr/local`, the pip Python packages, `/opt/NodeODM`). The
+  runtime apt set was derived empirically with `readelf -d` NEEDED over every engine
+  binary (apt then pulls the GDAL/OpenCV transitive tree); the missing-from-runtime
+  pure-Python deps (`six`/`requests`/`setuptools`, apt-provided in the builder) were
+  added back. The runtime stage **exercises every binary** (`--help` + Python
+  imports + `node`) so a missing `.so` fails the *build*, not a user task, and sets
+  `WORKDIR /opt/NodeODM` (NodeODM reads `config-default.json` relative to cwd).
+  Verified on this host for the CPU image: build gate green, `scripts/test.sh` passes
+  *inside* the image, NodeODM serves `/info` + `/options`. The CUDA image mirrors the
+  structure (lock-step) and passes `docker build --check`; its CUDA runtime-exercise
+  is deferred to a GPU host.
+- **GPU production image: Obj2Tiles + OpenPointClass restored (lock-step with the CPU image).**
+  The CUDA `Dockerfile` previously omitted both tools, so `--3d-tiles` (Obj2Tiles) and
+  `--classify` (OpenPointClass / `pcclassify`) silently failed on the *production* image
+  while the CPU test image had them. Both build blocks are now in the `engine` stage,
+  with their runtime libs (`libtbb12`, `libicu74`), the baked OPC model + `EFFIGIES_OPC_MODEL`
+  env, and `pcclassify` / `Obj2Tiles` added to the runtime exercise gate — matching
+  `Dockerfile.cpu`. Lints clean (`docker build --check`); full CUDA build/runtime
+  verification is on a GPU host.
+- **`InterfaceCOLMAP` resolved through a fail-loud alias lookup (`pipeline/openmvs_bin.sh`).**
+  Both `run.sh` and `pipeline/tile.sh` now resolve the OpenMVS COLMAP-interface binary
+  via `resolve_openmvs_bin` (tries `InterfaceCOLMAP`, `InterfaceColmap`; aborts with a
+  clear FATAL if none is on PATH) instead of hard-coding the name, so a future OpenMVS
+  rename/relocation fails clearly rather than as a raw "command not found". The
+  Dockerfiles already build-verify `InterfaceCOLMAP` with `command -v`.
+
+### Removed
+- **The non-functional `--sparse-engine opensfm` path.** Verifying the
+  `InterfaceCOLMAP` / `InterfaceOpenSfM` binary names (ROADMAP item) revealed the
+  OpenSfM path was advertised but could never run: OpenMVS **never shipped an
+  `InterfaceOpenSfM`** (its v2.4.0 interface apps are InterfaceCOLMAP / MVSNet /
+  Metashape / OpenMVG / Polycam; OpenSfM converts via its own `export_openmvs`),
+  **and** OpenSfM itself is not installed in either image — so `run.sh` and
+  `pipeline/sparse_opensfm.sh` both called missing binaries. Selecting it crashed
+  with "command not found", violating the no-fabricated-behaviour rule. Removed:
+  the `opensfm` value from the `sparse-engine` option, `pipeline/sparse_opensfm.sh`,
+  the `run.sh` OpenSfM/`InterfaceOpenSfM` branch (now fails loudly on any non-colmap
+  engine), and the unreachable OpenSfM identity-transform branch in `georef_bridge.py`
+  (it wrote `source=opensfm` + an identity matrix claiming success). COLMAP is the
+  only SfM front-end; it already covers aerial/GPS sets (EXIF/GCP georef +
+  GCP-constrained BA + split-merge tiling). A *real* OpenSfM backend (via
+  `opensfm export_openmvs`) for very large GPS-only nadir missions is ROADMAP-parked.
+
+## [0.5.0] - 2026-06-13
+
+### Added
 - **OpenMVS dense thread cap (`dense-max-threads`, default 0 = all cores).** Caps the
   worker threads of DensifyPointCloud / ReconstructMesh / RefineMesh / TextureMesh
   (`--max-threads`) to bound the **densify/refine peak** RAM on many-core but
@@ -364,6 +344,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contract is static (no engine callback at form time), so the only honest place
   to adapt is the engine itself, transparently and overridably. Thresholds are
   env-tunable (`EFFIGIES_AUTOSCALE_MATCH`, `EFFIGIES_AUTOSCALE_LARGE`).
+
+### Changed
+- **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
+  The multi-view texturing step had three consumers that scaled with the number of
+  views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at
+  8 M faces × 900 views), all source images resident (~32 GB), and all depth maps
+  at once. Two changes remove all three: **(1) streaming top-K view selection** —
+  views are streamed in one pass, each depth map rendered on the fly and discarded,
+  a running top-K (`[faces × K]`, ~256 MB, flat in the view count) replacing the
+  matrix; **(2) view-major bake** — each atlas page is rasterised into a
+  per-(face,texel) row table and sampled view-by-view, so at most **one source
+  image is resident at a time** (read ≤ once per page). Peak memory is now governed
+  by mesh + atlas size only. Output is preserved: selection is bit-for-bit
+  identical to the old argsort path; the view-major bake keeps the original
+  two-level accumulation (per-(face,texel) weighted blend, then equal per-pixel
+  averaging across overlapping faces) so it matches the reference to within float
+  rounding (atol 1 on uint8 — verified bit-exact on the golden scene). This
+  completes the ROADMAP v0.5.0 blend-streaming precondition for split-merge tiling.
+  Incidentally robust to fewer-than-K views (the old path crashed the bake there).
+  New `tests/test_blend.py` (kernel-equivalence + golden) and an `EFFIGIES_BLEND_RSS`
+  peak-RSS probe; the large reduced-resolution high-count RSS run is a documented
+  manual step. No behaviour change (skip conditions, coverage %, outputs identical).
+
+## [0.3.0] - 2026-06-12
+
+### Added
 - **Multi-view GCP triangulation with full lens-distortion handling
   (`helpers/georef_bridge.py`).** A GCP's local position is no longer the
   nearest observed sparse point to the marked pixel (a heuristic limited by
@@ -395,8 +401,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   photometrically consistent photos. On the drone test set the estimated spread
   was 0.59–1.77 (≈3× brightness) across 70 images. New option
   `texture-color-harmonize` (on by default).
-
-### Added
 - **Node-side EPT point-cloud tileset (Entwine).** The node now ships the same
   Entwine fork+commit ODM pins and builds `entwine_pointcloud/` itself, so the
   Potree viewer gets its tileset directly from the node instead of WebODM
@@ -405,8 +409,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ept.json` directory layout the viewer reads. NodeODM's "PotreeConverter is not
   installed" notice refers to the legacy potree format and is irrelevant once EPT
   is present.)
-
-### Added
 - **Workdir auto-cleanup after each run (`keep-workdir` to disable).** A full-res
   run leaves ~6-8 GB of intermediates (depth maps, undistorted images, mesh
   snapshots) in the task workdir; with the persistent task volume that exhausted
@@ -473,8 +475,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON keyed to ODM's option names (useless against Effigies), edited in a raw
   admin dialog. A WebODM preset for Effigies now only needs
   `[{"name": "profile", "value": "drone-3d"}]`.
+- **All engine tuning parameters exposed as task options** — nothing hidden:
+  `refine-max-face-area` (RefineMesh subdivision threshold, was hardcoded 16),
+  `refine-gradient-step` (refinement step size, was hardcoded 25.05),
+  `cpu-threads` and `cpu-match-block` (the CPU stability caps, previously
+  env-only `EFFIGIES_CPU_THREADS`/`EFFIGIES_CPU_MATCH_BLOCK`; an explicitly set
+  env var still wins as an ops override).
+- **Full ODM output parity.** Effigies now fills every WebODM download slot the
+  stock ODM nodes do — orthophoto, point cloud, textured model, **glTF model**,
+  **camera parameters** (`cameras.json`), **camera shots** (`shots.geojson`), and a
+  **quality report** (`odm_report/report.pdf`, stats table + orthophoto thumbnail
+  via reportlab). One node, every product.
+- **glTF model (`helpers/mesh_to_gltf.py`) — "Struktur-Modell (glTF)".** A
+  self-contained binary glTF (`odm_texturing/odm_textured_model_geo.glb`) of the
+  refined textured mesh, with the texture atlas embedded. Written by a dependency-
+  free Python GLB writer (the image's node is too old for current obj2gltf), so
+  the .glb matches the .obj asset.
+- **Camera assets (`helpers/camera_exports.py`) — ODM-parity downloads.**
+  `cameras.json` (intrinsics, OpenSfM-normalised, in the project root) and
+  `odm_report/shots.geojson` (one WGS84 point per image — camera positions on the
+  WebODM map, with filename / camera / focal / pose properties), derived from the
+  COLMAP model + the georef similarity. `shots.geojson` is skipped for a local-only
+  result; `cameras.json` is always written.
+- **Orthophoto output (`helpers/orthophoto.py`).** Effigies now produces a
+  georeferenced orthophoto (`odm_orthophoto/odm_orthophoto.tif`, RGB + alpha),
+  nadir-rasterised from the refined textured mesh — so it inherits the RefineMesh
+  detail instead of being interpolated from a sparse DSM. z-buffered (topmost
+  surface wins), texture-sampled, written via GDAL in the model's CRS. New options
+  `orthophoto` (on by default) and `orthophoto-resolution` (cm/px, `auto` ≈ 4k px
+  wide). Skipped automatically for local-frame / un-georeferenced results. Effigies
+  is now a complete engine — 3D mesh, point cloud, AND orthophoto — in one node;
+  no need to also run stock ODM for the 2D product. (Adds the `python3-gdal`
+  dependency.)
+- **Mesh-to-reference distance in `benchmark.sh`.** `compare` now accepts an OBJ
+  mesh on either side: it area-weighted surface-samples the mesh to a point cloud
+  (deterministic) before the existing ICP + nearest-neighbour distance, so a
+  textured mesh can be measured against a reference scan directly — completing the
+  benchmark accuracy core (cloud-to-reference, mesh-to-reference, check-point RMSE).
 
 ### Changed
+- **Base image: Ubuntu 22.04 → 24.04 (noble), CUDA 12.4.1 → 12.8.1.** No legacy
+  base for new software: 22.04's standard support ends in under a year and forced
+  workarounds (node v12 too old for obj2gltf, nanoflann header overlay, ancient
+  OpenCV). On noble the nanoflann vendoring is gone (1.5.4 in apt), node is 18,
+  OIIO/ceres/suitesparse are current. Noble dropped PDAL from its repos, so PDAL
+  is now **built from pinned source** (2.10.1) like COLMAP/OpenMVS — pin + verify
+  instead of distro roulette. The only vendored header remains CGAL 6.0.1
+  (OpenMVS 2.4.0 requires ≥6.0; CGAL 6 was released after noble froze).
 - **Boolean options follow the ODM flag convention (default-false `skip-`/`no-`
   flags).** WebODM checkboxes can only *send* a flag (checked) or omit it — a
   default-true boolean is impossible to disable from the UI (the tooltip said
@@ -530,47 +577,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mesh optimization on multi-scale images"). The option now actually drives
   `RefineMesh --scales` (default 3 = more multi-scale refinement than the old
   hardcoded 1 — quality-first default for the engine's main lever).
-
-### Added
-- **All engine tuning parameters exposed as task options** — nothing hidden:
-  `refine-max-face-area` (RefineMesh subdivision threshold, was hardcoded 16),
-  `refine-gradient-step` (refinement step size, was hardcoded 25.05),
-  `cpu-threads` and `cpu-match-block` (the CPU stability caps, previously
-  env-only `EFFIGIES_CPU_THREADS`/`EFFIGIES_CPU_MATCH_BLOCK`; an explicitly set
-  env var still wins as an ops override).
-- **Full ODM output parity.** Effigies now fills every WebODM download slot the
-  stock ODM nodes do — orthophoto, point cloud, textured model, **glTF model**,
-  **camera parameters** (`cameras.json`), **camera shots** (`shots.geojson`), and a
-  **quality report** (`odm_report/report.pdf`, stats table + orthophoto thumbnail
-  via reportlab). One node, every product.
-- **glTF model (`helpers/mesh_to_gltf.py`) — "Struktur-Modell (glTF)".** A
-  self-contained binary glTF (`odm_texturing/odm_textured_model_geo.glb`) of the
-  refined textured mesh, with the texture atlas embedded. Written by a dependency-
-  free Python GLB writer (the image's node is too old for current obj2gltf), so
-  the .glb matches the .obj asset.
-- **Camera assets (`helpers/camera_exports.py`) — ODM-parity downloads.**
-  `cameras.json` (intrinsics, OpenSfM-normalised, in the project root) and
-  `odm_report/shots.geojson` (one WGS84 point per image — camera positions on the
-  WebODM map, with filename / camera / focal / pose properties), derived from the
-  COLMAP model + the georef similarity. `shots.geojson` is skipped for a local-only
-  result; `cameras.json` is always written.
-- **Orthophoto output (`helpers/orthophoto.py`).** Effigies now produces a
-  georeferenced orthophoto (`odm_orthophoto/odm_orthophoto.tif`, RGB + alpha),
-  nadir-rasterised from the refined textured mesh — so it inherits the RefineMesh
-  detail instead of being interpolated from a sparse DSM. z-buffered (topmost
-  surface wins), texture-sampled, written via GDAL in the model's CRS. New options
-  `orthophoto` (on by default) and `orthophoto-resolution` (cm/px, `auto` ≈ 4k px
-  wide). Skipped automatically for local-frame / un-georeferenced results. Effigies
-  is now a complete engine — 3D mesh, point cloud, AND orthophoto — in one node;
-  no need to also run stock ODM for the 2D product. (Adds the `python3-gdal`
-  dependency.)
-- **Mesh-to-reference distance in `benchmark.sh`.** `compare` now accepts an OBJ
-  mesh on either side: it area-weighted surface-samples the mesh to a point cloud
-  (deterministic) before the existing ICP + nearest-neighbour distance, so a
-  textured mesh can be measured against a reference scan directly — completing the
-  benchmark accuracy core (cloud-to-reference, mesh-to-reference, check-point RMSE).
-
-### Fixed
 - **EXIF-GPS georeferencing silently dropped on real reconstructions.**
   `read_colmap_camera_centers` filtered blank lines out of `images.txt`, but a
   COLMAP image registered with no observed 3D points has an *empty* points2D line;
@@ -581,6 +587,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pairing used by the GCP path, and the EXIF loop tolerates a single malformed
   image instead of failing the whole solve. (The EXIF path had no test coverage;
   added a regression test for the empty-points2D case.)
+
+## [0.2.0] - 2026-06-12
 
 ### Added
 - **First full end-to-end run on the CPU image.** The complete chain — COLMAP
@@ -644,8 +652,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for the point-cloud transform matrix (`tests/test_pointcloud.py`) and
   the NodeODM options translation (`tests/test_options.py`); the local runner and
   CI now execute every `tests/test_*.py`.
-
-### Fixed
 - **Options were incompatible with NodeODM.** `options.json` was a flat list, but
   NodeODM (`libs/odmInfo.js`) expects an argparse-style descriptor object keyed by
   `--flag`; it was serving every option as `name="0".."12"` with the wrong types.
@@ -716,6 +722,10 @@ First public release — a working, NodeODM-compatible engine scaffold for WebOD
   planned.
 - No end-to-end run against a real dataset is exercised in CI (no GPU runner).
 
-[Unreleased]: https://github.com/leiverkus/effigies/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/leiverkus/effigies/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/leiverkus/effigies/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/leiverkus/effigies/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/leiverkus/effigies/compare/v0.3.0...v0.5.0
+[0.3.0]: https://github.com/leiverkus/effigies/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/leiverkus/effigies/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/leiverkus/effigies/releases/tag/v0.1.0
