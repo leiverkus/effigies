@@ -158,7 +158,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       and restored on a loss) — *by construction never worse than the post-hoc path*
       on the check metric, which is what justifies it as the default; a run without
       GCPs / check points falls back silently. **Absolute-accuracy validation still
-      deferred** to the v0.10.0 reference-data campaign (needs a surveyed GCP +
+      deferred** to the v0.9.0 reference-data campaign (needs a surveyed GCP +
       held-out check-point dataset) — that measures the gain; the default rests on
       the relative never-worse property, which the synthetic fixture + the in-image
       Stage-0 spike (real 70-image / 34 626-point reconstruction, BA converged in
@@ -173,7 +173,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       of WebODM's preset JSON — those are per-install data keyed to ODM's option
       names and useless for Effigies. The bundle *values* are currently reasoned
       defaults; **empirically calibrating them** (esp. `RefineMesh`) per profile
-      against benchmark runs is deferred to **v0.10.0** (it needs the benchmark
+      against benchmark runs is deferred to **v0.9.0** (it needs the benchmark
       campaign).
 - [x] Expose key OpenMVS refine parameters as task options with documented
       effects: `refine-max-face-area`, `refine-gradient-step`, and
@@ -226,7 +226,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       roughness (local plane-fit residual, detail-vs-noise); with a prior-art
       review in [docs/benchmark-literature.md](docs/benchmark-literature.md)
       (BibTeX in `docs/references.bib`). The actual comparison **runs** against
-      stock ODM / Metashape / RealityScan are the **v0.10.0** campaign below.
+      stock ODM / Metashape / RealityScan are the **v0.9.0** campaign below.
 
 ## v0.5.0 — Scaling to large image sets (split-merge tiling) *(released — 2026-06-14)*
 
@@ -355,72 +355,9 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       rather than guessed. Default output is bit-for-bit unchanged; nodata-safe;
       unit-tested incl. a gradient-removed-but-albedo-preserved flatten check.
 
-## v0.7.0 — Learned SfM front-end (LightGlue) *(planned)*
+## v0.7.0 — MASt3R sparse-engine *(planned)*
 
-Effigies' only SfM front-end is COLMAP's classic SIFT + handcrafted matchers
-(`exhaustive` / `sequential` / `spatial` / `vocab_tree`). SIFT is structurally
-weak on exactly the surfaces archaeological documentation lives on: **low-texture
-earth surfaces / planum**, **section profiles** (homogeneous, low-contrast
-sediment bands) and **repetitive stone settings** (self-similar corners the
-matcher mis-assigns). A learned detector + matcher — ALIKED/SuperPoint features
-matched by **LightGlue** — is markedly more robust there, so this is the most
-visible single quality lever still open for close-range capture. Historically this
-was a new front-end, **not** a flag — `--matcher lightglue` did not exist in COLMAP
-**4.0.4**. **COLMAP 4.1 changes that** (native ALIKED + LightGlue via ONNX), so there
-are now **two integration paths** below.
-
-- [ ] **Path A (preferred once stable) — native via a COLMAP 4.1 bump.** COLMAP **4.1**
-      (dev `4.1.0.dev0`, ~2026-03) builds **ALIKED feature extraction + LightGlue
-      matching natively via ONNX** (for SIFT *and* ALIKED), plus Python bindings for the
-      extractor/matcher. That collapses most of this item to a **version bump
-      (4.0.4 → stable 4.1) + wiring the native flags** in `sparse_colmap.sh` — no
-      hloc/torch pipeline, no manual `database.db` import. **ONNX (not torch)** is a far
-      lighter dependency, and ONNX Runtime has CPU **and** GPU execution providers
-      (CUDA / CoreML) → softens the GPU requirement. License-clean: COLMAP took **ALIKED
-      + LightGlue** (both permissive), **not** SuperPoint. **Gated on a *stable* 4.1** —
-      the repo pins known-good and forbids `latest`/dev, so this waits for the 4.1
-      release; until then Path B is the bridge. (4.1 also brings division/fisheye camera
-      models, model clustering, QEM mesh decimation, EXIF auto-rotate, ~10–15 % faster BA
-      — none required here, but they ride along with the bump.)
-- [ ] **Path B (bridge until 4.1 is stable) — hloc-style `--features` option** (`sift`
-      default; `aliked` / `superpoint` / `disk`). The path mirrors `hloc`: extract learned keypoints,
-      match pairs with LightGlue, **import the matches into the existing
-      `database.db`** — then the unchanged `colmap mapper` writes `sparse/0`.
-      Architecturally clean because the engine contract is already "populate
-      `database.db` → `colmap mapper` → `sparse/0`": `sparse_colmap.sh` gains a
-      front-end branch (skip `feature_extractor` + `*_matcher`, populate the DB
-      from the learned matcher) and **everything downstream — `image_undistorter`,
-      OpenMVS, georef, ortho — is untouched**. New `--features` option next to the
-      existing `--matcher` in `options.json`.
-- [ ] **Retrieval still required for large sets.** LightGlue is pairwise; >~150
-      images would be O(n²) without a retrieval stage. The learned front-end
-      *composes with* image retrieval (global descriptors, or reuse the baked
-      vocab-tree pairs) — it does **not** replace `vocab_tree`. `autoscale.sh` must
-      pick a retrieval strategy for `features≠sift`, not fall back to exhaustive.
-- [ ] **Licensing — ALIKED is the default, not SuperPoint.** LightGlue is
-      Apache-2.0 and ALIKED is permissively licensed, but **SuperPoint/SuperGlue
-      (Magic Leap) are non-commercial research-only** — incompatible with the MIT
-      redistribution of this project. So `aliked` (or `disk`) is the shipped
-      default; `superpoint` stays gated behind an explicit opt-in and is **not**
-      baked into the image. `THIRD_PARTY_LICENSES.md` updated for whatever weights
-      ship (ALIKED/DISK license verified before adoption).
-- [ ] **Dependency & image cost — keep it off the default path.** *Path B* pulls in
-      **torch** (large) and strongly prefers a **GPU** (CPU LightGlue runs but is slow);
-      *Path A* (COLMAP/ONNX) **avoids torch entirely** — another reason to prefer it once
-      4.1 is stable. Either way it stays opt-in and out of the lean CPU image's default
-      install, so the byte-identical SIFT path and the 1.65 GB CPU image are unaffected
-      (optional install / separate build stage; fail loud with guidance if
-      `--features aliked` is requested without the front-end present — the
-      `vocab_tree`-missing pattern in `sparse_colmap.sh`).
-- [ ] **Validation folds into the benchmark campaign.** The gain is claimed
-      exactly on the three hard surface types, so quantify it there (v0.10.0):
-      registered-image count, sparse-point count and downstream completeness for
-      SIFT vs ALIKED+LightGlue on planum / profile / stone-setting datasets. Needs
-      a **GPU** (none on this host → parked for validation like the CUDA image).
-
-## v0.8.0 — MASt3R sparse-engine *(planned)*
-
-COLMAP — including the v0.7.0 learned front-end — is still **correspondence-based**
+COLMAP — including the deferred learned front-end (LightGlue, below) — is still **correspondence-based**
 SfM: it needs enough matchable points across enough overlap. That breaks down on
 small, low-overlap, textureless/glossy object sets — exactly **artefacts,
 ceramics, statues, fine architectural detail**. **MASt3R** (Naver, the DUSt3R
@@ -467,9 +404,9 @@ MASt3R replaces the whole SfM *front-end*.
       Jan 2025); robustness / reproducibility vs COLMAP on production object sets is
       unproven, and a heavy, evolving neural model sits in tension with Effigies'
       reproducible-reference identity. Higher-risk, Priorität-2 bet, to be quantified on
-      artefact / ceramic / statue datasets in the v0.10.0 campaign.
+      artefact / ceramic / statue datasets in the v0.9.0 campaign.
 
-## v0.9.0 — Semantic field (`--semantic`) *(planned — mechanism only; the fine-class model is a Structura deliverable; pushes the benchmark campaign to v0.10.0)*
+## v0.8.0 — Semantic field (`--semantic`) *(planned — mechanism only; the fine-class model is a Structura deliverable; pushes the benchmark campaign to v0.9.0)*
 
 The bridge to **Structura**, the downstream vectorisation project (orthophoto/DEM
 → georeferenced excavation vectors in PostGIS). The division of labour is
@@ -511,7 +448,7 @@ propagate — and **never bakes an archaeological-material model into the MIT im
       Effigies). Validation of the semantic ortho's archaeological usefulness is
       Structura's evaluation, not Effigies'. See the Structura research plan.
 
-## v0.10.0 — Benchmark campaign & profile calibration *(needs reference data)*
+## v0.9.0 — Benchmark campaign & profile calibration *(needs reference data)*
 
 The empirical work behind the paper, split out from v0.4.0 (the *tooling* is
 done; the *runs* are here). Gated on a dataset with **reference data** — a TLS
@@ -546,6 +483,42 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
 - [ ] Installation / operations guide for adding Effigies to an existing WebODM.
 
 ---
+
+## Learned SfM front-end (LightGlue) — *deferred to the COLMAP 4.1 stable release (no Effigies version)*
+
+The learned detector + matcher (**ALIKED** features + **LightGlue**) is the single
+most visible quality lever for the hard surfaces archaeological documentation lives
+on — **low-texture earth / planum**, **section profiles**, **repetitive stone
+settings** — where SIFT (`exhaustive` / `vocab_tree`) is structurally weak. It is
+**deferred to the COLMAP 4.1 release rather than given an Effigies version**, because
+the clean way to get it is now upstream and the trigger is a date we do not control;
+the numbered items above (v0.7.0–v0.9.0) are pulled ahead of it.
+
+- [ ] **Plan — native via a COLMAP 4.1 bump (gated on *stable* 4.1).** COLMAP **4.1**
+      (dev `4.1.0.dev0`, ~2026-03) builds **ALIKED extraction + LightGlue matching
+      natively via ONNX** (SIFT *and* ALIKED) + Python bindings. That collapses the work
+      to a **version bump (4.0.4 → stable 4.1) + wiring the native flags** in
+      `sparse_colmap.sh` — no hloc/torch pipeline, no manual `database.db` import.
+      **ONNX (not torch)** is a far lighter dependency, and ONNX Runtime has CPU **and**
+      GPU execution providers (CUDA / CoreML) → softens the GPU requirement.
+      License-clean: COLMAP took **ALIKED + LightGlue** (both permissive), **not**
+      SuperPoint. The repo pins known-good and forbids `latest`/dev, so this **waits for
+      the 4.1 release**. (4.1 also rides along division/fisheye camera models, model
+      clustering, QEM mesh decimation, EXIF auto-rotate, ~10–15 % faster BA.)
+- [ ] **Fallback (only if 4.1 slips badly) — hloc-style import.** Extract ALIKED
+      keypoints + LightGlue matches, **import into the existing `database.db`**, then the
+      unchanged `colmap mapper` writes `sparse/0` (downstream untouched). Pulls in
+      **torch** + a GPU and a `--features` option in `options.json` — kept off the lean
+      CPU image's default path. Only worth building if the 4.1 release is far out.
+- [ ] **Retrieval still required for large sets.** LightGlue is pairwise; >~150 images
+      need a retrieval stage — *composes with* `vocab_tree`/global descriptors, does
+      **not** replace it. `autoscale.sh` picks a retrieval strategy for `features≠sift`.
+- [ ] **Licensing — ALIKED is the default, not SuperPoint.** ALIKED + LightGlue are
+      permissive (ship-able); **SuperPoint/SuperGlue (Magic Leap) are non-commercial** —
+      opt-in only, never baked in. `THIRD_PARTY_LICENSES.md` updated for whatever weights ship.
+- [ ] **Validation folds into the benchmark campaign (v0.9.0).** SIFT vs ALIKED+LightGlue
+      on planum / profile / stone-setting datasets: registered-image count, sparse-point
+      count, downstream completeness. Needs a **GPU** (none on this host).
 
 ## Parked (no hardware)
 
