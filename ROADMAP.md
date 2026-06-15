@@ -158,7 +158,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       and restored on a loss) — *by construction never worse than the post-hoc path*
       on the check metric, which is what justifies it as the default; a run without
       GCPs / check points falls back silently. **Absolute-accuracy validation still
-      deferred** to the v0.9.0 reference-data campaign (needs a surveyed GCP +
+      deferred** to the v0.8.0 reference-data campaign (needs a surveyed GCP +
       held-out check-point dataset) — that measures the gain; the default rests on
       the relative never-worse property, which the synthetic fixture + the in-image
       Stage-0 spike (real 70-image / 34 626-point reconstruction, BA converged in
@@ -173,7 +173,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       of WebODM's preset JSON — those are per-install data keyed to ODM's option
       names and useless for Effigies. The bundle *values* are currently reasoned
       defaults; **empirically calibrating them** (esp. `RefineMesh`) per profile
-      against benchmark runs is deferred to **v0.9.0** (it needs the benchmark
+      against benchmark runs is deferred to **v0.8.0** (it needs the benchmark
       campaign).
 - [x] Expose key OpenMVS refine parameters as task options with documented
       effects: `refine-max-face-area`, `refine-gradient-step`, and
@@ -226,7 +226,7 @@ kept** (24.04 dropped it). Facts worth keeping:
       roughness (local plane-fit residual, detail-vs-noise); with a prior-art
       review in [docs/benchmark-literature.md](docs/benchmark-literature.md)
       (BibTeX in `docs/references.bib`). The actual comparison **runs** against
-      stock ODM / Metashape / RealityScan are the **v0.9.0** campaign below.
+      stock ODM / Metashape / RealityScan are the **v0.8.0** campaign below.
 
 ## v0.5.0 — Scaling to large image sets (split-merge tiling) *(released — 2026-06-14)*
 
@@ -355,7 +355,90 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       rather than guessed. Default output is bit-for-bit unchanged; nodata-safe;
       unit-tested incl. a gradient-removed-but-albedo-preserved flatten check.
 
-## v0.7.0 — MASt3R sparse-engine *(planned)*
+## v0.7.0 — Semantic field (`--semantic`) *(planned — mechanism only; the fine-class model is a Structura deliverable; pushes the benchmark campaign to v0.8.0)*
+
+The bridge to **Structura**, the downstream vectorisation project (orthophoto/DEM
+→ georeferenced excavation vectors in PostGIS). The division of labour is
+**field vs object**, not raster vs vector — a boundary that survives the move into
+3D: **Effigies owns the semantic *field* in geometry-space** (per-point / -vertex /
+-pixel class, multi-view- and multi-epoch-consistent); **Structura owns the
+semantic *objects* in vector/DB-space** (instances, topology, stratigraphic
+attribution). Effigies ships only the **mechanism** — classify → rasterise →
+propagate — and **never bakes an archaeological-material model into the MIT image**.
+
+- [ ] **`--semantic`: a per-pixel class ortho rasterised from a 3D class field.**
+      Classify the mesh / cloud, then nadir-rasterise through the existing
+      true-ortho z-buffer pass into `odm_semantic/orthophoto_semantic.tif` —
+      occlusion-correct, inheriting RefineMesh geometry, georeferenced like the RGB
+      ortho. Same machinery as the existing class rasters (`classify_cloud.py`
+      `buildings.tif` / `canopy.tif`). Self-skips for local-frame results.
+- [ ] **v0 is free from the existing point classification.** OpenPointClass
+      already labels the cloud (ground / vegetation / structure); rasterising those
+      classes is a coarse semantic ortho at **no model cost** — the honest first
+      increment (vegetation is essentially free). Ships without any new model.
+- [ ] **Fine archaeological classes = bring-your-own model (Structura's
+      deliverable).** Stone / earth / paving / ceramic / mortar is a trained **2D
+      image** semantic model (labels are cheap in 2D; foundation-model leverage),
+      run per-view and **fused onto the mesh via the existing multi-view blend**
+      (`texture_blend.py`) to give one class per 3D point — multi-view-consistent,
+      and it sees the **vertical / occluded surfaces (profiles)** the nadir ortho
+      loses. The model is a **versioned weights asset** loaded like the vocab tree /
+      OpenPointClass model, never baked in (likely non-commercial research weights —
+      same opt-in pattern as the SuperPoint / MASt3R items).
+- [ ] **Multi-epoch propagation (the temporal kicker).** Daily capture → the class
+      field lives in the **co-registered 3D frame**, so it propagates across epochs
+      via the existing change-detection / `--align-to` machinery (`change_detect.py`).
+      Effigies carries the **class field**; Structura carries **object / Befund
+      identity** in PostGIS — two temporal mechanisms, each where its information
+      lives, so **Effigies never reads the DB**.
+- [ ] **Cross-project contract.** Runtime flow stays one-directional
+      (Effigies → Structura); the only backflow is the trained model **as a build
+      artifact** (produced / retrained in Structura's research, dropped into
+      Effigies). Validation of the semantic ortho's archaeological usefulness is
+      Structura's evaluation, not Effigies'. See the Structura research plan.
+
+## v0.8.0 — Benchmark campaign & profile calibration *(needs reference data)*
+
+The empirical work behind the paper, split out from v0.4.0 (the *tooling* is
+done; the *runs* are here). Gated on a dataset with **reference data** — a TLS
+scan and/or surveyed check points — for absolute accuracy; relative metrics
+(roughness, detail, completeness, runtime) can proceed without it.
+
+- [ ] **Comparison runs.** Process shared datasets through Effigies, stock ODM,
+      Metashape and (where available) RealityScan, and compute the
+      `scripts/benchmark.sh` metrics — cloud/mesh-to-reference distance,
+      check-point RMSE, surface roughness, completeness, runtime. No prior study
+      benchmarks COLMAP + OpenMVS *with RefineMesh* against the commercial tools,
+      so this is a publishable contribution, not just an internal check. The
+      honest headline is narrow-but-deep: refined-mesh surface detail (see the
+      ODM comparison in the v0.4.0 notes — ODM leads on ortho maturity / DSM-DTM
+      breadth / scaling, Effigies on RefineMesh geometry).
+- [ ] **Two queued single-variable experiments** specified against a shared
+      baseline run in [docs/planned-experiments.md](docs/planned-experiments.md):
+      watertightness (`mesh-close-holes`) and densify-resolution vs. runtime —
+      both double as profile-calibration data points.
+- [ ] **Profile calibration.** Sweep the key levers (esp. `RefineMesh`
+      iterations / `max-face-area` / `gradient-step`, `densify-resolution-level`,
+      `number-views-fuse`) per capture type against the benchmark metrics, find
+      the quality/cost knee, and bake the measured-optimal values into the
+      `drone-3d` / `object` / `architecture` bundles — replacing today's reasoned
+      defaults with calibrated ones.
+
+## v1.0.0 — Production
+
+- [ ] A reproducible, source-pinned image with verified binaries as the default.
+- [ ] Documented, stable option set; no breaking changes without a major bump.
+- [ ] End-to-end coverage and a published reference dataset.
+- [ ] Installation / operations guide for adding Effigies to an existing WebODM.
+
+---
+
+## v1.1.0 — MASt3R sparse-engine *(post-1.0 experiment — not production-ready)*
+
+**Explicitly post-1.0 and experimental.** MASt3R is **not production-ready** — a
+non-commercial licence plus research-grade maturity (both below) — so it sits *after*
+v1.0.0 as an opt-in experiment, **not** in the shipping path: the engine reaches 1.0
+without it.
 
 COLMAP — including the deferred learned front-end (LightGlue, below) — is still **correspondence-based**
 SfM: it needs enough matchable points across enough overlap. That breaks down on
@@ -403,86 +486,8 @@ MASt3R replaces the whole SfM *front-end*.
       recent research and the line is moving fast (e.g. the feed-forward **Light3R-SfM**,
       Jan 2025); robustness / reproducibility vs COLMAP on production object sets is
       unproven, and a heavy, evolving neural model sits in tension with Effigies'
-      reproducible-reference identity. Higher-risk, Priorität-2 bet, to be quantified on
-      artefact / ceramic / statue datasets in the v0.9.0 campaign.
-
-## v0.8.0 — Semantic field (`--semantic`) *(planned — mechanism only; the fine-class model is a Structura deliverable; pushes the benchmark campaign to v0.9.0)*
-
-The bridge to **Structura**, the downstream vectorisation project (orthophoto/DEM
-→ georeferenced excavation vectors in PostGIS). The division of labour is
-**field vs object**, not raster vs vector — a boundary that survives the move into
-3D: **Effigies owns the semantic *field* in geometry-space** (per-point / -vertex /
--pixel class, multi-view- and multi-epoch-consistent); **Structura owns the
-semantic *objects* in vector/DB-space** (instances, topology, stratigraphic
-attribution). Effigies ships only the **mechanism** — classify → rasterise →
-propagate — and **never bakes an archaeological-material model into the MIT image**.
-
-- [ ] **`--semantic`: a per-pixel class ortho rasterised from a 3D class field.**
-      Classify the mesh / cloud, then nadir-rasterise through the existing
-      true-ortho z-buffer pass into `odm_semantic/orthophoto_semantic.tif` —
-      occlusion-correct, inheriting RefineMesh geometry, georeferenced like the RGB
-      ortho. Same machinery as the existing class rasters (`classify_cloud.py`
-      `buildings.tif` / `canopy.tif`). Self-skips for local-frame results.
-- [ ] **v0 is free from the existing point classification.** OpenPointClass
-      already labels the cloud (ground / vegetation / structure); rasterising those
-      classes is a coarse semantic ortho at **no model cost** — the honest first
-      increment (vegetation is essentially free). Ships without any new model.
-- [ ] **Fine archaeological classes = bring-your-own model (Structura's
-      deliverable).** Stone / earth / paving / ceramic / mortar is a trained **2D
-      image** semantic model (labels are cheap in 2D; foundation-model leverage),
-      run per-view and **fused onto the mesh via the existing multi-view blend**
-      (`texture_blend.py`) to give one class per 3D point — multi-view-consistent,
-      and it sees the **vertical / occluded surfaces (profiles)** the nadir ortho
-      loses. The model is a **versioned weights asset** loaded like the vocab tree /
-      OpenPointClass model, never baked in (likely non-commercial research weights —
-      same opt-in pattern as the SuperPoint / MASt3R items).
-- [ ] **Multi-epoch propagation (the temporal kicker).** Daily capture → the class
-      field lives in the **co-registered 3D frame**, so it propagates across epochs
-      via the existing change-detection / `--align-to` machinery (`change_detect.py`).
-      Effigies carries the **class field**; Structura carries **object / Befund
-      identity** in PostGIS — two temporal mechanisms, each where its information
-      lives, so **Effigies never reads the DB**.
-- [ ] **Cross-project contract.** Runtime flow stays one-directional
-      (Effigies → Structura); the only backflow is the trained model **as a build
-      artifact** (produced / retrained in Structura's research, dropped into
-      Effigies). Validation of the semantic ortho's archaeological usefulness is
-      Structura's evaluation, not Effigies'. See the Structura research plan.
-
-## v0.9.0 — Benchmark campaign & profile calibration *(needs reference data)*
-
-The empirical work behind the paper, split out from v0.4.0 (the *tooling* is
-done; the *runs* are here). Gated on a dataset with **reference data** — a TLS
-scan and/or surveyed check points — for absolute accuracy; relative metrics
-(roughness, detail, completeness, runtime) can proceed without it.
-
-- [ ] **Comparison runs.** Process shared datasets through Effigies, stock ODM,
-      Metashape and (where available) RealityScan, and compute the
-      `scripts/benchmark.sh` metrics — cloud/mesh-to-reference distance,
-      check-point RMSE, surface roughness, completeness, runtime. No prior study
-      benchmarks COLMAP + OpenMVS *with RefineMesh* against the commercial tools,
-      so this is a publishable contribution, not just an internal check. The
-      honest headline is narrow-but-deep: refined-mesh surface detail (see the
-      ODM comparison in the v0.4.0 notes — ODM leads on ortho maturity / DSM-DTM
-      breadth / scaling, Effigies on RefineMesh geometry).
-- [ ] **Two queued single-variable experiments** specified against a shared
-      baseline run in [docs/planned-experiments.md](docs/planned-experiments.md):
-      watertightness (`mesh-close-holes`) and densify-resolution vs. runtime —
-      both double as profile-calibration data points.
-- [ ] **Profile calibration.** Sweep the key levers (esp. `RefineMesh`
-      iterations / `max-face-area` / `gradient-step`, `densify-resolution-level`,
-      `number-views-fuse`) per capture type against the benchmark metrics, find
-      the quality/cost knee, and bake the measured-optimal values into the
-      `drone-3d` / `object` / `architecture` bundles — replacing today's reasoned
-      defaults with calibrated ones.
-
-## v1.0.0 — Production
-
-- [ ] A reproducible, source-pinned image with verified binaries as the default.
-- [ ] Documented, stable option set; no breaking changes without a major bump.
-- [ ] End-to-end coverage and a published reference dataset.
-- [ ] Installation / operations guide for adding Effigies to an existing WebODM.
-
----
+      reproducible-reference identity. Higher-risk, opt-in experiment, to be quantified on
+      artefact / ceramic / statue datasets in the v0.8.0 campaign.
 
 ## Learned SfM front-end (LightGlue) — *deferred to the COLMAP 4.1 stable release (no Effigies version)*
 
@@ -492,7 +497,7 @@ on — **low-texture earth / planum**, **section profiles**, **repetitive stone
 settings** — where SIFT (`exhaustive` / `vocab_tree`) is structurally weak. It is
 **deferred to the COLMAP 4.1 release rather than given an Effigies version**, because
 the clean way to get it is now upstream and the trigger is a date we do not control;
-the numbered items above (v0.7.0–v0.9.0) are pulled ahead of it.
+the numbered items above are pulled ahead of it.
 
 - [ ] **Plan — native via a COLMAP 4.1 bump (gated on *stable* 4.1).** COLMAP **4.1**
       (dev `4.1.0.dev0`, ~2026-03) builds **ALIKED extraction + LightGlue matching
@@ -516,7 +521,7 @@ the numbered items above (v0.7.0–v0.9.0) are pulled ahead of it.
 - [ ] **Licensing — ALIKED is the default, not SuperPoint.** ALIKED + LightGlue are
       permissive (ship-able); **SuperPoint/SuperGlue (Magic Leap) are non-commercial** —
       opt-in only, never baked in. `THIRD_PARTY_LICENSES.md` updated for whatever weights ship.
-- [ ] **Validation folds into the benchmark campaign (v0.9.0).** SIFT vs ALIKED+LightGlue
+- [ ] **Validation folds into the benchmark campaign (v0.8.0).** SIFT vs ALIKED+LightGlue
       on planum / profile / stone-setting datasets: registered-image count, sparse-point
       count, downstream completeness. Needs a **GPU** (none on this host).
 

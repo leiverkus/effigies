@@ -233,7 +233,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only when it measurably wins, and a run without GCPs or check points behaves
   exactly as before (post-hoc / EXIF / local), silently. `off` forces the old
   post-hoc-only behaviour. Real-data accuracy validation (surveyed GCP + held-out
-  check points) is still deferred to the v0.9.0 reference-data campaign — that
+  check points) is still deferred to the v0.8.0 reference-data campaign — that
   campaign measures the *absolute* gain; the default flip rests on the *relative*
   never-worse property, which the synthetic fixture and the in-image runs verify.
 - **True-ortho hardening — bounded orthophoto hole-fill.** The orthophoto was
