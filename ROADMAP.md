@@ -387,7 +387,7 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       rather than guessed. Default output is bit-for-bit unchanged; nodata-safe;
       unit-tested incl. a gradient-removed-but-albedo-preserved flatten check.
 
-## v0.7.0 — Semantic field (`--semantic`) *(planned — mechanism only; the fine-class model is a Structura deliverable; pushes the benchmark campaign to v0.8.0)*
+## v0.7.0 — Semantic field v0 + change-detection accuracy *(released — 2026-06-15; ships the v0 geometry field + multi-epoch propagation + change-detection LoD/re-land hardening; the full mesh-rasterise, fine-class model and contract carry forward)*
 
 The bridge to **Structura**, the downstream vectorisation project (orthophoto/DEM
 → georeferenced excavation vectors in PostGIS). The division of labour is
@@ -398,7 +398,16 @@ semantic *objects* in vector/DB-space** (instances, topology, stratigraphic
 attribution). Effigies ships only the **mechanism** — classify → rasterise →
 propagate — and **never bakes an archaeological-material model into the MIT image**.
 
-- [ ] **`--semantic`: a per-pixel class ortho rasterised from a 3D class field.**
+> **Released in v0.7.0 (2026-06-15):** the v0 geometry-derived field, multi-epoch
+> propagation (the two `[x]` items below), and the post-v0.6.0 change-detection accuracy
+> hardening — M3C2 level-of-detection with the co-registration residual, DoD min-LoD
+> (Wheaton 2010), stable-area-masked ICP, `--align`-parity re-landing of the deliverables,
+> DEM-as-reference, and camera-asset re-land. **Carried forward (post-v0.7.0):** the three
+> unchecked items below — the full mesh-classify → z-buffer `--semantic` path, the
+> fine-class material model (Structura's deliverable, itself data-blocked), and contract
+> finalisation.
+
+- [ ] **`--semantic`: a per-pixel class ortho rasterised from a 3D class field.** *(carried forward)*
       Classify the mesh / cloud, then nadir-rasterise through the existing
       true-ortho z-buffer pass into `odm_semantic/orthophoto_semantic.tif` —
       occlusion-correct, inheriting RefineMesh geometry, georeferenced like the RGB
