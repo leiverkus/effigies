@@ -370,7 +370,9 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       noise, stable_mask separates change from stable ground, transform_obj is
       offset-exact, dem_to_xyz loads a DEM as cell-centre points, the camera re-land
       gate is unit-tested, volume math unit-tested; the full re-land pipeline (raster
-      re-derivation in the image) is Docker-validated.
+      re-derivation, py4dgeo, pyproj) is Docker-validated end-to-end by
+      `scripts/smoke_change_detect.py` (synthesises a two-epoch case — known rigid
+      offset + excavation block — runs the real CLIs and asserts the products).
 - [x] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
       (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
       such control; expose colour-balance / blending knobs if real orthos show
