@@ -8,9 +8,11 @@ how much earth was removed, where, and by how much. ODM does this with ``--align
 (co-register a dataset onto a reference frame); Effigies has no such step. This
 module is the engine-side contract for it.
 
-Given a **reference cloud** (a prior epoch's
-``odm_georeferencing/odm_georeferenced_model.laz``, passed as a node-filesystem
-path via the ``align-to`` option) and *this* epoch's georeferenced LAZ, it:
+Given a **reference** — a prior epoch's point cloud
+(``odm_georeferencing/odm_georeferenced_model.laz``) **or a DEM GeoTIFF** (a prior
+DSM or any reference DEM), passed as a node-filesystem path via the ``align-to``
+option — and *this* epoch's georeferenced LAZ, it (a DEM reference is read as
+cell-centre points for ICP/M3C2 and used directly as the reference DSM for the DoD):
 
   1. **Co-registers** epoch B onto the reference with PDAL ``filters.icp`` (the same
      recipe ``scripts/benchmark.sh compare`` uses), **stable-area-masked** in two
@@ -211,8 +213,12 @@ def _count(path):
 
 def load_xyz(path, n_target=400000):
     """Decimate a cloud to ~``n_target`` points and load XYZ into a NumPy array.
-    Mirrors ``benchmark.sh compare``: ``filters.decimation`` -> text -> ``loadtxt``."""
+    Mirrors ``benchmark.sh compare``: ``filters.decimation`` -> text -> ``loadtxt``.
+    A **DEM GeoTIFF** reference is loaded as cell-centre points instead (see
+    :func:`dem_to_xyz`)."""
     import numpy as np
+    if is_dem(path):
+        return dem_to_xyz(path, n_target)
     c = _count(path)
     step = max(1, c // max(1, n_target))
     txt = tempfile.mktemp(suffix=".csv")
@@ -509,11 +515,66 @@ def reland_assets(work, T, change_dir):
     return done
 
 
+def is_dem(path):
+    """True if ``path`` is a raster DEM (GeoTIFF) rather than a point cloud — lets a
+    prior epoch's DSM (or any reference DEM) stand in for the reference cloud."""
+    return os.path.splitext(path)[1].lower() in (".tif", ".tiff", ".geotiff")
+
+
+def dem_to_xyz(path, n_target=400000):
+    """Load a single-band DEM GeoTIFF as an Nx3 **cell-centre** XYZ array (nodata
+    skipped, decimated to ~``n_target`` points), so a raster DEM can drive ICP / M3C2
+    exactly like a reference point cloud."""
+    import numpy as np
+    arr, nodata, geo, _proj = _read_band(path)
+    if arr is None:
+        return np.zeros((0, 3))
+    arr = np.asarray(arr, dtype=np.float64)
+    ox, dx, _, oy, _, dy = geo            # gdal geotransform (axis-aligned)
+    valid = np.isfinite(arr)
+    if nodata is not None:
+        valid &= (arr != nodata)
+    rr, cc = np.nonzero(valid)
+    if rr.size == 0:
+        return np.zeros((0, 3))
+    if rr.size > n_target:
+        sel = np.linspace(0, rr.size - 1, n_target).astype(int)
+        rr, cc = rr[sel], cc[sel]
+    x = ox + (cc + 0.5) * dx
+    y = oy + (rr + 0.5) * dy
+    return np.ascontiguousarray(np.column_stack([x, y, arr[rr, cc]]))
+
+
+def _xy_bounds(path):
+    """(minx, miny, maxx, maxy) for a point cloud or a DEM-raster reference."""
+    if is_dem(path):
+        arr, _, geo, _ = _read_band(path)
+        if arr is None:
+            return None
+        rows, cols = arr.shape
+        ox, dx, _, oy, _, dy = geo
+        xs = (ox, ox + cols * dx)
+        ys = (oy, oy + rows * dy)
+        return min(xs), min(ys), max(xs), max(ys)
+    return _cloud_bounds(path)
+
+
+def resample_dem(in_tif, out_tif, gsd, bounds):
+    """Resample a DEM GeoTIFF onto the shared ``(gsd, bounds)`` grid via gdal.Warp so
+    it lines up cell-for-cell with the rasterised epoch-B DSM for the difference."""
+    from osgeo import gdal
+    minx, miny, maxx, maxy, _w, _h = bounds
+    gdal.Warp(out_tif, in_tif, format="GTiff",
+              outputBounds=(minx, miny, maxx, maxy),
+              xRes=gsd, yRes=gsd, dstNodata=NODATA,
+              resampleAlg="bilinear", creationOptions=["COMPRESS=DEFLATE"])
+
+
 def _shared_bounds(ref, b, gsd):
     """Union bounding box of two clouds, snapped to the ``gsd`` grid, plus the
     integer (width, height). Both DSMs rasterised to this exact grid line up
     cell-for-cell so the difference is a plain array subtraction."""
-    rb, bb = _cloud_bounds(ref), _cloud_bounds(b)
+    rb, bb = _xy_bounds(ref), _xy_bounds(b)
     if not rb or not bb:
         return None
     minx = math.floor(min(rb[0], bb[0]) / gsd) * gsd
@@ -734,7 +795,10 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
             raise RuntimeError("could not resolve shared raster bounds")
         ref_dsm = os.path.join(change_dir, "ref_dsm.tif")
         b_dsm = os.path.join(change_dir, "b_dsm.tif")
-        rasterize_dsm(reference, ref_dsm, gsd, bounds)
+        if is_dem(reference):
+            resample_dem(reference, ref_dsm, gsd, bounds)   # reference is a DEM already
+        else:
+            rasterize_dsm(reference, ref_dsm, gsd, bounds)
         rasterize_dsm(aligned, b_dsm, gsd, bounds)
         ra, nra, geo, proj = _read_band(ref_dsm)
         ba, nba, _, _ = _read_band(b_dsm)
@@ -862,7 +926,7 @@ def main():
                                              "(co-registration + DoD + M3C2)")
     ap.add_argument("--work", required=True, help="OpenMVS workdir")
     ap.add_argument("--reference", required=True,
-                    help="prior epoch's reference cloud (LAZ/LAS/PLY)")
+                    help="prior epoch's reference cloud (LAZ/LAS/PLY) or DEM GeoTIFF (.tif)")
     ap.add_argument("--resolution", default="auto",
                     help="DoD ground sample distance in cm/px, or 'auto'")
     ap.add_argument("--cloud", default=None,

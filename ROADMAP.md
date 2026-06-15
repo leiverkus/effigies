@@ -357,14 +357,17 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       cloud in place (offset-aware OBJ via `transform_obj`, LAZ via PDAL, EPT rebuilt),
       and because it runs *before* the raster stages the DSM/DTM/ortho/contours/glTF/
       3D-Tiles inherit the reference frame natively (`--no-reland` keeps additive-only).
-      v2 remaining: re-land the **camera assets** (`shots.geojson` — known gap) and
-      **DEM-as-reference** (accept a raster DEM as the alignment reference). Residual
+      **DEM-as-reference** is now supported too: an `--align-to` that is a DEM GeoTIFF
+      (a prior DSM/DEM) is read as cell-centre points for ICP/M3C2 and used directly as
+      the reference DSM for the DoD (`is_dem` / `dem_to_xyz` / `resample_dem`). v2
+      remaining: re-land the **camera assets** (`shots.geojson` — known gap). Residual
       risk neither LoD catches: non-rigid SfM doming (James 2020) — mitigated by GCP/BA,
       not by the LoD. The stable mask itself still assumes a mostly-stable scene.
       Verified: M3C2 recovers a known vertical shift, registration_error raises the LoD,
       DoD minLoD masks sub-LoD noise, stable_mask separates change from stable ground,
-      transform_obj is offset-exact, volume math unit-tested; the full re-land pipeline
-      (raster re-derivation in the image) is Docker-validated.
+      transform_obj is offset-exact, dem_to_xyz loads a DEM as cell-centre points,
+      volume math unit-tested; the full re-land pipeline (raster re-derivation in the
+      image) is Docker-validated.
 - [x] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
       (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
       such control; expose colour-balance / blending knobs if real orthos show

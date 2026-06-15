@@ -291,8 +291,36 @@ def test_transform_obj():
     print("ok  transform_obj rigid-transforms v-lines (offset-aware), keeps vt/f/colour")
 
 
+def test_dem_to_xyz():
+    """is_dem distinguishes raster vs cloud; a DEM GeoTIFF loads as cell-centre XYZ
+    points with nodata skipped (so a DEM can stand in as the reference)."""
+    assert cd.is_dem("ref.tif") and cd.is_dem("a.TIFF") and not cd.is_dem("ref.laz")
+    try:
+        from osgeo import gdal
+    except Exception:
+        print("skip dem_to_xyz raster (needs GDAL — present in the Effigies image)")
+        return
+    with tempfile.TemporaryDirectory() as d:
+        tif = os.path.join(d, "dem.tif")
+        ds = gdal.GetDriverByName("GTiff").Create(tif, 3, 2, 1, gdal.GDT_Float32)
+        ds.SetGeoTransform((100.0, 1.0, 0.0, 200.0, 0.0, -1.0))   # 1 m cells
+        band = ds.GetRasterBand(1)
+        band.SetNoDataValue(cd.NODATA)
+        band.WriteArray(np.array([[10.0, 11.0, cd.NODATA],
+                                  [12.0, 13.0, 14.0]], dtype=np.float32))
+        ds.FlushCache(); ds = None
+        xyz = cd.dem_to_xyz(tif)
+    assert xyz.shape == (5, 3), xyz                     # 6 cells − 1 nodata
+    rows = {(round(x, 1), round(y, 1)): round(z, 1) for x, y, z in xyz}
+    assert rows[(100.5, 199.5)] == 10.0, rows           # row0,col0 cell centre
+    assert rows[(102.5, 198.5)] == 14.0, rows           # row1,col2
+    assert (102.5, 199.5) not in rows, rows             # the nodata cell excluded
+    print(f"ok  dem_to_xyz: {xyz.shape[0]} cell-centre points, nodata skipped")
+
+
 if __name__ == "__main__":
     test_transform_obj()
+    test_dem_to_xyz()
     test_parse_icp_transform()
     test_parse_icp_transform_missing()
     test_decenter_transform()

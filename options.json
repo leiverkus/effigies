@@ -252,7 +252,7 @@
     "value": "",
     "domain": "string",
     "type": "string",
-    "help": "Path to a prior epoch's reference point cloud (e.g. another task's odm_georeferencing/odm_georeferenced_model.laz) on the node's data volume, for multi-epoch change detection. When set, this epoch is co-registered to the reference (stable-area-masked PDAL ICP) and difference products are written: a DEM-of-Difference (odm_dem/dem_difference.tif, cut/fill volumes above a minimum level-of-detection) and an M3C2 change cloud (odm_change/m3c2.laz, signed distance + level-of-detection), plus odm_report/change_detection.json. By default this epoch's mesh and cloud - and the DSM/DTM/orthophoto/contours/glTF derived from them - are re-landed into the reference frame so the whole time series overlays (ODM --align parity). Default: none"
+    "help": "Path to a prior epoch's reference point cloud (e.g. another task's odm_georeferencing/odm_georeferenced_model.laz) or a DEM GeoTIFF (a prior DSM/DEM) on the node's data volume, for multi-epoch change detection. When set, this epoch is co-registered to the reference (stable-area-masked PDAL ICP) and difference products are written: a DEM-of-Difference (odm_dem/dem_difference.tif, cut/fill volumes above a minimum level-of-detection) and an M3C2 change cloud (odm_change/m3c2.laz, signed distance + level-of-detection), plus odm_report/change_detection.json. By default this epoch's mesh and cloud - and the DSM/DTM/orthophoto/contours/glTF derived from them - are re-landed into the reference frame so the whole time series overlays (ODM --align parity). Default: none"
   },
   {
     "name": "skip-orthophoto",

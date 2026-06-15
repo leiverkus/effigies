@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pass `--no-reland` to keep that. `report["relanded"]` lists what moved; non-fatal per
   asset. Camera assets (`shots.geojson`) are a known re-land gap (v2). Offset-exact
   transform unit-tested; the full raster re-derivation is Docker-validated.
+- **Change detection — `--align-to` now accepts a DEM GeoTIFF as the reference, not
+  only a point cloud (`change_detect.py`).** A reference `.tif` (a prior DSM/DEM) is
+  read as cell-centre points for the ICP co-registration and M3C2, and used directly
+  (resampled onto the shared grid) as the reference DSM for the DEM-of-Difference —
+  so a prior epoch's DSM, or any external reference DEM, can drive the comparison.
+  `is_dem` / `dem_to_xyz` / `resample_dem`; unit-tested.
 - **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
   The multi-view texturing step had three consumers that scaled with the number of
   views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at
