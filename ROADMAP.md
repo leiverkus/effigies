@@ -347,14 +347,18 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       too (Wheaton 2010 — robust noise floor of the difference, floored by the
       co-registration residual; `min_lod_from_dod`), so sub-LoD noise no longer
       inflates the changed area or the fill/cut volumes (a raw net is kept as a
-      cross-check). v2 remaining:
-      (a) **stable-area-masked ICP** (co-register on unchanged ground → a clean
-      registration-only error instead of the conservative full-cloud C2C);
-      (b) re-land the mesh + ortho in the reference frame (full `--align` parity),
-      DEM-as-reference. Residual risk neither LoD catches: non-rigid SfM doming
-      (James 2020) — mitigated by GCP/BA, not by the LoD. Verified: M3C2 recovers a
-      known vertical shift, registration_error raises the LoD, DoD minLoD masks
-      sub-LoD noise, volume math unit-tested.
+      cross-check). **Co-registration is now stable-area-masked** (two-pass: a
+      whole-cloud ICP, then a re-fit on only the unchanged ground via `stable_mask`),
+      so a localised change no longer biases the rigid transform and M3C2/DoD get a
+      clean *registration-only* error instead of the conservative full-cloud C2C
+      (`coreg_reg_error`; degrades to the whole-cloud fit — and says so — when too
+      little stable ground remains). v2 remaining: re-land the mesh + ortho in the
+      reference frame (full `--align` parity), DEM-as-reference. Residual risk neither
+      LoD catches: non-rigid SfM doming (James 2020) — mitigated by GCP/BA, not by the
+      LoD. The stable mask itself still assumes a mostly-stable scene. Verified: M3C2
+      recovers a known vertical shift, registration_error raises the LoD, DoD minLoD
+      masks sub-LoD noise, stable_mask separates change from stable ground, volume math
+      unit-tested.
 - [x] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
       (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
       such control; expose colour-balance / blending knobs if real orthos show

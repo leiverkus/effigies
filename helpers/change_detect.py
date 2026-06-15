@@ -13,11 +13,15 @@ Given a **reference cloud** (a prior epoch's
 path via the ``align-to`` option) and *this* epoch's georeferenced LAZ, it:
 
   1. **Co-registers** epoch B onto the reference with PDAL ``filters.icp`` (the same
-     recipe ``scripts/benchmark.sh compare`` uses): ICP reports a rigid 4x4, which
-     we apply to a *working copy* of epoch B's cloud (``odm_change/aligned.laz``) —
-     epoch B's delivered assets are NOT touched (v1 is additive analysis). The
-     co-registration **residual** (ICP fitness + cloud-to-cloud mean/RMS distance
-     before vs. after) lands in the report so a bad alignment is visible.
+     recipe ``scripts/benchmark.sh compare`` uses), **stable-area-masked** in two
+     passes: a first whole-cloud ICP, then a re-fit on only the *unchanged* ground
+     (the changed cells are dropped via :func:`stable_mask`), so a localised change no
+     longer biases the rigid transform and the residual over the stable area is a
+     clean *registration-only* error. The 4x4 is applied to a *working copy* of epoch
+     B's cloud (``odm_change/aligned.laz``) — epoch B's delivered assets are NOT
+     touched (additive analysis). The co-registration **residual** (ICP fitness, C2C
+     before/after, stable fraction, registration error) lands in the report so a bad
+     alignment is visible.
   2. **DoD** (DEM of Difference) — rasterises the reference and the aligned epoch B
      to DSMs on a *shared grid* (PDAL ``writers.gdal`` max-Z), subtracts them
      (``odm_dem/dem_difference.tif`` = B - reference), and computes vertical-change
@@ -40,14 +44,16 @@ All stats are written to ``odm_report/change_detection.json``. The whole module 
 **non-fatal and opt-in** (only runs when ``align-to`` is set): a failure here must
 never lose epoch B's own reconstruction.
 
-**v1 limitation (honest):** ICP runs on the *whole* cloud, which assumes the scene
-is mostly stable between epochs — a least-squares fit will absorb a fraction of a
-large, one-sided change into the rigid transform (e.g. a +Δ change over fraction
-*f* of the area biases the alignment by ≈ *f·Δ*). For the usual case (localised
-excavation change against a stable surround) this is negligible; **stable-area-masked
-ICP** (co-register on unchanged ground only) is the v2 fix. ICP is run in a frame
-centred on the reference because georeferenced eastings/northings (~1e6) wreck both
-the rotation conditioning and float precision otherwise (see ``_decenter_transform``).
+**Stable-area masking & its assumption (honest):** the second ICP pass excludes the
+changed cells, so a large one-sided change no longer biases the rigid fit the way a
+whole-cloud least-squares fit would (≈ *f·Δ* for a change over area-fraction *f*).
+The *mask itself* still assumes the scene is **mostly stable** — the robust noise
+floor that separates stable ground from change is estimated from the difference
+distribution, which only works while the stable majority dominates. When too little
+stable ground remains (or the scene is effectively unchanged) it degrades to the
+whole-cloud transform and says so in the report. ICP is run in a frame centred on the
+reference because georeferenced eastings/northings (~1e6) wreck both the rotation
+conditioning and float precision otherwise (see ``_decenter_transform``).
 
 Sign convention (DoD and M3C2): positive = surface raised (deposition / back-fill),
 negative = surface lowered (excavation / erosion).
@@ -322,6 +328,87 @@ def icp_register(reference, cloud):
                 pass
 
 
+def stable_mask(distances, k=2.5):
+    """Boolean mask of *stable* points from per-point cloud-to-cloud distances.
+
+    Real change shows up as a high tail of large distances; the stable majority sits
+    at a small value (roughness + residual alignment). Robust upper fence:
+    ``stable = d <= median(d) + k·1.4826·MAD(d)``. Pure (NumPy). Assumes the scene is
+    mostly stable — the same assumption the whole-cloud ICP already makes."""
+    import numpy as np
+    d = np.asarray(distances, dtype=np.float64)
+    if d.size == 0:
+        return np.zeros(0, dtype=bool)
+    med = float(np.median(d))
+    mad = 1.4826 * float(np.median(np.abs(d - med)))
+    tau = med + k * mad if mad > 0 else med + 1e-9
+    return d <= tau
+
+
+def stable_area_icp(ref_c, b_c, ref_xyz_c, b_xyz_c, change_dir,
+                    k=2.5, min_stable_frac=0.2, min_stable_pts=500):
+    """Two-pass, stable-area-masked ICP in the reference-centred frame.
+
+    Pass 1 aligns the whole moving cloud (``b_c``) onto ``ref_c`` (PDAL ICP). The
+    per-point C2C distance after that pass flags the *stable* ground
+    (:func:`stable_mask`); pass 2 re-runs ICP on only the stable subset of the moving
+    cloud, so a localised change no longer biases the rigid fit, and the residual over
+    the stable points is a clean *registration-only* error (not roughness + change).
+    Degrades to the pass-1 transform when there is too little stable ground, the scene
+    is effectively unchanged, or pass 2 fails.
+
+    Returns ``(T_c, fitness, converged, info)`` — ``T_c`` the centred 4x4 (or None);
+    ``info``: ``masked`` / ``stable_fraction`` / ``registration_error`` / ``reason``."""
+    import numpy as np
+    from scipy.spatial import cKDTree
+    T0, fit0, conv0 = icp_register(ref_c, b_c)
+    if T0 is None:
+        return None, fit0, conv0, {"masked": False,
+                                   "reason": "pass-1 ICP recovered no transform"}
+    tree = cKDTree(ref_xyz_c)
+    b0 = b_xyz_c @ T0[:3, :3].T + T0[:3, 3]
+    d0 = tree.query(b0)[0]
+    stable = stable_mask(d0, k=k)
+    frac = float(stable.mean()) if stable.size else 0.0
+    info = {"masked": False, "stable_fraction": frac}
+    if int(stable.sum()) < min_stable_pts or frac < min_stable_frac:
+        info["reason"] = "too little stable ground; kept whole-cloud ICP"
+        info["registration_error"] = (float(np.sqrt(np.mean(d0[stable] ** 2)))
+                                      if stable.any() else None)
+        return T0, fit0, conv0, info
+    if frac > 0.999:
+        info["reason"] = "scene effectively unchanged; whole-cloud ICP kept"
+        info["registration_error"] = float(np.sqrt(np.mean(d0 ** 2)))
+        return T0, fit0, conv0, info
+    b_stable = os.path.join(change_dir, "_b_stable_centred.laz")
+    try:
+        _write_cloud(b_xyz_c[stable], b_stable)
+        T1, fit1, conv1 = icp_register(ref_c, b_stable)
+    finally:
+        try:
+            os.remove(b_stable)
+        except OSError:
+            pass
+    if T1 is None:
+        info["reason"] = "pass-2 ICP failed; kept whole-cloud ICP"
+        info["registration_error"] = float(np.sqrt(np.mean(d0[stable] ** 2)))
+        return T0, fit0, conv0, info
+    b1 = b_xyz_c[stable] @ T1[:3, :3].T + T1[:3, 3]
+    reg_err = float(np.sqrt(np.mean(tree.query(b1)[0] ** 2)))
+    return T1, fit1, conv1, {"masked": True, "stable_fraction": frac,
+                             "registration_error": reg_err}
+
+
+def coreg_reg_error(report):
+    """Registration error (m) for the M3C2 LoD / DoD threshold: the clean stable-area
+    residual when available, else the full-cloud post-ICP C2C RMS (conservative)."""
+    c = report.get("coregistration", {}) or {}
+    if c.get("registration_error") is not None:
+        return float(c["registration_error"])
+    resid = c.get("c2c_after") or c.get("c2c_before") or {}
+    return float(resid.get("rms", 0.0) or 0.0)
+
+
 def apply_transform(cloud, T, out):
     """Apply a 4x4 transform to ``cloud`` and write ``out`` via PDAL
     ``filters.transformation`` (matrix is 16 space-separated row-major floats)."""
@@ -521,15 +608,22 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
         b_c = os.path.join(change_dir, "_b_centred.laz")
         _write_cloud(ref_xyz - offset, ref_c)
         _write_cloud(b_xyz - offset, b_c)
-        T_c, fitness, converged = icp_register(ref_c, b_c)
+        T_c, fitness, converged, coreg_info = stable_area_icp(
+            ref_c, b_c, ref_xyz - offset, b_xyz - offset, change_dir)
         for tmp in (ref_c, b_c):
             try:
                 os.remove(tmp)
             except OSError:
                 pass
         aligned = os.path.join(change_dir, "aligned.laz")
-        coreg = {"method": "pdal filters.icp (reference-centred)",
-                 "converged": converged, "fitness": fitness, "c2c_before": before}
+        coreg = {"method": ("pdal filters.icp, stable-area-masked (2-pass)"
+                            if coreg_info.get("masked")
+                            else "pdal filters.icp (whole-cloud, reference-centred)"),
+                 "converged": converged, "fitness": fitness, "c2c_before": before,
+                 "stable_fraction": coreg_info.get("stable_fraction"),
+                 "registration_error": coreg_info.get("registration_error")}
+        if coreg_info.get("reason"):
+            coreg["coreg_note"] = coreg_info["reason"]
         if T_c is not None:
             T = _decenter_transform(T_c, offset)
             apply_transform(cloud, T, aligned)
@@ -543,8 +637,10 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
             b_xyz_aligned = b_xyz
             coreg["note"] = "no transform recovered from ICP; using unaligned cloud"
         report["coregistration"] = coreg
-        print(f"[change] co-registered (fitness={fitness}, "
-              f"before={before}, after={coreg.get('c2c_after')})")
+        print(f"[change] co-registered ({coreg['method']}; stable "
+              f"{coreg.get('stable_fraction')}, reg-error "
+              f"{coreg.get('registration_error')}; before={before}, "
+              f"after={coreg.get('c2c_after')})")
     except Exception as e:
         print(f"[change] co-registration failed (non-fatal): {e}", file=sys.stderr)
         return False
@@ -570,9 +666,7 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
         # Wheaton (2010) minimum LoD: robust noise floor from the difference,
         # floored by the post-ICP co-registration residual, so sub-LoD noise does
         # not inflate the changed area / fill-cut volumes. The raw net is kept too.
-        cresid = report.get("coregistration", {})
-        resid = cresid.get("c2c_after") or cresid.get("c2c_before") or {}
-        reg_error = float(resid.get("rms", 0.0) or 0.0)
+        reg_error = coreg_reg_error(report)
         min_lod = min_lod_from_dod(ra, ba, reg_error=reg_error, nodata=NODATA)
         diff, dod = dod_stats(ra, ba, gsd * gsd, nodata=NODATA, threshold=min_lod)
         dod["min_lod_m"] = float(min_lod)
@@ -620,9 +714,7 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
             # C2C-after RMS is a *conservative upper bound* (it also carries roughness
             # and any real change); a clean registration-only estimate is the v2
             # stable-area-masked ICP. Falls back to c2c_before (no transform) / 0.
-            cresid = report.get("coregistration", {})
-            resid = cresid.get("c2c_after") or cresid.get("c2c_before") or {}
-            reg_error = float(resid.get("rms", 0.0) or 0.0)
+            reg_error = coreg_reg_error(report)
             distances, lod = run_m3c2(ref_xyz - offset, b_xyz_aligned - offset,
                                       core - offset, cyl_radius, normal_radii,
                                       threads=threads, registration_error=reg_error)

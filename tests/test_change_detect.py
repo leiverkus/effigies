@@ -219,6 +219,50 @@ def test_dod_threshold_masks_noise():
     print("ok  DoD minLoD threshold masks sub-LoD noise from volumes + changed area")
 
 
+def test_stable_mask():
+    """Stable points (small C2C) are kept; a high tail of changed points is dropped."""
+    rng = np.random.default_rng(5)
+    stable = np.abs(rng.normal(0, 0.01, 9000))         # ~1 cm C2C (folded)
+    changed = rng.uniform(0.3, 0.6, 1000)              # 30-60 cm change tail
+    d = np.concatenate([stable, changed])
+    m = cd.stable_mask(d)
+    assert m[:9000].mean() > 0.95, m[:9000].mean()     # nearly all stable kept
+    assert m[9000:].mean() < 0.02, m[9000:].mean()     # nearly all change dropped
+    assert cd.stable_mask(np.array([])).size == 0
+    print(f"ok  stable_mask keeps {100*m[:9000].mean():.0f}% stable, drops "
+          f"{100*(1-m[9000:].mean()):.0f}% changed")
+
+
+def test_stable_area_icp():
+    """Two-pass stable-area ICP recovers a known shift while a localised change block
+    is masked out: masked=True, stable_fraction<1, clean cm-level reg error."""
+    import shutil
+    if not shutil.which("pdal"):
+        print("skip stable-area-icp (needs pdal — present in the Effigies image)")
+        return
+    rng = np.random.default_rng(6)
+    n = 20000
+    xy = rng.uniform(-5, 5, size=(n, 2))
+    z = rng.normal(0, 0.005, n)
+    ref = np.ascontiguousarray(np.column_stack([xy, z]), dtype=np.float64)
+    b = ref.copy()
+    b[:, 2] += 0.03                                    # known +3 cm shift
+    block = (np.abs(b[:, 0]) < 1.5) & (np.abs(b[:, 1]) < 1.5)   # ~9% of area
+    b[block, 2] += 0.40                                # +0.4 m localised change
+    b = np.ascontiguousarray(b)
+    with tempfile.TemporaryDirectory() as d:
+        ref_c = os.path.join(d, "ref.laz")
+        b_c = os.path.join(d, "b.laz")
+        cd._write_cloud(ref, ref_c)
+        cd._write_cloud(b, b_c)
+        T, fit, conv, info = cd.stable_area_icp(ref_c, b_c, ref, b, d)
+    assert info.get("masked") is True, info
+    assert 0.5 < info["stable_fraction"] < 0.99, info
+    assert info["registration_error"] < 0.05, info     # clean, not inflated by 0.4 m
+    print(f"ok  stable_area_icp: masked, stable {info['stable_fraction']:.2f}, "
+          f"reg-error {info['registration_error']:.4f} m")
+
+
 if __name__ == "__main__":
     test_parse_icp_transform()
     test_parse_icp_transform_missing()
@@ -228,6 +272,8 @@ if __name__ == "__main__":
     test_dod_no_overlap()
     test_min_lod_from_dod()
     test_dod_threshold_masks_noise()
+    test_stable_mask()
+    test_stable_area_icp()
     test_gate()
     test_m3c2_known_shift()
     test_m3c2_registration_error_raises_lod()

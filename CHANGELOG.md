@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `min_lod_from_dod`), so sub-LoD noise is no longer booked as excavation / back-fill.
   A raw un-thresholded net volume is kept as a cross-check, and the minLoD is recorded
   as `min_lod_m` in `odm_report/change_detection.json`. Unit-tested.
+- **Change detection — co-registration is now stable-area-masked (`change_detect.py`).**
+  ICP runs in two passes: a whole-cloud fit, then a re-fit on only the *unchanged*
+  ground (changed cells dropped via `stable_mask`), so a localised excavation change no
+  longer biases the rigid transform, and the residual over the stable area is a clean
+  *registration-only* error that now feeds the M3C2 LoD and the DoD minLoD
+  (`coreg_reg_error`) instead of the conservative full-cloud C2C. Reports
+  `stable_fraction` + `registration_error` in `change_detection.json`; degrades to the
+  whole-cloud fit (and records why) when too little stable ground remains. Unit-tested
+  (`stable_mask` separation; the two-pass ICP smoke is pdal-gated).
 - **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
   The multi-view texturing step had three consumers that scaled with the number of
   views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at
