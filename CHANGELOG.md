@@ -20,6 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-skips, non-fatally, otherwise. Runs after the orthophoto/DSM so the grid exists.
   Unit-tested (majority + ASPRS→v0 mapping + GeoTIFF round-trip) and image-validated
   end-to-end. This is the bridge's v0 to Structura's vectorisation.
+- **Multi-epoch semantic propagation (`helpers/semantic_propagate.py`).** Carries the
+  semantic field across daily epochs (runs under `--semantic` when `--align-to` gives a
+  reference epoch). Because change detection re-lands this epoch into the reference frame,
+  its semantic ortho is already co-registered with the reference epoch's; the step writes
+  (1) a **carry-forward** field — `odm_semantic/orthophoto_semantic_propagated.tif`, where
+  this epoch's unobserved cells inherit the reference epoch's class (temporally consistent;
+  honest "unobserved = unchanged" assumption) — and (2) a **semantic-change** raster —
+  `odm_semantic/semantic_change.tif` with per-pixel class transitions + per-transition area
+  in `odm_report/semantic_change.json` (the class complement of the DoD/M3C2 geometric
+  change: e.g. structure→ground = a feature removed, vegetation→ground = clearing). The
+  reference is resampled nearest-neighbour (categorical). Self-skips without both semantic
+  orthos; non-fatal. Unit-tested (carry-forward + transition + stats) and end-to-end
+  validated.
 
 ### Changed
 - **Change detection — M3C2 level-of-detection now includes the co-registration

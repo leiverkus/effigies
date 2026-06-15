@@ -419,6 +419,16 @@ if [[ "${OPT[semantic]}" == "true" ]]; then
   if ! python3 "$(dirname "$0")/helpers/semantic_ortho.py" --work "$WORK"; then
     echo "[effigies] WARN: semantic-orthophoto step failed; continuing without it" >&2
   fi
+  # Multi-epoch propagation: carry the class field across epochs when a reference epoch
+  # is given (--align-to). The reference's semantic ortho sits beside its cloud, at
+  # <ref-task>/odm_semantic/orthophoto_semantic.tif. Self-skips if it is not there.
+  if [[ -n "${OPT[align-to]}" ]]; then
+    REF_SEM="$(dirname "$(dirname "${OPT[align-to]}")")/odm_semantic/orthophoto_semantic.tif"
+    if ! python3 "$(dirname "$0")/helpers/semantic_propagate.py" \
+         --work "$WORK" --reference-semantic "$REF_SEM"; then
+      echo "[effigies] WARN: semantic-propagation step failed; continuing without it" >&2
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------

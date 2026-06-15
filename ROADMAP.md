@@ -421,9 +421,16 @@ propagate — and **never bakes an archaeological-material model into the MIT im
       loses. The model is a **versioned weights asset** loaded like the vocab tree /
       OpenPointClass model, never baked in (likely non-commercial research weights —
       same opt-in pattern as the SuperPoint / MASt3R items).
-- [ ] **Multi-epoch propagation (the temporal kicker).** Daily capture → the class
-      field lives in the **co-registered 3D frame**, so it propagates across epochs
-      via the existing change-detection / `--align-to` machinery (`change_detect.py`).
+- [x] **Multi-epoch propagation (the temporal kicker) — shipped (v0).** Because
+      change detection re-lands this epoch into the reference frame, this epoch's
+      semantic ortho is already co-registered with the reference epoch's, so
+      `helpers/semantic_propagate.py` (runs under `--semantic` when `--align-to` is
+      given) carries the class field across epochs: a **carry-forward** field
+      (`orthophoto_semantic_propagated.tif` — unobserved cells inherit the reference
+      class, honest "no-change-where-unobserved" assumption) **and** a **semantic-change**
+      raster (`semantic_change.tif` + per-transition area in `odm_report/semantic_change.json`
+      — the class complement of the DoD/M3C2: e.g. structure→ground = a feature removed).
+      Reference resampled nearest (categorical). Unit-tested + end-to-end validated.
       Effigies carries the **class field**; Structura carries **object / Befund
       identity** in PostGIS — two temporal mechanisms, each where its information
       lives, so **Effigies never reads the DB**.
