@@ -8,6 +8,10 @@ asserts the outputs. It exercises the Docker-only paths that the unit tests skip
 PDAL (stable-area ICP, transform, rasterise, LAZ), GDAL (DoD), py4dgeo (M3C2), pyproj
 (shots.geojson). Optionally re-derives the orthophoto/DSM from the re-landed mesh.
 
+It also guards a real bug it first surfaced: M3C2 must flag a deep (0.4 m) excavation
+block as significant (py4dgeo's ``max_distance`` search depth must be generous, not its
+shallow default) — a check that goes 0 %→significant with the fix.
+
 Run inside the Effigies image:
     python3 scripts/smoke_change_detect.py
 Exit 0 = all checks passed (skips allowed for absent optional deps); 1 = a failure.
@@ -88,13 +92,15 @@ def main():
         os.makedirs(work, exist_ok=True)
 
         # --- synthesise the two epochs -------------------------------------
-        A = ground(40000, 0)
+        A = ground(200000, 0)
         ref = os.path.join(tmp, "epochA.laz")
         cd._write_cloud(A, ref, srs=CRS)
 
+        rngB = np.random.default_rng(1)
         B = A + RIGID
+        B[:, 2] += rngB.normal(0.0, 0.005, len(B))           # independent epoch-B noise
         bx = ((A[:, 0] - OX > 3.5) & (A[:, 0] - OX < 6.5) &
-              (A[:, 1] - OY > 3.5) & (A[:, 1] - OY < 6.5))     # ~9 m² block
+              (A[:, 1] - OY > 3.5) & (A[:, 1] - OY < 6.5))    # ~9 m² excavation block
         B[bx, 2] -= BLOCK_DROP
         laz = os.path.join(work, "odm_georeferenced_model.laz")
         cd._write_cloud(B, laz, srs=CRS)
@@ -113,7 +119,8 @@ def main():
         # --- run the real change-detection CLI -----------------------------
         print("== change_detect.py ==")
         r = subprocess.run([sys.executable, os.path.join(HELP, "change_detect.py"),
-                            "--work", work, "--reference", ref, "--threads", "1"],
+                            "--work", work, "--reference", ref,
+                            "--resolution", "5", "--threads", "1"],
                            capture_output=True, text=True)
         sys.stdout.write(r.stdout)
         if r.returncode != 0:
@@ -130,10 +137,10 @@ def main():
         re_err = co.get("registration_error")
         check("clean registration error < 5 cm", re_err is not None and re_err < 0.05,
               f"{re_err}")
-        cb = (co.get("c2c_before") or {}).get("rms")
-        ca = (co.get("c2c_after") or {}).get("rms")
-        check("ICP improved alignment (c2c after < before)",
-              cb and ca and ca < cb, f"{cb:.4f} -> {ca:.4f}" if cb and ca else "n/a")
+        cbm = (co.get("c2c_before") or {}).get("mean")
+        check("ICP reduced the misalignment (stable residual << initial offset)",
+              re_err is not None and cbm and re_err < 0.5 * cbm,
+              f"reg-error {re_err:.4f} vs initial {cbm:.4f}" if (re_err and cbm) else "n/a")
 
         dod = rep.get("dod", {})
         check("DoD cut volume ≈ block (2–6 m³)",
@@ -160,10 +167,11 @@ def main():
         check("re-landed mesh + cloud", rel.get("mesh") and rel.get("cloud"), f"{rel}")
 
         # re-land cross-checks (independent of the report)
-        b_re = cd.load_xyz(laz)                      # the LAZ was overwritten in place
-        c_after = cd.c2c(b_re, A)["rms"]
-        check("re-landed cloud aligns to the reference (< 2 cm rms)", c_after < 0.02,
-              f"{c_after:.4f}")
+        from scipy.spatial import cKDTree
+        b_re = cd.load_xyz(laz)                       # the LAZ was overwritten in place
+        med = float(np.median(cKDTree(A).query(b_re)[0]))   # robust to the change block
+        check("re-landed cloud aligns to the reference (median C2C < 2 cm)",
+              med < 0.02, f"{med:.4f} m")
         obj_after = np.loadtxt(
             [l for l in open(os.path.join(work, MESH_OBJ)) if l.startswith("v ")],
             usecols=(1, 2, 3))

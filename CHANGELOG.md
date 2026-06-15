@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of sitting in the old frame. `cameras.json` is unchanged (intrinsics are
   frame-independent). The re-land gate is unit-tested; the pyproj WGS84 path is
   Docker-validated. Closes the last v2 gap of the change-detection item.
+- **Change detection — fix: M3C2 no longer misses deep changes (`change_detect.py`).**
+  py4dgeo's M3C2 `max_distance` (the cylinder search depth along the normal) defaulted
+  to 0, which on the auto-scaled small cylinder of a dense cloud is too shallow — a deep
+  excavation (a change larger than the cylinder scale) had no matching surface in range
+  and came back NaN / not-significant, even where the DoD clearly measured it. It is now
+  set generously (`max(30·cyl_radius, 3 m)`). Found by the new end-to-end smoke
+  (`scripts/smoke_change_detect.py`), which the fix takes from M3C2 0 %→significant on a
+  0.4 m block.
 - **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
   The multi-view texturing step had three consumers that scaled with the number of
   views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at

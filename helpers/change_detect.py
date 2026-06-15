@@ -622,7 +622,7 @@ def have_py4dgeo():
 
 
 def run_m3c2(ref_xyz, b_xyz, core_xyz, cyl_radius, normal_radii, threads=1,
-             registration_error=0.0):
+             registration_error=0.0, max_distance=None):
     """M3C2 signed distance + level-of-detection of epoch B vs. the reference.
 
     Returns ``(distances, lodetection)`` 1-D arrays aligned with ``core_xyz``.
@@ -631,19 +631,28 @@ def run_m3c2(ref_xyz, b_xyz, core_xyz, cyl_radius, normal_radii, threads=1,
     not roughness alone — without it a cm-level alignment residual is silently
     treated as zero and small changes look more significant than they are. The
     caller passes the post-ICP residual.
+    ``max_distance`` (m) is the cylinder **search depth** along the normal: py4dgeo
+    defaults it to 0, which on the auto-scaled small cylinder of a dense cloud is too
+    shallow — a deep excavation (a change larger than the cylinder scale) then has no
+    matching surface in range and comes back NaN / not-significant. So it is set
+    generously (``max(30·cyl_radius, 3 m)``) to keep metre-scale excavation change in
+    range; pass a value to override.
     ``set_num_threads`` is pinned (the default multithreaded path segfaults on the
     arm64 build); core points must be C-contiguous float64 (a strided view
     segfaults the C++ core). py4dgeo-gated — unit-tested on a known shift."""
     import numpy as np
     import py4dgeo
     py4dgeo.set_num_threads(max(1, int(threads)))
+    if max_distance is None:
+        max_distance = max(30.0 * float(cyl_radius), 3.0)
     e_ref = py4dgeo.Epoch(np.ascontiguousarray(ref_xyz, dtype=np.float64))
     e_b = py4dgeo.Epoch(np.ascontiguousarray(b_xyz, dtype=np.float64))
     core = np.ascontiguousarray(core_xyz, dtype=np.float64)
     m3c2 = py4dgeo.M3C2(epochs=(e_ref, e_b), corepoints=core,
                         cyl_radius=float(cyl_radius),
                         normal_radii=[float(r) for r in normal_radii],
-                        registration_error=float(max(0.0, registration_error)))
+                        registration_error=float(max(0.0, registration_error)),
+                        max_distance=float(max_distance))
     distances, unc = m3c2.run()
     return np.asarray(distances), np.asarray(unc["lodetection"])
 
