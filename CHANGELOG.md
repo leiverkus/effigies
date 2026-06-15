@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Semantic orthophoto v0 (`helpers/semantic_ortho.py`, opt-in `--semantic`).** The
+  geometry-derived first increment of the semantic field (ROADMAP v0.7.0): it
+  rasterises the OpenPointClass point classes already written into the LAZ onto the
+  orthophoto grid — pixel-aligned with `odm_dem/dsm.tif` — taking the per-cell
+  **majority** class, folded into **ground / vegetation / structure**, as
+  `odm_semantic/orthophoto_semantic.tif` (Byte GeoTIFF + colour table) plus a legend
+  JSON. No trained model: it ships what the cloud classification already knows; the
+  fine archaeological material classes (stone/earth/paving/ceramic/mortar) are a
+  downstream 2D-model deliverable. Needs a classified cloud (enable `--classify`);
+  self-skips, non-fatally, otherwise. Runs after the orthophoto/DSM so the grid exists.
+  Unit-tested (majority + ASPRS→v0 mapping + GeoTIFF round-trip) and image-validated
+  end-to-end. This is the bridge's v0 to Structura's vectorisation.
+
 ### Changed
 - **Change detection — M3C2 level-of-detection now includes the co-registration
   residual (`change_detect.py`).** The per-point LoD previously reflected local

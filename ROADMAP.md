@@ -404,10 +404,14 @@ propagate — and **never bakes an archaeological-material model into the MIT im
       occlusion-correct, inheriting RefineMesh geometry, georeferenced like the RGB
       ortho. Same machinery as the existing class rasters (`classify_cloud.py`
       `buildings.tif` / `canopy.tif`). Self-skips for local-frame results.
-- [ ] **v0 is free from the existing point classification.** OpenPointClass
-      already labels the cloud (ground / vegetation / structure); rasterising those
-      classes is a coarse semantic ortho at **no model cost** — the honest first
-      increment (vegetation is essentially free). Ships without any new model.
+- [x] **v0 is free from the existing point classification — shipped.**
+      `helpers/semantic_ortho.py` (opt-in `--semantic`) rasterises the OpenPointClass
+      cloud classes onto the orthophoto grid (pixel-aligned with `odm_dem/dsm.tif`),
+      per-cell **majority** class → ground / vegetation / structure, as
+      `odm_semantic/orthophoto_semantic.tif` (Byte + colour table) + a legend JSON. No
+      model cost — needs only `--classify`; self-skips otherwise. Unit-tested
+      (majority + ASPRS→v0 + write round-trip) and image-validated end-to-end. The fine
+      material classes below remain the trained-model step.
 - [ ] **Fine archaeological classes = bring-your-own model (Structura's
       deliverable).** Stone / earth / paving / ceramic / mortar is a trained **2D
       image** semantic model (labels are cheap in 2D; foundation-model leverage),

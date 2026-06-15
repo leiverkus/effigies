@@ -283,6 +283,13 @@
     "help": "ML multi-class classification of the point cloud (OpenPointClass, the same tool ODM uses): tags every point with an ASPRS class — ground, low/medium/high vegetation, building, vehicle — written into the LAZ (so viewers can colour by class), plus class-filtered surface rasters (odm_dem/buildings.tif, odm_dem/canopy.tif). When on, the DTM reuses the ML ground class instead of re-running SMRF. Opt-in: an extra ML step (~2 min per 15M points). Requires a georeferenced result. Default: %(default)s"
   },
   {
+    "name": "semantic",
+    "title": "Semantic Orthophoto (v0)",
+    "value": false,
+    "type": "bool",
+    "help": "Write a per-pixel semantic orthophoto (odm_semantic/orthophoto_semantic.tif) by rasterising the point-cloud classes onto the orthophoto grid (pixel-aligned with the DSM): each pixel gets the dominant coarse class — ground / vegetation / structure — with a colour table and a legend JSON. This is the geometry-derived v0 of the semantic field (no trained model); fine archaeological material classes (stone/earth/paving/ceramic/mortar) are a downstream model. Needs the cloud classified, so enable Classify too; self-skips otherwise. Default: %(default)s"
+  },
+  {
     "name": "orthophoto-resolution",
     "title": "Orthophoto Resolution (cm/px)",
     "value": "auto",

@@ -42,6 +42,7 @@ declare -A OPT=(
   [skip-dsm]=false
   [dtm]=false
   [classify]=false
+  [semantic]=false
   [align-to]=""
   [orthophoto-resolution]=auto
   [ortho-fill-holes]=0.25
@@ -404,6 +405,19 @@ if [[ "$(awk "BEGIN{print (${OPT[contours-interval]}>0)?1:0}")" == "1" ]]; then
   if ! python3 "$(dirname "$0")/helpers/contours.py" \
        --work "$WORK" --interval "${OPT[contours-interval]}"; then
     echo "[effigies] WARN: contours step failed; continuing without it" >&2
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 5b3. Semantic orthophoto v0 -> odm_semantic/orthophoto_semantic.tif. Opt-in
+#      (--semantic): rasterises the OpenPointClass cloud classes (ground/vegetation/
+#      structure) onto the ortho grid (pixel-aligned with the DSM). Needs a classified
+#      cloud (--classify) + a raster grid; self-skips otherwise. Non-fatal. The bridge
+#      to Structura's vectorisation; fine material classes are a downstream model.
+# ---------------------------------------------------------------------------
+if [[ "${OPT[semantic]}" == "true" ]]; then
+  if ! python3 "$(dirname "$0")/helpers/semantic_ortho.py" --work "$WORK"; then
+    echo "[effigies] WARN: semantic-orthophoto step failed; continuing without it" >&2
   fi
 fi
 
