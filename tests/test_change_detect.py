@@ -186,6 +186,39 @@ def test_m3c2_registration_error_raises_lod():
     print(f"ok  M3C2 registration_error raises the LoD (median {m0:.3f} -> {mR:.3f} m)")
 
 
+def test_min_lod_from_dod():
+    """Wheaton-2010 minLoD: pure noise -> ~z·σ; the registration residual is a floor;
+    no overlap -> 0."""
+    rng = np.random.default_rng(3)
+    ref = np.zeros((50, 50), dtype=np.float64)
+    b = ref + rng.normal(0, 0.02, ref.shape)           # 2 cm noise, no real change
+    lod = cd.min_lod_from_dod(ref, b, reg_error=0.0, nodata=cd.NODATA)
+    assert 0.025 < lod < 0.055, lod                    # ~1.96·0.02 ≈ 0.039
+    lod_reg = cd.min_lod_from_dod(ref, b, reg_error=0.10, nodata=cd.NODATA)
+    assert lod_reg >= 1.96 * 0.10 - 1e-9, lod_reg      # floored by z·reg_error
+    assert cd.min_lod_from_dod(np.full((3, 3), cd.NODATA),
+                               np.zeros((3, 3)), nodata=cd.NODATA) == 0.0
+    print(f"ok  min_lod_from_dod (noise≈{lod:.3f} m, reg-floored≈{lod_reg:.3f} m)")
+
+
+def test_dod_threshold_masks_noise():
+    """A minLoD threshold keeps sub-LoD noise out of the fill/cut volumes and the
+    changed area (Wheaton 2010); real change above it is counted; a raw net is kept."""
+    rng = np.random.default_rng(4)
+    ref = np.zeros((40, 40), dtype=np.float64)
+    b = ref + rng.normal(0, 0.01, ref.shape)           # 1 cm noise everywhere
+    b[10:13, 10:13] += 0.5                              # real +0.5 m over 9 cells
+    cell_area = 1.0
+    _, s = cd.dod_stats(ref, b, cell_area, nodata=cd.NODATA, threshold=0.04)
+    assert abs(s["volume_fill_m3"] - 9 * 0.5) < 0.1, s   # ~4.5 m³, noise excluded
+    assert s["volume_cut_m3"] < 0.05, s                  # no cut above LoD
+    assert abs(s["changed_area_m2"] - 9.0) < 2.0, s      # ~9 cells changed
+    assert "net_volume_raw_m3" in s, s                   # raw cross-check kept
+    _, s0 = cd.dod_stats(ref, b, cell_area, nodata=cd.NODATA, threshold=0.0)
+    assert s0["changed_area_m2"] > s["changed_area_m2"], (s0, s)  # 0-threshold books noise
+    print("ok  DoD minLoD threshold masks sub-LoD noise from volumes + changed area")
+
+
 if __name__ == "__main__":
     test_parse_icp_transform()
     test_parse_icp_transform_missing()
@@ -193,6 +226,8 @@ if __name__ == "__main__":
     test_dod_volume_fill()
     test_dod_cut_sign_and_nodata()
     test_dod_no_overlap()
+    test_min_lod_from_dod()
+    test_dod_threshold_masks_noise()
     test_gate()
     test_m3c2_known_shift()
     test_m3c2_registration_error_raises_lod()

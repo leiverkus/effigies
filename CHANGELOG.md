@@ -15,8 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   significance test instead of being treated as zero — small (few-cm) changes are no
   longer over-reported as significant. Recorded as `registration_error_m` in
   `odm_report/change_detection.json`. Unit-tested: a 5 cm residual lifts the LoD
-  median (≈ 0.3 cm → 10 cm). DoD min-LoD thresholding (Wheaton 2010) + stable-area-
-  masked ICP remain v2 (see ROADMAP).
+  median (≈ 0.3 cm → 10 cm). Stable-area-masked ICP remains v2 (see ROADMAP).
+- **Change detection — DoD now thresholded at a minimum level-of-detection
+  (`change_detect.py`).** The DEM-of-Difference changed area and fill/cut volumes now
+  count only cells whose |Δz| exceeds a minimum LoD (Wheaton 2010 — a robust noise
+  floor of the difference distribution, floored by the co-registration residual;
+  `min_lod_from_dod`), so sub-LoD noise is no longer booked as excavation / back-fill.
+  A raw un-thresholded net volume is kept as a cross-check, and the minLoD is recorded
+  as `min_lod_m` in `odm_report/change_detection.json`. Unit-tested.
 - **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
   The multi-view texturing step had three consumers that scaled with the number of
   views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at

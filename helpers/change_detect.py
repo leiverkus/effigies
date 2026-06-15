@@ -21,8 +21,11 @@ path via the ``align-to`` option) and *this* epoch's georeferenced LAZ, it:
   2. **DoD** (DEM of Difference) — rasterises the reference and the aligned epoch B
      to DSMs on a *shared grid* (PDAL ``writers.gdal`` max-Z), subtracts them
      (``odm_dem/dem_difference.tif`` = B - reference), and computes vertical-change
-     stats incl. **cut/fill volume** (Σ Δz·cell-area). This is the workhorse product
-     for vertical excavation change.
+     stats incl. **cut/fill volume** (Σ Δz·cell-area). Only cells whose |Δz| exceeds
+     a **minimum level-of-detection** (Wheaton 2010 — robust noise floor of the
+     difference, floored by the co-registration residual) count toward the changed
+     area and the fill/cut volumes, so sub-LoD noise is not booked as change; a raw
+     (un-thresholded) net is kept as a cross-check. The workhorse for vertical change.
   3. **M3C2** (Lague et al. 2013, via ``py4dgeo``) — signed distance along the local
      surface normal plus a level-of-detection per core point
      (``odm_change/m3c2.laz`` with extra dims ``m3c2_distance`` / ``m3c2_lod`` /
@@ -127,9 +130,14 @@ def dod_stats(ref, b, cell_area, nodata=NODATA, threshold=0.0):
     if dz.size == 0:
         return diff, {"valid_cells": 0, "note": "no overlapping valid cells"}
 
+    # Wheaton (2010): only cells whose |Δz| exceeds the minimum level-of-detection
+    # count as real change. The threshold masks the volumes too, not just the area —
+    # otherwise sub-LoD noise inflates fill/cut. A raw (un-thresholded) net is kept
+    # as a cross-check: over a mostly-stable scene random noise ~cancels in the net.
     changed = np.abs(dz) > threshold
-    fill = dz[dz > 0]                      # surface raised — deposition / back-fill
-    cut = dz[dz < 0]                       # surface lowered — excavation / erosion
+    sig = dz[changed]                     # signed change above the LoD
+    fill = sig[sig > 0]                   # surface raised — deposition / back-fill
+    cut = sig[sig < 0]                    # surface lowered — excavation / erosion
     stats = {
         "valid_cells": int(dz.size),
         "change_threshold_m": float(threshold),
@@ -138,10 +146,31 @@ def dod_stats(ref, b, cell_area, nodata=NODATA, threshold=0.0):
         "max_lower_m": float(dz.min()),
         "changed_area_m2": float(int(changed.sum()) * cell_area),
         "volume_fill_m3": float(fill.sum() * cell_area),
-        "volume_cut_m3": float(-cut.sum() * cell_area),   # reported positive
-        "net_volume_m3": float(dz.sum() * cell_area),
+        "volume_cut_m3": float(-cut.sum() * cell_area),    # reported positive
+        "net_volume_m3": float(sig.sum() * cell_area),     # LoD-significant cells only
+        "net_volume_raw_m3": float(dz.sum() * cell_area),  # all cells (noise cancels)
     }
     return diff, stats
+
+
+def min_lod_from_dod(ref, b, reg_error=0.0, nodata=NODATA, z=1.96):
+    """Minimum level-of-detection for the DoD (Wheaton et al. 2010).
+
+    A robust empirical noise floor from the difference distribution, floored by the
+    co-registration residual: ``minLoD = z · max(1.4826·MAD(Δz), |reg_error|)``.
+    Over a mostly-stable scene (the v1 ICP assumption) the spread of Δz across the
+    stable majority *is* the combined DSM + residual-alignment noise; the robust MAD
+    is insensitive to the localised real change. ``z`` is the confidence multiplier
+    (1.96 ≈ 95 %). Returns 0.0 if there is no overlap. Pure (NumPy)."""
+    import numpy as np
+    ref = np.asarray(ref, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    valid = (ref != nodata) & (b != nodata)
+    if not valid.any():
+        return 0.0
+    dz = b[valid] - ref[valid]
+    sigma = 1.4826 * float(np.median(np.abs(dz - np.median(dz))))
+    return float(z * max(sigma, abs(float(reg_error))))
 
 
 def gate(reference, cloud, have_pdal):
@@ -538,7 +567,15 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
         h = min(ra.shape[0], ba.shape[0])
         w = min(ra.shape[1], ba.shape[1])
         ra, ba = ra[:h, :w], ba[:h, :w]
-        diff, dod = dod_stats(ra, ba, gsd * gsd, nodata=NODATA)
+        # Wheaton (2010) minimum LoD: robust noise floor from the difference,
+        # floored by the post-ICP co-registration residual, so sub-LoD noise does
+        # not inflate the changed area / fill-cut volumes. The raw net is kept too.
+        cresid = report.get("coregistration", {})
+        resid = cresid.get("c2c_after") or cresid.get("c2c_before") or {}
+        reg_error = float(resid.get("rms", 0.0) or 0.0)
+        min_lod = min_lod_from_dod(ra, ba, reg_error=reg_error, nodata=NODATA)
+        diff, dod = dod_stats(ra, ba, gsd * gsd, nodata=NODATA, threshold=min_lod)
+        dod["min_lod_m"] = float(min_lod)
         dod["resolution_m"] = float(gsd)
         diff_path = os.path.join(dem_dir, "dem_difference.tif")
         _write_diff(diff, geo, proj, diff_path)
@@ -551,7 +588,8 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
                 pass
         print(f"[change] DoD: net {dod.get('net_volume_m3', 0):.2f} m³ "
               f"(fill {dod.get('volume_fill_m3', 0):.2f}, cut {dod.get('volume_cut_m3', 0):.2f}), "
-              f"changed area {dod.get('changed_area_m2', 0):.1f} m² @ {gsd*100:.1f} cm/px")
+              f"changed area {dod.get('changed_area_m2', 0):.1f} m² "
+              f"(minLoD {min_lod*100:.1f} cm) @ {gsd*100:.1f} cm/px")
     except Exception as e:
         print(f"[change] DoD failed (non-fatal): {e}", file=sys.stderr)
         report["dod"] = {"error": str(e)}
