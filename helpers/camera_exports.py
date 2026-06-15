@@ -10,6 +10,11 @@ Both are derived from the COLMAP text model (cameras.txt + images.txt) and the
 similarity in ``georef_transform.json``. ``shots.geojson`` needs a projected CRS,
 so it is skipped for a local-only (un-georeferenced) result; ``cameras.json`` is
 written regardless (intrinsics are frame-independent).
+
+When multi-epoch change detection re-landed this epoch into a reference frame
+(``--align-to`` default), the camera positions in ``shots.geojson`` are re-landed
+too — read from ``odm_report/change_detection.json`` — so they stay consistent with
+the re-landed mesh / cloud / orthophoto.
 """
 import argparse
 import json
@@ -75,9 +80,33 @@ def _rodrigues(R):
     return (axis * ang).tolist()
 
 
-def build_shots_geojson(model_dir, cams, transform):
+def _reland_transform(work):
+    """The change-detection re-land transform (de-centred 4x4) when epoch B was
+    re-landed into the reference frame (``--align-to`` default), else None — so the
+    camera positions follow the re-landed mesh/cloud. Gated on the ``relanded`` marker
+    in ``odm_report/change_detection.json`` so additive runs (``--no-reland``) and
+    failed re-lands leave the cameras in place."""
+    cdj = os.path.join(work, "odm_report", "change_detection.json")
+    if not os.path.exists(cdj):
+        return None
+    try:
+        rep = json.load(open(cdj))
+    except Exception:
+        return None
+    relanded = rep.get("relanded")
+    if not relanded or (isinstance(relanded, dict) and relanded.get("error")):
+        return None
+    tr = rep.get("coregistration", {}).get("transform")
+    if not tr or len(tr) != 16:
+        return None
+    return np.asarray(tr, dtype=np.float64).reshape(4, 4)
+
+
+def build_shots_geojson(model_dir, cams, transform, reland=None):
     """One WGS84 Point feature per image (camera centre), or None if not
-    georeferenced (no projected CRS to invert to lon/lat)."""
+    georeferenced (no projected CRS to invert to lon/lat). When ``reland`` (a 4x4) is
+    given, the camera centres + orientations are re-landed into the reference frame
+    first, so shots.geojson matches the re-landed mesh/cloud."""
     crs = transform.get("crs")
     if not crs or str(crs).lower() == "local":
         return None
@@ -98,6 +127,10 @@ def build_shots_geojson(model_dir, cams, transform):
         R = np.asarray(im["R"]); t = np.asarray(im["t"])
         C = -R.T @ t                              # camera centre, local frame
         world = s * (Rg @ C) + tg                 # -> projected CRS (full coords)
+        ori = R @ Rg.T                            # orientation in the projected frame
+        if reland is not None:                    # follow the re-landed geometry
+            world = reland[:3, :3] @ world + reland[:3, 3]
+            ori = ori @ reland[:3, :3].T
         lon, lat, alt = to_wgs.transform(world[0], world[1], world[2])
         cid = im["cam_id"]
         model, w, h, params = cams[cid]
@@ -109,7 +142,7 @@ def build_shots_geojson(model_dir, cams, transform):
                 "focal": float(fx), "width": int(w), "height": int(h),
                 "capture_time": 0,
                 "translation": world.tolist(),
-                "rotation": _rodrigues(R @ Rg.T),  # orientation in the projected frame
+                "rotation": _rodrigues(ori),
             },
             "geometry": {"type": "Point", "coordinates": [lon, lat, alt]},
         })
@@ -134,13 +167,15 @@ def main():
 
     tr_path = os.path.join(args.work, "georef_transform.json")
     transform = json.load(open(tr_path)) if os.path.exists(tr_path) else {"crs": "local"}
-    shots = build_shots_geojson(model_dir, cams, transform)
+    reland = _reland_transform(args.work)
+    shots = build_shots_geojson(model_dir, cams, transform, reland=reland)
     if shots is None:
         print("[cameras] not georeferenced; skipping shots.geojson", file=sys.stderr)
         return
     with open(os.path.join(args.work, "shots.geojson"), "w") as f:
         json.dump(shots, f)
-    print(f"[cameras] wrote shots.geojson ({len(shots['features'])} shot(s), WGS84)")
+    print(f"[cameras] wrote shots.geojson ({len(shots['features'])} shot(s), WGS84"
+          + (", re-landed into the reference frame" if reland is not None else "") + ")")
 
 
 if __name__ == "__main__":

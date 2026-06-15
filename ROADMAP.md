@@ -359,15 +359,18 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       3D-Tiles inherit the reference frame natively (`--no-reland` keeps additive-only).
       **DEM-as-reference** is now supported too: an `--align-to` that is a DEM GeoTIFF
       (a prior DSM/DEM) is read as cell-centre points for ICP/M3C2 and used directly as
-      the reference DSM for the DoD (`is_dem` / `dem_to_xyz` / `resample_dem`). v2
-      remaining: re-land the **camera assets** (`shots.geojson` — known gap). Residual
-      risk neither LoD catches: non-rigid SfM doming (James 2020) — mitigated by GCP/BA,
-      not by the LoD. The stable mask itself still assumes a mostly-stable scene.
-      Verified: M3C2 recovers a known vertical shift, registration_error raises the LoD,
-      DoD minLoD masks sub-LoD noise, stable_mask separates change from stable ground,
-      transform_obj is offset-exact, dem_to_xyz loads a DEM as cell-centre points,
-      volume math unit-tested; the full re-land pipeline (raster re-derivation in the
-      image) is Docker-validated.
+      the reference DSM for the DoD (`is_dem` / `dem_to_xyz` / `resample_dem`). The
+      **camera assets** are re-landed too — `camera_exports` transforms the
+      `shots.geojson` camera centres + orientations by the recorded re-land transform
+      (gated on the `relanded` marker), so the whole asset set is frame-consistent.
+      **The v2 list for this item is now complete.** Residual risk neither LoD catches:
+      non-rigid SfM doming (James 2020) — mitigated by GCP/BA, not by the LoD. The
+      stable mask itself still assumes a mostly-stable scene. Verified: M3C2 recovers a
+      known vertical shift, registration_error raises the LoD, DoD minLoD masks sub-LoD
+      noise, stable_mask separates change from stable ground, transform_obj is
+      offset-exact, dem_to_xyz loads a DEM as cell-centre points, the camera re-land
+      gate is unit-tested, volume math unit-tested; the full re-land pipeline (raster
+      re-derivation in the image) is Docker-validated.
 - [x] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
       (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
       such control; expose colour-balance / blending knobs if real orthos show

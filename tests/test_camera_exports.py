@@ -85,8 +85,50 @@ def test_shots_skips_local_frame():
     print("ok  shots.geojson skips a local (un-georeferenced) result")
 
 
+def test_reland_transform_gate():
+    """_reland_transform returns the 4x4 only when a re-land actually happened."""
+    T = np.eye(4); T[:3, 3] = [1.0, 2.0, 3.0]
+    flat = T.reshape(-1).tolist()
+    with tempfile.TemporaryDirectory() as d:
+        rd = os.path.join(d, "odm_report"); os.makedirs(rd)
+        cdj = os.path.join(rd, "change_detection.json")
+        json.dump({"relanded": {"mesh": "m.obj", "cloud": "c.laz"},
+                   "coregistration": {"transform": flat}}, open(cdj, "w"))
+        got = ce._reland_transform(d)
+        assert got is not None and np.allclose(got, T), got
+        json.dump({"relanded": {"error": "x"},
+                   "coregistration": {"transform": flat}}, open(cdj, "w"))
+        assert ce._reland_transform(d) is None                 # failed re-land
+        json.dump({"coregistration": {"transform": flat}}, open(cdj, "w"))
+        assert ce._reland_transform(d) is None                 # additive (no marker)
+        no = os.path.join(d, "empty")
+    assert ce._reland_transform(no) is None                    # no file
+    print("ok  _reland_transform gates on the relanded marker")
+
+
+def test_shots_reland_shifts_positions():
+    if not _have_pyproj():
+        print("skip shots-reland (needs pyproj)")
+        return
+    with tempfile.TemporaryDirectory() as d:
+        m = _synth_model(d)
+        cams = ce.gb._read_cameras(m)
+        tr = {"s": 1.0, "R": np.eye(3).tolist(),
+              "t": [415700.0, 5958560.0, 0.0], "crs": "EPSG:32632"}
+        base = ce.build_shots_geojson(m, cams, tr)
+        T = np.eye(4); T[:3, 3] = [0.05, -0.03, 0.02]          # 5/3/2 cm re-land
+        rel = ce.build_shots_geojson(m, cams, tr, reland=T)
+    for fb, fr in zip(base["features"], rel["features"]):
+        shift = np.asarray(fr["properties"]["translation"]) - \
+                np.asarray(fb["properties"]["translation"])
+        assert np.allclose(shift, [0.05, -0.03, 0.02], atol=1e-6), shift
+    print("ok  shots.geojson re-land shifts camera positions by the transform")
+
+
 if __name__ == "__main__":
     test_cameras_json_normalised()
     test_shots_geojson_wgs84()
     test_shots_skips_local_frame()
+    test_reland_transform_gate()
+    test_shots_reland_shifts_positions()
     print("\nall camera-export tests passed")

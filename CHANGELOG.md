@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (resampled onto the shared grid) as the reference DSM for the DEM-of-Difference —
   so a prior epoch's DSM, or any external reference DEM, can drive the comparison.
   `is_dem` / `dem_to_xyz` / `resample_dem`; unit-tested.
+- **Change detection — camera assets are re-landed with the rest (`camera_exports.py`).**
+  When an `--align-to` run re-landed this epoch into the reference frame, `shots.geojson`
+  camera centres and orientations are now transformed by the recorded re-land transform
+  (read from `odm_report/change_detection.json`, gated on the `relanded` marker), so the
+  camera positions stay consistent with the re-landed mesh / cloud / orthophoto instead
+  of sitting in the old frame. `cameras.json` is unchanged (intrinsics are
+  frame-independent). The re-land gate is unit-tested; the pyproj WGS84 path is
+  Docker-validated. Closes the last v2 gap of the change-detection item.
 - **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
   The multi-view texturing step had three consumers that scaled with the number of
   views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at
