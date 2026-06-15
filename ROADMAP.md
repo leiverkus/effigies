@@ -352,13 +352,19 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       so a localised change no longer biases the rigid transform and M3C2/DoD get a
       clean *registration-only* error instead of the conservative full-cloud C2C
       (`coreg_reg_error`; degrades to the whole-cloud fit — and says so — when too
-      little stable ground remains). v2 remaining: re-land the mesh + ortho in the
-      reference frame (full `--align` parity), DEM-as-reference. Residual risk neither
-      LoD catches: non-rigid SfM doming (James 2020) — mitigated by GCP/BA, not by the
-      LoD. The stable mask itself still assumes a mostly-stable scene. Verified: M3C2
-      recovers a known vertical shift, registration_error raises the LoD, DoD minLoD
-      masks sub-LoD noise, stable_mask separates change from stable ground, volume math
-      unit-tested.
+      little stable ground remains). **Re-landing is now the default** (`--align`
+      parity): `reland_assets` applies the recovered transform to the delivered mesh +
+      cloud in place (offset-aware OBJ via `transform_obj`, LAZ via PDAL, EPT rebuilt),
+      and because it runs *before* the raster stages the DSM/DTM/ortho/contours/glTF/
+      3D-Tiles inherit the reference frame natively (`--no-reland` keeps additive-only).
+      v2 remaining: re-land the **camera assets** (`shots.geojson` — known gap) and
+      **DEM-as-reference** (accept a raster DEM as the alignment reference). Residual
+      risk neither LoD catches: non-rigid SfM doming (James 2020) — mitigated by GCP/BA,
+      not by the LoD. The stable mask itself still assumes a mostly-stable scene.
+      Verified: M3C2 recovers a known vertical shift, registration_error raises the LoD,
+      DoD minLoD masks sub-LoD noise, stable_mask separates change from stable ground,
+      transform_obj is offset-exact, volume math unit-tested; the full re-land pipeline
+      (raster re-derivation in the image) is Docker-validated.
 - [x] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
       (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
       such control; expose colour-balance / blending knobs if real orthos show

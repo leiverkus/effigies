@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stable_fraction` + `registration_error` in `change_detection.json`; degrades to the
   whole-cloud fit (and records why) when too little stable ground remains. Unit-tested
   (`stable_mask` separation; the two-pass ICP smoke is pdal-gated).
+- **Change detection — `--align-to` now re-lands the deliverables into the reference
+  frame by default (`change_detect.py`), ODM `--align` parity.** The recovered ICP
+  transform is applied in place to the delivered mesh OBJ (offset-aware, `transform_obj`)
+  and the LAZ (PDAL; EPT rebuilt); because re-landing runs before the raster stages, the
+  DSM/DTM, orthophoto, contours, glTF and 3D Tiles inherit the reference frame natively
+  (no re-warp). Previously the alignment was additive-only (deliverables untouched) —
+  pass `--no-reland` to keep that. `report["relanded"]` lists what moved; non-fatal per
+  asset. Camera assets (`shots.geojson`) are a known re-land gap (v2). Offset-exact
+  transform unit-tested; the full raster re-derivation is Docker-validated.
 - **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
   The multi-view texturing step had three consumers that scaled with the number of
   views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at

@@ -263,7 +263,36 @@ def test_stable_area_icp():
           f"reg-error {info['registration_error']:.4f} m")
 
 
+def test_transform_obj():
+    """transform_obj rigid-transforms the v-lines in the offset frame
+    (v' = R·v + (R·offset + t − offset)) and passes vt / f / vertex-colour through."""
+    R = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]], dtype=float)   # +90° about Z
+    t = np.array([0.10, -0.20, 0.05])
+    offset = np.array([300000.0, 5000000.0, 100.0])
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "m.obj")
+        out = os.path.join(d, "m2.obj")
+        with open(src, "w") as f:
+            f.write("mtllib m.mtl\n")
+            f.write("v 1.0 2.0 3.0\n")
+            f.write("vt 0.5 0.5\n")
+            f.write("v 4.0 5.0 6.0 0.1 0.2 0.3\n")    # vertex with colour
+            f.write("f 1/1 2/1 1/1\n")
+        cd.transform_obj(src, out, R, t, offset)
+        lines = open(out).read().splitlines()
+    assert lines[0] == "mtllib m.mtl" and lines[2] == "vt 0.5 0.5", lines
+    assert lines[4].startswith("f "), lines
+    t_eff = R @ offset + t - offset
+    for lineno, v in [(1, [1, 2, 3]), (3, [4, 5, 6])]:
+        exp = R @ np.array(v, float) + t_eff
+        got = np.array([float(x) for x in lines[lineno].split()[1:4]])
+        assert np.allclose(got, exp, atol=1e-5), (lineno, got, exp)
+    assert lines[3].split()[4:] == ["0.1", "0.2", "0.3"], lines[3]
+    print("ok  transform_obj rigid-transforms v-lines (offset-aware), keeps vt/f/colour")
+
+
 if __name__ == "__main__":
+    test_transform_obj()
     test_parse_icp_transform()
     test_parse_icp_transform_missing()
     test_decenter_transform()

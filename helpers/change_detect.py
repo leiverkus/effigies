@@ -18,10 +18,14 @@ path via the ``align-to`` option) and *this* epoch's georeferenced LAZ, it:
      (the changed cells are dropped via :func:`stable_mask`), so a localised change no
      longer biases the rigid transform and the residual over the stable area is a
      clean *registration-only* error. The 4x4 is applied to a *working copy* of epoch
-     B's cloud (``odm_change/aligned.laz``) — epoch B's delivered assets are NOT
-     touched (additive analysis). The co-registration **residual** (ICP fitness, C2C
-     before/after, stable fraction, registration error) lands in the report so a bad
-     alignment is visible.
+     B's cloud (``odm_change/aligned.laz``). **By default (ODM ``--align`` parity)**
+     the 4x4 is then applied to epoch B's *delivered* mesh + cloud (:func:`reland_assets`)
+     so the whole time series overlays in the reference frame; the raster products
+     (DSM/DTM, ortho, contours, glTF, 3D Tiles) are produced *after* this step and so
+     inherit the reference frame natively. ``--no-reland`` keeps the old additive-only
+     behaviour (deliverables untouched, only the working copy moved). The
+     co-registration **residual** (ICP fitness, C2C before/after, stable fraction,
+     registration error) lands in the report so a bad alignment is visible.
   2. **DoD** (DEM of Difference) — rasterises the reference and the aligned epoch B
      to DSMs on a *shared grid* (PDAL ``writers.gdal`` max-Z), subtracts them
      (``odm_dem/dem_difference.tif`` = B - reference), and computes vertical-change
@@ -430,6 +434,81 @@ def apply_transform(cloud, T, out):
             pass
 
 
+def transform_obj(in_obj, out_obj, R, t, offset):
+    """Apply a rigid georef-frame transform ``(R, t)`` to a textured OBJ whose
+    vertices are written **offset-subtracted** (georef_bridge's projected-offset
+    frame). The transform acts in full projected coordinates, so per vertex
+    ``v' = R·(v + offset) + t − offset = R·v + (R·offset + t − offset)``. Only ``v``
+    lines are rewritten; ``vt`` / ``vn`` / ``f`` / ``mtllib`` / comments pass through
+    verbatim, so the texture mapping is untouched. Pure (NumPy + text I/O)."""
+    import numpy as np
+    R = np.asarray(R, dtype=np.float64).reshape(3, 3)
+    t = np.asarray(t, dtype=np.float64).reshape(3)
+    offset = np.asarray(offset, dtype=np.float64).reshape(3)
+    t_eff = R @ offset + t - offset
+    with open(in_obj) as fi, open(out_obj, "w") as fo:
+        for line in fi:
+            if line[:2] in ("v ", "v\t"):
+                p = line.split()
+                w = R @ np.array([float(p[1]), float(p[2]), float(p[3])]) + t_eff
+                rest = " ".join(p[4:])           # vertex colour, if present
+                fo.write(f"v {w[0]:.6f} {w[1]:.6f} {w[2]:.6f}"
+                         + (f" {rest}" if rest else "") + "\n")
+            else:
+                fo.write(line)
+
+
+def reland_assets(work, T, change_dir):
+    """Re-land epoch B's *delivered* geometry into the reference frame (ODM ``--align``
+    parity): apply the rigid transform ``T`` (de-centred, full projected coords) in
+    place to the textured mesh OBJ (offset-aware) and the delivered LAZ, and rebuild
+    the LAZ's EPT if one exists. Each asset is best-effort — a failure is logged, never
+    fatal (the additive difference products already stand). Returns a dict of what was
+    re-landed. NB: camera assets (shots.geojson) are NOT re-landed yet (known gap)."""
+    import numpy as np
+    import shutil
+    from openmvs_mesh import find_mesh_obj
+    done = {}
+    R, t = T[:3, :3], T[:3, 3]
+    offset = np.zeros(3)                          # georef projected-offset (OBJ frame)
+    gj = os.path.join(work, "georef_transform.json")
+    if os.path.exists(gj):
+        try:
+            offset = np.asarray(json.load(open(gj)).get("offset", [0, 0, 0]), float)
+        except Exception:
+            pass
+    try:
+        name = find_mesh_obj(work)
+        if name:
+            src = os.path.join(work, name)
+            tmp = src + ".reland.tmp"
+            transform_obj(src, tmp, R, t, offset)
+            os.replace(tmp, src)
+            done["mesh"] = name
+    except Exception as e:
+        print(f"[change] re-land mesh failed (non-fatal): {e}", file=sys.stderr)
+    try:
+        laz = os.path.join(work, "odm_georeferenced_model.laz")
+        if os.path.exists(laz):
+            tmp = laz + ".reland.tmp.laz"
+            apply_transform(laz, T, tmp)
+            os.replace(tmp, laz)
+            done["cloud"] = "odm_georeferenced_model.laz"
+            try:
+                from pointcloud_to_laz import build_ept
+                ept = os.path.join(work, "entwine_pointcloud")
+                if os.path.isdir(ept):           # rebuild only if one was built
+                    shutil.rmtree(ept, ignore_errors=True)
+                    build_ept(laz, ept)
+                    done["ept"] = True
+            except Exception as e:
+                print(f"[change] re-land EPT rebuild failed (non-fatal): {e}",
+                      file=sys.stderr)
+    except Exception as e:
+        print(f"[change] re-land cloud failed (non-fatal): {e}", file=sys.stderr)
+    return done
+
+
 def _shared_bounds(ref, b, gsd):
     """Union bounding box of two clouds, snapped to the ``gsd`` grid, plus the
     integer (width, height). Both DSMs rasterised to this exact grid line up
@@ -570,7 +649,7 @@ def _write_diff(diff, geo, proj, out, nodata=NODATA):
 # Orchestration.
 # ---------------------------------------------------------------------------
 def run_change_detection(work, reference, resolution="auto", cloud=None,
-                         m3c2_core_target=200000, threads=1):
+                         m3c2_core_target=200000, threads=1, reland=True):
     """Full pipeline. Non-fatal: returns ``True`` on success, ``False`` (with a
     reason on stderr) when skipped. Writes the change products + JSON report."""
     import shutil
@@ -592,6 +671,7 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
               "epoch_b": os.path.abspath(cloud),
               "sign_convention": "epoch B minus reference; positive = surface "
                                  "raised (deposition), negative = lowered (excavation)"}
+    final_T = None   # the recovered georef-frame transform (for re-landing)
 
     # 1. Co-register epoch B onto the reference (ICP) ------------------------
     # ICP runs in a frame CENTRED on the reference (offset subtracted): georeferenced
@@ -626,6 +706,7 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
             coreg["coreg_note"] = coreg_info["reason"]
         if T_c is not None:
             T = _decenter_transform(T_c, offset)
+            final_T = T
             apply_transform(cloud, T, aligned)
             b_xyz_aligned = b_xyz @ T[:3, :3].T + T[:3, 3]
             coreg["c2c_after"] = c2c(b_xyz_aligned, ref_xyz)
@@ -708,12 +789,9 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
             # a northing of ~5e6 has metre-scale float resolution that would swamp a
             # cm-level change. Distances are translation-invariant, so the signed
             # change is unchanged; the LAZ is written back in the original frame.
-            # Feed the post-ICP co-registration residual into the M3C2 LoD as the
-            # registration error (Lague 2013): the significance test then reflects
-            # roughness + alignment uncertainty, not roughness alone. The full-cloud
-            # C2C-after RMS is a *conservative upper bound* (it also carries roughness
-            # and any real change); a clean registration-only estimate is the v2
-            # stable-area-masked ICP. Falls back to c2c_before (no transform) / 0.
+            # M3C2 LoD = roughness + the co-registration residual as registration
+            # error (Lague 2013): the clean stable-area residual when available, else
+            # the conservative full-cloud C2C (see coreg_reg_error).
             reg_error = coreg_reg_error(report)
             distances, lod = run_m3c2(ref_xyz - offset, b_xyz_aligned - offset,
                                       core - offset, cyl_radius, normal_radii,
@@ -745,7 +823,21 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
             report["m3c2"] = {"available": False, "reason": f"M3C2 failed: {e}"}
             print(f"[change] M3C2 failed (non-fatal): {e}", file=sys.stderr)
 
-    # 4. Report --------------------------------------------------------------
+    # 4. Re-land epoch B's delivered geometry into the reference frame (ODM --align
+    #    parity). At this pipeline point the raster stages have not run yet, so the
+    #    mesh + cloud re-land here and DTM / ortho / DSM / contours / glTF / 3D-tiles
+    #    downstream inherit the reference frame natively. Non-fatal — the additive
+    #    difference products already stand.
+    if reland and final_T is not None:
+        try:
+            report["relanded"] = reland_assets(work, final_T, change_dir)
+            print(f"[change] re-landed deliverables into the reference frame: "
+                  f"{report['relanded']}")
+        except Exception as e:
+            report["relanded"] = {"error": str(e)}
+            print(f"[change] re-land failed (non-fatal): {e}", file=sys.stderr)
+
+    # 5. Report --------------------------------------------------------------
     out_json = os.path.join(report_dir, "change_detection.json")
     with open(out_json, "w") as f:
         json.dump(report, f, indent=2)
@@ -777,9 +869,13 @@ def main():
                     help="epoch-B cloud (default <work>/odm_georeferenced_model.laz)")
     ap.add_argument("--threads", type=int, default=1,
                     help="py4dgeo thread cap (1 avoids the arm64 multithread segfault)")
+    ap.add_argument("--no-reland", action="store_true",
+                    help="additive analysis only — do NOT re-land epoch B's delivered "
+                         "mesh/cloud into the reference frame (default: re-land, "
+                         "ODM --align parity)")
     args = ap.parse_args()
     run_change_detection(args.work, args.reference, args.resolution,
-                         args.cloud, threads=args.threads)
+                         args.cloud, threads=args.threads, reland=not args.no_reland)
 
 
 if __name__ == "__main__":
