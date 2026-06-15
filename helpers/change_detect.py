@@ -26,9 +26,12 @@ path via the ``align-to`` option) and *this* epoch's georeferenced LAZ, it:
   3. **M3C2** (Lague et al. 2013, via ``py4dgeo``) — signed distance along the local
      surface normal plus a level-of-detection per core point
      (``odm_change/m3c2.laz`` with extra dims ``m3c2_distance`` / ``m3c2_lod`` /
-     ``significant``). The real 3D change signal (handles overhangs / steep faces
-     that a 2.5-D DoD cannot). Optional: if ``py4dgeo`` is unavailable the step is
-     skipped and the DoD products still stand (DoD-only fallback).
+     ``significant``). The LoD combines **local roughness + the co-registration
+     residual** (the post-ICP C2C is passed as M3C2's ``registration_error``), so a
+     cm-level alignment error is not mistaken for real change in the significance
+     test. The real 3D change signal (handles overhangs / steep faces that a 2.5-D
+     DoD cannot). Optional: if ``py4dgeo`` is unavailable the step is skipped and the
+     DoD products still stand (DoD-only fallback).
 
 All stats are written to ``odm_report/change_detection.json``. The whole module is
 **non-fatal and opt-in** (only runs when ``align-to`` is set): a failure here must
@@ -362,10 +365,16 @@ def have_py4dgeo():
         return False
 
 
-def run_m3c2(ref_xyz, b_xyz, core_xyz, cyl_radius, normal_radii, threads=1):
+def run_m3c2(ref_xyz, b_xyz, core_xyz, cyl_radius, normal_radii, threads=1,
+             registration_error=0.0):
     """M3C2 signed distance + level-of-detection of epoch B vs. the reference.
 
     Returns ``(distances, lodetection)`` 1-D arrays aligned with ``core_xyz``.
+    ``registration_error`` (m) is passed to py4dgeo's M3C2 so the per-point LoD
+    reflects *local roughness + co-registration uncertainty* (Lague et al. 2013),
+    not roughness alone — without it a cm-level alignment residual is silently
+    treated as zero and small changes look more significant than they are. The
+    caller passes the post-ICP residual.
     ``set_num_threads`` is pinned (the default multithreaded path segfaults on the
     arm64 build); core points must be C-contiguous float64 (a strided view
     segfaults the C++ core). py4dgeo-gated — unit-tested on a known shift."""
@@ -377,7 +386,8 @@ def run_m3c2(ref_xyz, b_xyz, core_xyz, cyl_radius, normal_radii, threads=1):
     core = np.ascontiguousarray(core_xyz, dtype=np.float64)
     m3c2 = py4dgeo.M3C2(epochs=(e_ref, e_b), corepoints=core,
                         cyl_radius=float(cyl_radius),
-                        normal_radii=[float(r) for r in normal_radii])
+                        normal_radii=[float(r) for r in normal_radii],
+                        registration_error=float(max(0.0, registration_error)))
     distances, unc = m3c2.run()
     return np.asarray(distances), np.asarray(unc["lodetection"])
 
@@ -566,9 +576,18 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
             # a northing of ~5e6 has metre-scale float resolution that would swamp a
             # cm-level change. Distances are translation-invariant, so the signed
             # change is unchanged; the LAZ is written back in the original frame.
+            # Feed the post-ICP co-registration residual into the M3C2 LoD as the
+            # registration error (Lague 2013): the significance test then reflects
+            # roughness + alignment uncertainty, not roughness alone. The full-cloud
+            # C2C-after RMS is a *conservative upper bound* (it also carries roughness
+            # and any real change); a clean registration-only estimate is the v2
+            # stable-area-masked ICP. Falls back to c2c_before (no transform) / 0.
+            cresid = report.get("coregistration", {})
+            resid = cresid.get("c2c_after") or cresid.get("c2c_before") or {}
+            reg_error = float(resid.get("rms", 0.0) or 0.0)
             distances, lod = run_m3c2(ref_xyz - offset, b_xyz_aligned - offset,
                                       core - offset, cyl_radius, normal_radii,
-                                      threads=threads)
+                                      threads=threads, registration_error=reg_error)
             finite = distances[np.isfinite(distances)]
             sig = np.abs(distances) > lod
             report["m3c2"] = {
@@ -576,6 +595,7 @@ def run_change_detection(work, reference, resolution="auto", cloud=None,
                 "core_points": int(len(core)),
                 "cyl_radius_m": float(cyl_radius),
                 "normal_radii_m": [float(r) for r in normal_radii],
+                "registration_error_m": reg_error,
                 "median_change_m": float(np.median(finite)) if finite.size else None,
                 "lod_median_m": float(np.nanmedian(lod)),
                 "significant_fraction": float(np.nanmean(sig))}

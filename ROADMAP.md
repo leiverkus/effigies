@@ -337,10 +337,23 @@ WebODM's role) and from the GPU/maturity gaps tracked elsewhere.
       with the co-registration residual (ICP fitness + C2C before/after) and all
       stats. Opt-in via the `align-to` path option (mirrors ODM's `--align`); needs a
       georeferenced result; py4dgeo absent → DoD-only fallback. **v1 is additive
-      analysis** — epoch B's own cloud/mesh/ortho stay in their georef frame. v2:
-      re-land the mesh + ortho in the reference frame (full `--align` parity),
-      DEM-as-reference, and stable-area-masked ICP. Verified: M3C2 recovers a known
-      vertical shift, DoD volume math unit-tested.
+      analysis** — epoch B's own cloud/mesh/ortho stay in their georef frame.
+      **Detectability vs small errors:** ICP removes the *rigid* relative georef
+      offset first, so the floor is the post-ICP residual + roughness, not the
+      absolute georef stddev. The **M3C2 LoD now folds in the co-registration
+      residual** (post-ICP C2C → py4dgeo `registration_error`, Lague 2013), so a
+      cm-level alignment error is not read as real change (done; unit-tested that a
+      5 cm residual lifts the LoD). v2 remaining:
+      (a) **threshold the DoD at a propagated minimum LoD** (Wheaton 2010 — the
+      `dod_stats` `threshold` arg is wired but currently 0, so DoD changed-area /
+      fill-cut still count noise; net volume is robust as noise cancels);
+      (b) **stable-area-masked ICP** (co-register on unchanged ground → a clean
+      registration-only error instead of the conservative full-cloud C2C);
+      (c) re-land the mesh + ortho in the reference frame (full `--align` parity),
+      DEM-as-reference. Residual risk neither LoD catches: non-rigid SfM doming
+      (James 2020) — mitigated by GCP/BA, not by the LoD. Verified: M3C2 recovers a
+      known vertical shift, registration_error raises the LoD, DoD volume math
+      unit-tested.
 - [x] **Orthomosaic finishing.** Seamline editing + radiometric colour balancing
       (Metashape/ODM). Our single-mesh ortho needs no seamlines but also offers no
       such control; expose colour-balance / blending knobs if real orthos show

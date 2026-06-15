@@ -160,6 +160,32 @@ def test_m3c2_known_shift():
           f"{100*np.nanmean(sig):.0f}% significant)")
 
 
+def test_m3c2_registration_error_raises_lod():
+    """The co-registration residual, passed as ``registration_error``, must lift
+    the per-point LoD (Lague 2013) — so a cm-level alignment error is folded into
+    the significance test instead of being treated as zero. Same scene, LoD with a
+    5 cm registration error must exceed the roughness-only LoD."""
+    if not cd.have_py4dgeo():
+        print("skip m3c2 reg-error (needs py4dgeo — present in the Effigies image)")
+        return
+    rng = np.random.default_rng(1)
+    n = 4000
+    xy = rng.uniform(-5, 5, size=(n, 2))
+    z = rng.normal(0, 0.005, n)
+    A = np.ascontiguousarray(np.column_stack([xy, z]), dtype=np.float64)
+    B = A.copy()
+    B[:, 2] += 0.04 + rng.normal(0, 0.005, n)          # small +4 cm change
+    B = np.ascontiguousarray(B)
+    core = np.ascontiguousarray(B[::4])
+    _, lod0 = cd.run_m3c2(A, B, core, 0.5, [0.5, 1.0, 2.0], threads=1,
+                          registration_error=0.0)
+    _, lodR = cd.run_m3c2(A, B, core, 0.5, [0.5, 1.0, 2.0], threads=1,
+                          registration_error=0.05)     # 5 cm alignment uncertainty
+    m0, mR = float(np.nanmedian(lod0)), float(np.nanmedian(lodR))
+    assert mR > m0 + 0.02, (m0, mR)
+    print(f"ok  M3C2 registration_error raises the LoD (median {m0:.3f} -> {mR:.3f} m)")
+
+
 if __name__ == "__main__":
     test_parse_icp_transform()
     test_parse_icp_transform_missing()
@@ -169,4 +195,5 @@ if __name__ == "__main__":
     test_dod_no_overlap()
     test_gate()
     test_m3c2_known_shift()
+    test_m3c2_registration_error_raises_lod()
     print("\nall change-detection tests passed")

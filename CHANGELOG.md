@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Change detection — M3C2 level-of-detection now includes the co-registration
+  residual (`change_detect.py`).** The per-point LoD previously reflected local
+  roughness only; it now passes the post-ICP cloud-to-cloud residual to py4dgeo as
+  `registration_error` (Lague 2013), so a cm-level alignment error is folded into the
+  significance test instead of being treated as zero — small (few-cm) changes are no
+  longer over-reported as significant. Recorded as `registration_error_m` in
+  `odm_report/change_detection.json`. Unit-tested: a 5 cm residual lifts the LoD
+  median (≈ 0.3 cm → 10 cm). DoD min-LoD thresholding (Wheaton 2010) + stable-area-
+  masked ICP remain v2 (see ROADMAP).
 - **Blend memory — peak RSS now independent of the image count (`texture_blend.py`).**
   The multi-view texturing step had three consumers that scaled with the number of
   views and OOM'd large sets: a dense `[faces × views]` weight matrix (~29 GB at
