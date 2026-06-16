@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-16
+
+### Added
+- **Citation metadata for Zenodo archival.** `CITATION.cff` (CFF 1.2.0) with author,
+  keywords, and upstream references (COLMAP, OpenMVS, NodeODM), and `.zenodo.json`
+  so Zenodo draws release metadata from the repository. The concept DOI is filled
+  into `CITATION.cff` once the first Zenodo-archived release is minted.
+
 ## [0.7.0] - 2026-06-15
 
 ### Added

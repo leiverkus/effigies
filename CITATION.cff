@@ -1,0 +1,73 @@
+cff-version: 1.2.0
+message: >-
+  If you use Effigies, please cite this software. Please also cite the upstream
+  reconstruction engines it orchestrates — COLMAP (Schönberger & Frahm 2016) for
+  sparse Structure-from-Motion and OpenMVS for the dense/mesh/texture chain.
+title: "Effigies: a full-OpenMVS WebODM engine for higher-quality 3D reconstruction"
+abstract: >-
+  Effigies is a NodeODM-compatible processing node for WebODM. It is an
+  alternative engine that runs the full OpenMVS chain (DensifyPointCloud →
+  ReconstructMesh → RefineMesh → TextureMesh) on top of a COLMAP sparse
+  reconstruction, closing the gap where stock WebODM/ODM produces weaker 3D than
+  commercial tools by skipping OpenMVS' ReconstructMesh and RefineMesh. It targets
+  a complete, higher-quality engine across all scenarios — close-range /
+  convergent capture (objects, finds, artefacts, statues, architecture) and drone
+  / aerial sets — producing a textured 3D mesh, a georeferenced point cloud, and a
+  georeferenced orthophoto, while honouring the WebODM asset contract so it
+  installs alongside the stock ODM node and appears as its own engine.
+type: software
+authors:
+  - family-names: Leiverkus
+    given-names: Patrick
+    email: patrick.leiverkus@uni-oldenburg.de
+    affiliation: "Carl von Ossietzky Universität Oldenburg"
+    orcid: "https://orcid.org/0009-0006-2308-8297"
+version: "0.7.1"
+date-released: "2026-06-16"
+license: MIT
+repository-code: "https://github.com/leiverkus/effigies"
+url: "https://github.com/leiverkus/effigies"
+keywords:
+  - WebODM
+  - OpenDroneMap
+  - NodeODM
+  - OpenMVS
+  - COLMAP
+  - photogrammetry
+  - 3D reconstruction
+  - dense reconstruction
+  - orthophoto
+  - close-range photogrammetry
+  - archaeology
+  - reproducible research software
+# Uncomment and fill in after the first Zenodo release (concept DOI = resolves to
+# all versions). Get it from the Zenodo record once the GitHub release is archived.
+# doi: "10.5281/zenodo.XXXXXXXX"
+# identifiers:
+#   - type: doi
+#     value: "10.5281/zenodo.XXXXXXXX"
+#     description: "Concept DOI (resolves to all versions of Effigies on Zenodo)"
+references:
+  - type: conference-paper
+    title: "Structure-from-Motion Revisited"
+    authors:
+      - family-names: Schönberger
+        given-names: Johannes L.
+      - family-names: Frahm
+        given-names: Jan-Michael
+    collection-title: "IEEE Conference on Computer Vision and Pattern Recognition (CVPR)"
+    year: 2016
+    doi: "10.1109/CVPR.2016.445"
+    notes: "COLMAP — sparse Structure-from-Motion engine used by Effigies."
+  - type: software
+    title: "OpenMVS: open Multi-View Stereo reconstruction library"
+    authors:
+      - name: "OpenMVS contributors"
+    repository-code: "https://github.com/cdcseacave/openMVS"
+    notes: "Dense reconstruction / mesh / refinement / texturing chain orchestrated by Effigies."
+  - type: software
+    title: "OpenDroneMap / NodeODM"
+    authors:
+      - name: "OpenDroneMap contributors"
+    repository-code: "https://github.com/OpenDroneMap/NodeODM"
+    notes: "REST layer and asset contract Effigies plugs into."
