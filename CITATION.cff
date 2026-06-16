@@ -40,13 +40,11 @@ keywords:
   - close-range photogrammetry
   - archaeology
   - reproducible research software
-# Uncomment and fill in after the first Zenodo release (concept DOI = resolves to
-# all versions). Get it from the Zenodo record once the GitHub release is archived.
-# doi: "10.5281/zenodo.XXXXXXXX"
-# identifiers:
-#   - type: doi
-#     value: "10.5281/zenodo.XXXXXXXX"
-#     description: "Concept DOI (resolves to all versions of Effigies on Zenodo)"
+doi: "10.5281/zenodo.20716035"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.20716035"
+    description: "Concept DOI (resolves to all versions of Effigies on Zenodo)"
 references:
   - type: conference-paper
     title: "Structure-from-Motion Revisited"
