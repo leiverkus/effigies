@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/leiverkus/effigies?include_prereleases&sort=semver)](https://github.com/leiverkus/effigies/releases)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](ROADMAP.md)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20716035.svg)](https://doi.org/10.5281/zenodo.20716035)
 
 > *effigies* (lat.) — "the sculpted likeness, the formed replica".
 > The node turns flat images back into bodies: the dense, photometrically
