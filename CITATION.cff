@@ -24,7 +24,7 @@ authors:
     orcid: "https://orcid.org/0009-0006-2308-8297"
 version: "0.7.1"
 date-released: "2026-06-16"
-license: MIT
+license: AGPL-3.0-or-later
 repository-code: "https://github.com/leiverkus/effigies"
 url: "https://github.com/leiverkus/effigies"
 keywords:

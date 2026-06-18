@@ -396,7 +396,7 @@ The bridge to **Structura**, the downstream vectorisation project (orthophoto/DE
 -pixel class, multi-view- and multi-epoch-consistent); **Structura owns the
 semantic *objects* in vector/DB-space** (instances, topology, stratigraphic
 attribution). Effigies ships only the **mechanism** — classify → rasterise →
-propagate — and **never bakes an archaeological-material model into the MIT image**.
+propagate — and **never bakes an archaeological-material model into the shipped image**.
 
 > **Released in v0.7.0 (2026-06-15):** the v0 geometry-derived field, multi-epoch
 > propagation (the two `[x]` items below), and the post-v0.6.0 change-detection accuracy
@@ -532,7 +532,7 @@ MASt3R replaces the whole SfM *front-end*.
       with Naver. The **weights are even more encumbered than the code**: using a
       checkpoint also means agreeing to the licences of every training dataset and base
       checkpoint, and the **mapfree dataset licence in particular is very restrictive**.
-      So: never bakeable into the MIT image, never a default — opt-in with user-provided
+      So: never bakeable into the shipped image, never a default — opt-in with user-provided
       weights + licence acknowledgment only; `THIRD_PARTY_LICENSES.md` unaffected because
       nothing ships. This (with maturity) is the real reason `mast3r` stays opt-in —
       not scaling.

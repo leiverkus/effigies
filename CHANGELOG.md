@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Relicensed from MIT to GNU AGPL-3.0-or-later.** `LICENSE` now carries the full
+  AGPLv3 text; the badge, README §License, `CITATION.cff`, and `.zenodo.json` are
+  updated accordingly. This aligns Effigies' own source with the copyleft licences
+  of the engines it bundles and orchestrates (NodeODM/ODM/OpenMVS are AGPL-3.0).
+  `THIRD_PARTY_LICENSES.md` is unaffected — it documents the bundled components,
+  whose licences are unchanged.
+
 ## [0.7.1] - 2026-06-16
 
 ### Added

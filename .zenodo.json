@@ -2,7 +2,7 @@
   "upload_type": "software",
   "title": "Effigies: a full-OpenMVS WebODM engine for higher-quality 3D reconstruction",
   "description": "<p>Effigies is a NodeODM-compatible processing node for WebODM. It is an alternative engine that runs the full OpenMVS chain (DensifyPointCloud &rarr; ReconstructMesh &rarr; RefineMesh &rarr; TextureMesh) on top of a COLMAP sparse reconstruction, closing the gap where stock WebODM/ODM produces weaker 3D than commercial tools by skipping OpenMVS' ReconstructMesh and RefineMesh.</p><p>It targets a complete, higher-quality engine across all scenarios &mdash; close-range / convergent capture (objects, finds, artefacts, statues, architecture) and drone / aerial sets &mdash; producing a textured 3D mesh, a georeferenced point cloud, and a georeferenced orthophoto, while honouring the WebODM asset contract so it installs alongside the stock ODM node and appears as its own engine.</p><p>If you use Effigies, please also cite the upstream reconstruction engines it orchestrates: COLMAP (Sch&ouml;nberger &amp; Frahm 2016) for sparse Structure-from-Motion and OpenMVS for the dense / mesh / texture chain.</p>",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "access_right": "open",
   "creators": [
     {

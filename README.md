@@ -1,7 +1,7 @@
 # Effigies
 
 [![CI](https://github.com/leiverkus/effigies/actions/workflows/ci.yml/badge.svg)](https://github.com/leiverkus/effigies/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/leiverkus/effigies?include_prereleases&sort=semver)](https://github.com/leiverkus/effigies/releases)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](ROADMAP.md)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20716035.svg)](https://doi.org/10.5281/zenodo.20716035)
@@ -246,10 +246,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Effigies' own source is licensed under the **[MIT License](LICENSE)**.
+Effigies' own source is licensed under the **[GNU Affero General Public License
+v3.0 or later (AGPL-3.0-or-later)](LICENSE)**.
 
 Effigies orchestrates third-party tools (COLMAP, OpenMVS, NodeODM/ODM, OpenSfM)
 as separate programs; the Docker image bundles them as an aggregation. Those
-components keep their own licenses — notably **AGPL-3.0** for NodeODM/ODM/OpenMVS.
+components keep their own licenses — notably **AGPL-3.0** for NodeODM/ODM/OpenMVS,
+which Effigies' own AGPL-3.0 licensing is aligned with.
 See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for what that means when
 you redistribute a build.
