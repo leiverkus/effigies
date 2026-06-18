@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Split-merge tiling — spatial partition of a shared global sparse model (v0.5.0).
 

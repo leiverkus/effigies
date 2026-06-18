@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Export the textured mesh as a binary glTF (``.glb``) — WebODM's
 "Struktur-Modell (glTF)" download (``odm_texturing/odm_textured_model_geo.glb``).

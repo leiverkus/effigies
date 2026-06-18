@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Multi-class point classification — ground / vegetation / building / vehicles.
 

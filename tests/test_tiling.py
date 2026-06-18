@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/tiling.py — the split-merge spatial partition.
 
 The partition math is pure numpy and always runs. The subset-model writer is

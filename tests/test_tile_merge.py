@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/tile_merge.py — the split-merge stitch.
 
 Pure parts (face crop, PDAL crop-pipeline structure) always run. The mesh merge is

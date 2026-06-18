@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit test for helpers/harmonize_exposure.py — the exposure solver.
 
 Synthetic ground truth: random point albedos, known per-image gains, observations

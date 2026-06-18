@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit test for helpers/seam_level.py — our texture seam leveling.
 
 Synthetic case: two quads sharing a mesh edge, textured from two DIFFERENT

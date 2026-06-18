@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # OpenMVS dense reconstruction + the steps ODM skips.
 # args: WORK RES_LEVEL VIEWS_FUSE RECONSTRUCT_MESH REFINE_ITERS DECIMATE TEX_RES GPU_FLAG
 #       [MAX_FACE_AREA] [GRADIENT_STEP] [SEAM_LEVELING] [HARMONIZE] [SEAM_SMOOTH]

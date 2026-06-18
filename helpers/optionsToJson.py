@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Serve Effigies' task options to NodeODM.
 
 NodeODM (libs/odmInfo.js) does NOT consume a flat list of options. It expects the

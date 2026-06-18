@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/ortho_finish.py — orthophoto radiometric finishing.
 
 All tests build synthetic RGB+alpha rasters and check that each finishing step

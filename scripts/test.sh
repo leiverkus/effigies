@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Local test runner — mirrors .github/workflows/ci.yml
 set -euo pipefail
 cd "$(dirname "$0")/.."

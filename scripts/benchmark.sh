@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Benchmark harness for Effigies vs. other photogrammetry engines.
 #
 # Scaffold for ROADMAP v0.4.0 ("Benchmark suite comparing Effigies output against

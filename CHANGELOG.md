@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the engines it bundles and orchestrates (NodeODM/ODM/OpenMVS are AGPL-3.0).
   `THIRD_PARTY_LICENSES.md` is unaffected — it documents the bundled components,
   whose licences are unchanged.
+- **SPDX headers in every source file.** All Python and shell sources, both
+  `Dockerfile`s, and the CI workflow now carry REUSE-style
+  `SPDX-FileCopyrightText` + `SPDX-License-Identifier: AGPL-3.0-or-later` headers
+  (inserted after the shebang where present). `ENGINE` is intentionally left
+  bare — NodeODM reads it as a literal engine name.
 
 ## [0.7.1] - 2026-06-16
 

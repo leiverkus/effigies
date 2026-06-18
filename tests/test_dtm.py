@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/pointcloud_to_dtm.py — the bare-earth DTM.
 
 The pipeline-builder is pure and always runs. The end-to-end test needs the PDAL

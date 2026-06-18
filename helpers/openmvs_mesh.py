@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Shared OpenMVS textured-mesh output naming.
 
 OpenMVS names the mesh by stage: ReconstructMesh writes ``scene_dense_mesh``,

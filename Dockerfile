@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Effigies — a NodeODM-compatible processing node whose engine is
 # COLMAP (sparse) + OpenMVS full mesh/refine/texture (dense).
 #

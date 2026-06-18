@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/change_detect.py — multi-epoch change detection.
 
 The pure parts (ICP-metadata transform parse, the DoD subtraction + cut/fill

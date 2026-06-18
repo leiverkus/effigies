@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Unit tests for pipeline/autoscale.sh — pure function over the OPT/GIVEN arrays.
 # Run: bash tests/test_autoscale.sh   (exits non-zero on failure, CI-friendly)
 set -euo pipefail

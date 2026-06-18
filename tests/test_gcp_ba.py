@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/gcp_bundle_adjust.py — GCP-constrained bundle adjustment.
 
 The pure parts (check-point parsing, control/check split, and the georef bridge

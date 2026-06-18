@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Minimal reader for COLMAP's BINARY model format (cameras.bin / images.bin).
 
 The undistorted workspace (``dense/sparse``) that ``image_undistorter`` writes is

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Split-merge tiling — merge half: stitch per-tile dense outputs into one set of
 assets in the shared local frame, then the existing downstream (georef, LAZ,

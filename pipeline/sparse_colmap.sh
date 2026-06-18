@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # COLMAP sparse stage.
 # args: IMAGES WORK MATCHER CAMERA_MODEL GPU_FLAG [MAPPER] [GCP_FILE] [CRS] [GCP_BA]
 set -euo pipefail

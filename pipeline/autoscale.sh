@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Engine-side auto-scaling for large image sets.
 #
 # When the image set is large, single-machine reconstruction hits two walls:

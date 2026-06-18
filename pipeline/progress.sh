@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Drive WebODM's task progress bar.
 #
 # NodeODM listens on UDP :6367 for ODM's progress datagrams

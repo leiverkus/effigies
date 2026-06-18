@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit test for helpers/report.py — the quality-report PDF.
 
 Needs reportlab (present in the Effigies image); skipped otherwise. Builds a

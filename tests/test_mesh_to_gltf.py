@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit test for helpers/mesh_to_gltf.py — the self-contained .glb writer.
 
 Builds a small textured OBJ and checks the produced GLB is a well-formed binary

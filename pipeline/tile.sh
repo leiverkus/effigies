@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Per-tile dense chain for split-merge tiling.
 # args: WORK TILE_ID <dense_openmvs.sh args 2..16, with HARMONIZE forced false>
 #

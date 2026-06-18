@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/texture_blend.py — the multi-view blended texturing step.
 
 Two layers, mirroring the streaming refactor (docs/blend-streaming-plan.md):

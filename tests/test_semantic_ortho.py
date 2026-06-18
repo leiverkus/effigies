@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/semantic_ortho.py — the v0 semantic orthophoto.
 
 build_semantic (per-cell majority + ASPRS->v0 mapping) is pure NumPy and always runs;

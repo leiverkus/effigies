@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Effigies — CPU-only image for LOCAL INTEGRATION TESTING.
 #
 # This builds the SAME engine (COLMAP + full OpenMVS chain) from the SAME pinned

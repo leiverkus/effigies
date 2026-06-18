@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for helpers/mesh_to_3d_tiles.py — the 3D Tiles (Obj2Tiles) export.
 
 The pure helpers (OBJ stats, Z-localisation, auto-divisions, lat/lon projection)

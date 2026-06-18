@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Patrick Leiverkus
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Multi-epoch change detection — co-register a new epoch to a prior reference and
 emit difference products (DoD + M3C2).
