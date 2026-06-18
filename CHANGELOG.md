@@ -7,18 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-06-18
+
 ### Changed
 - **Relicensed from MIT to GNU AGPL-3.0-or-later.** `LICENSE` now carries the full
   AGPLv3 text; the badge, README §License, `CITATION.cff`, and `.zenodo.json` are
   updated accordingly. This aligns Effigies' own source with the copyleft licences
   of the engines it bundles and orchestrates (NodeODM/ODM/OpenMVS are AGPL-3.0).
-  `THIRD_PARTY_LICENSES.md` is unaffected — it documents the bundled components,
-  whose licences are unchanged.
+  `THIRD_PARTY_LICENSES.md` documents the bundled components, whose licences are
+  unchanged.
 - **SPDX headers in every source file.** All Python and shell sources, both
   `Dockerfile`s, and the CI workflow now carry REUSE-style
   `SPDX-FileCopyrightText` + `SPDX-License-Identifier: AGPL-3.0-or-later` headers
   (inserted after the shebang where present). `ENGINE` is intentionally left
   bare — NodeODM reads it as a literal engine name.
+- **Third-party license documentation aligned with the AGPL release.**
+  `THIRD_PARTY_LICENSES.md` now clearly separates Effigies' own
+  AGPL-3.0-or-later source license from bundled/orchestrated components and lists
+  the Docker image's AGPL/GPL/LGPL-family build/runtime tools (Obj2Tiles,
+  OpenPointClass, VCGlib, CGAL, Entwine) alongside the permissive dependencies.
 
 ## [0.7.1] - 2026-06-16
 
@@ -743,7 +750,9 @@ First public release — a working, NodeODM-compatible engine scaffold for WebOD
   planned.
 - No end-to-end run against a real dataset is exercised in CI (no GPU runner).
 
-[Unreleased]: https://github.com/leiverkus/effigies/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/leiverkus/effigies/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/leiverkus/effigies/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/leiverkus/effigies/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/leiverkus/effigies/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/leiverkus/effigies/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/leiverkus/effigies/compare/v0.3.0...v0.5.0

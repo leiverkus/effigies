@@ -22,8 +22,8 @@ authors:
     email: patrick.leiverkus@uni-oldenburg.de
     affiliation: "Carl von Ossietzky Universität Oldenburg"
     orcid: "https://orcid.org/0009-0006-2308-8297"
-version: "0.7.1"
-date-released: "2026-06-16"
+version: "0.7.2"
+date-released: "2026-06-18"
 license: AGPL-3.0-or-later
 repository-code: "https://github.com/leiverkus/effigies"
 url: "https://github.com/leiverkus/effigies"
