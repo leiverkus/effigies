@@ -257,6 +257,159 @@ def test_camera_centers_survive_empty_points2d():
     print("ok  camera centers survive an empty points2D line (no stride desync)")
 
 
+# ---------------------------------------------------------------------------
+# Per-marker leave-one-out independent size check
+# ---------------------------------------------------------------------------
+def _square_world(x0, y0, z0, L):
+    """4 corners of a marker of edge L, OpenCV order c0=TL,c1=TR,c2=BR,c3=BL."""
+    return np.array([[x0, y0, z0], [x0 + L, y0, z0],
+                     [x0 + L, y0 + L, z0], [x0, y0 + L, z0]], float)
+
+
+def _marker_world_and_labels(L, rel_tl, center=(0., 0., 0.)):
+    rows, labels = [], []
+    for mi, (x0, y0, z0) in enumerate(rel_tl):
+        sq = _square_world(center[0] + x0, center[1] + y0, center[2] + z0, L)
+        for k in range(4):
+            rows.append(sq[k])
+            labels.append(f"m{mi}_c{k}")
+    return np.array(rows), labels
+
+
+def test_per_marker_check_recovers_size_and_single_marker_noops():
+    """Each held-out marker, fitted from the OTHERS, must reconstruct its known
+    edge length; a single-marker label set has nothing to hold out → ([], None)."""
+    L = 0.04  # 40 mm
+    world, labels = _marker_world_and_labels(
+        L, [(0., 0., 0.), (0.18, 0., 0.01), (0., 0.25, 0.02), (0.18, 0.25, 0.005)])
+    s_true, ang = 3.0, 0.5
+    R = np.array([[np.cos(ang), -np.sin(ang), 0],
+                  [np.sin(ang),  np.cos(ang), 0], [0, 0, 1]])
+    t = np.array([10., -5., 2.])
+    local = ((R.T @ (world - t).T).T) / s_true
+
+    markers, agg = gb.per_marker_check(local, world, labels)
+    assert agg["n_markers"] == 4, agg
+    for m in markers:
+        assert m["held_out"] and m["n_corners"] == 4
+        assert abs(m["expected_size_mm"] - 40.0) < 1e-9, m
+        assert abs(m["estimated_size_mm"] - 40.0) < 1e-4, m
+        assert abs(m["error_mm"]) < 1e-4 and abs(m["error_pct"]) < 1e-4, m
+    assert agg["max_abs_error_mm"] < 1e-4 and agg["mean_expected_size_mm"] == 40.0
+
+    one = [f"m0_c{k}" for k in range(4)]
+    assert gb.per_marker_check(local[:4], world[:4], one) == ([], None)
+    print("ok  per-marker leave-one-out recovers known size; single-marker no-ops")
+
+
+def test_per_marker_check_flags_size_deviation():
+    """Shrinking one marker's LOCAL corners by 5 % must surface as a +5 % held-out
+    size error on exactly that marker (control fit from the clean others is exact)."""
+    L = 0.04
+    world, labels = _marker_world_and_labels(
+        L, [(0., 0., 0.), (0.18, 0., 0.01), (0., 0.25, 0.02), (0.18, 0.25, 0.005)])
+    s_true, ang = 2.0, 0.2
+    R = np.array([[np.cos(ang), -np.sin(ang), 0],
+                  [np.sin(ang),  np.cos(ang), 0], [0, 0, 1]])
+    t = np.array([1., 2., 3.])
+    local = ((R.T @ (world - t).T).T) / s_true
+
+    rows = list(range(0, 4))                 # m0's four corners
+    c = local[rows].mean(0)
+    local[rows] = c + (local[rows] - c) * 1.05
+
+    markers, _ = gb.per_marker_check(local, world, labels)
+    m0 = next(m for m in markers if m["marker_id"] == "m0")
+    assert abs(m0["error_pct"] - 5.0) < 1e-3, m0
+    assert abs(m0["estimated_size_mm"] - 42.0) < 1e-3, m0
+    print("ok  per-marker check flags a known +5% size deviation")
+
+
+def _build_marker_colmap(root, L=0.05, s_true=0.5, ang=0.3):
+    """Synthetic COLMAP for a 4-marker scale sheet (16 labelled corner GCPs).
+    Two close PINHOLE cameras give every corner real parallax → all triangulate."""
+    model = os.path.join(root, "work", "sparse", "0")
+    os.makedirs(model, exist_ok=True)
+    os.makedirs(os.path.join(root, "images"), exist_ok=True)
+    C = np.array([690000., 3540000., 100.])
+    world, labels = _marker_world_and_labels(
+        L, [(-0.10, -0.13, 0.00), (0.05, -0.13, 0.01),
+            (-0.10, 0.12, 0.02), (0.05, 0.12, 0.00)], center=C)
+    R = np.array([[np.cos(ang), -np.sin(ang), 0],
+                  [np.sin(ang),  np.cos(ang), 0], [0, 0, 1]])
+    local = ((R.T @ (world - C).T).T) / s_true
+
+    with open(os.path.join(model, "points3D.txt"), "w") as f:
+        f.write("# 3D points\n")
+        for i, p in enumerate(local, 1):
+            f.write(f"{i} {p[0]} {p[1]} {p[2]} 0 0 0 0.5\n")
+    cam_f, cx, cy = 1000., 320., 240.
+    with open(os.path.join(model, "cameras.txt"), "w") as f:
+        f.write("# cam\n")
+        f.write(f"1 PINHOLE 640 480 {cam_f} {cam_f} {cx} {cy}\n")
+        f.write(f"2 PINHOLE 640 480 {cam_f} {cam_f} {cx} {cy}\n")
+    cam1_t, cam2_t = np.array([0., 0., 3.0]), np.array([1.0, 0., 2.7])
+
+    def proj(p, ct):
+        Xc = p + ct
+        return cam_f * Xc[0] / Xc[2] + cx, cam_f * Xc[1] / Xc[2] + cy
+
+    with open(os.path.join(model, "images.txt"), "w") as f:
+        f.write("# images\n")
+        f.write(f"1 1 0 0 0 {cam1_t[0]} {cam1_t[1]} {cam1_t[2]} 1 img1.jpg\n")
+        f.write(" ".join(f"{u} {v} {i}" for i, p in enumerate(local, 1)
+                         for u, v in [proj(p, cam1_t)]) + "\n")
+        f.write(f"2 1 0 0 0 {cam2_t[0]} {cam2_t[1]} {cam2_t[2]} 2 img2.jpg\n")
+        f.write(" ".join(f"{u} {v} {i}" for i, p in enumerate(local, 1)
+                         for u, v in [proj(p, cam2_t)]) + "\n")
+    with open(os.path.join(root, "gcp_list.txt"), "w") as f:
+        f.write("EPSG:32637\n")
+        for i, (w, lab) in enumerate(zip(world, labels)):
+            u1, v1 = proj(local[i], cam1_t)
+            u2, v2 = proj(local[i], cam2_t)
+            f.write(f"{w[0]} {w[1]} {w[2]} {u1:.6f} {v1:.6f} img1.jpg {lab}\n")
+            f.write(f"{w[0]} {w[1]} {w[2]} {u2:.6f} {v2:.6f} img2.jpg {lab}\n")
+    with open(os.path.join(root, "work", "scene_dense_mesh_refine.obj"), "w") as f:
+        f.write("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+    return L
+
+
+def _run_gcp_main(root):
+    work = os.path.join(root, "work")
+    argv = sys.argv
+    sys.argv = ["georef", "--work", work, "--images", os.path.join(root, "images"),
+                "--sparse-engine", "colmap", "--georeference", "gcp", "--crs", "auto",
+                "--gcp", os.path.join(root, "gcp_list.txt")]
+    try:
+        gb.main()
+    finally:
+        sys.argv = argv
+    return json.load(open(os.path.join(work, "georef_transform.json")))
+
+
+def test_marker_check_written_for_multi_marker_gcp():
+    with tempfile.TemporaryDirectory() as root:
+        L = _build_marker_colmap(root)
+        tr = _run_gcp_main(root)
+        assert "markers" in tr and "marker_check" in tr, tr.keys()
+        assert len(tr["markers"]) == 4
+        mc = tr["marker_check"]
+        assert mc["n_markers"] == 4
+        assert abs(mc["mean_expected_size_mm"] - L * 1000) < 1e-6, mc
+        assert mc["max_abs_error_mm"] < 0.5, mc       # synthetic-exact → sub-mm
+        # the localization counts must stay slim (no label/method lists leaked)
+        assert set(tr["residuals"]["gcp_localization"]) == {"triangulated", "nearest_point"}
+    print(f"ok  marker_check written for 4-marker gcp (max err {mc['max_abs_error_mm']:.4f} mm)")
+
+
+def test_marker_check_absent_for_unlabeled_gcp():
+    with tempfile.TemporaryDirectory() as root:
+        _build_synthetic_colmap(root)                 # bare gcp_list, no labels
+        tr = _run_gcp_main(root)
+        assert "markers" not in tr and "marker_check" not in tr, tr.keys()
+    print("ok  marker_check absent for unlabeled (single/non-marker) gcp_list")
+
+
 if __name__ == "__main__":
     test_umeyama_recovers_known_similarity()
     test_quat_identity()
@@ -268,4 +421,8 @@ if __name__ == "__main__":
     test_none_mode_keeps_local()
     test_xy_offset_and_coords_txt()
     test_camera_centers_survive_empty_points2d()
+    test_per_marker_check_recovers_size_and_single_marker_noops()
+    test_per_marker_check_flags_size_deviation()
+    test_marker_check_written_for_multi_marker_gcp()
+    test_marker_check_absent_for_unlabeled_gcp()
     print("\nall georef tests passed")

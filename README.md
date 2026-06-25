@@ -143,6 +143,18 @@ solves also the per-method localization counts), echoed in the task log and the
 quality-report PDF. GCP residuals reflect marking + reconstruction quality;
 EXIF residuals are dominated by consumer-GPS noise.
 
+**Independent per-marker size check (scale markers).** When the GCPs are marker
+corners labelled `m<id>_c<k>` (e.g. a Mensura scale sheet) and **≥2 markers** are
+present, the bridge adds a leave-one-marker-out check: for each marker it refits
+the similarity on the *other* markers, transforms the held-out marker's corners,
+and measures its reconstructed edge length against the printed size. The result
+lands in `georef_transform.json` as a `markers` array (per marker:
+`expected_size_mm`, `estimated_size_mm`, `error_mm`, `error_pct`, `edges_mm`,
+`held_out`, `low_confidence`) plus a `marker_check` aggregate (`n_markers`,
+`mean_estimated_size_mm`, `max_abs_error_mm`, `max_abs_error_pct`) — an
+*independent* metric-scale verification (the held-out marker never influenced the
+fit it is judged by). Both keys are omitted for single-marker / unlabelled GCPs.
+
 ### GCP-constrained bundle adjustment (`--gcp-bundle-adjust off|on|auto`)
 
 The default GCP path is **post-hoc and rigid** — COLMAP reconstructs freely and a

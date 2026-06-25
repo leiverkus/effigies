@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Independent per-marker size check (leave-one-marker-out).** When the GCPs are
+  marker corners labelled `m<id>_c<k>` and ≥2 markers are present, the georef
+  bridge refits the similarity on the *other* markers for each marker, transforms
+  the held-out marker's corners, and measures its reconstructed edge length vs.
+  the printed size — an independent metric-scale verification. Adds a `markers`
+  array + `marker_check` aggregate to `georef_transform.json` (omitted for
+  single-marker / unlabelled GCPs). `helpers/georef_bridge.py`
+  (`per_marker_check`, label threading through `parse_gcp_list` /
+  `gcp_correspondences`) + `tests/test_georef.py`. Consumed by Mensura's scale
+  report. On the post-hoc Umeyama path; the `colmap-gcp-ba` path keeps its
+  existing held-out CP-RMSE (per-marker size there is a follow-up).
 - **`georef_transform.json` is now a downloadable WebODM asset** (mapped into
   `odm_report/`). The georef bridge already writes the solved similarity scale
   `s` and the GCP/EXIF residuals (`rms_3d`/`max_3d`) to it; exposing it lets

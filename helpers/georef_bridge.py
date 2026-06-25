@@ -36,6 +36,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 import glob
 import numpy as np
@@ -129,6 +130,22 @@ def _quat_to_rot(qw, qx, qy, qz):
 # ---------------------------------------------------------------------------
 # GCP path
 # ---------------------------------------------------------------------------
+# Marker-corner GCP label convention (e.g. Mensura's scale markers): a trailing
+# ODM ``[extra]`` token like ``m7_c0`` = marker id 7, corner 0. Corners sharing a
+# label prefix (``m7``) form a rigid group, which lets the georef bridge do a
+# leave-one-marker-out independent size check (see per_marker_check). Any GCP file
+# without such labels simply gets label=None and is unaffected.
+_MARKER_LABEL_RE = re.compile(r"^m\d+_c\d+$")
+
+
+def _gcp_label(tokens):
+    """First trailing token matching the marker-corner convention, else None."""
+    for tok in tokens[6:]:
+        if _MARKER_LABEL_RE.match(tok):
+            return tok
+    return None
+
+
 def parse_gcp_list(gcp_path):
     """Parse an ODM-style gcp_list.txt.
     Line 1: a CRS / proj string (e.g. 'EPSG:32637' or a +proj string).
@@ -140,7 +157,11 @@ def parse_gcp_list(gcp_path):
     independent CP-RMSE can be reported (see helpers/gcp_bundle_adjust.py). Such an
     entry carries ``check=True``; all others ``check=False``.
 
-    Returns (crs_header, [ {world:(x,y,z), px:(u,v), image:name, check:bool}, ... ])."""
+    A trailing ``m<id>_c<k>`` token (marker-corner label) is captured as
+    ``label`` so corners can be grouped per marker downstream; absent → None.
+
+    Returns (crs_header, [ {world:(x,y,z), px:(u,v), image:name, check:bool,
+    label:str|None}, ... ])."""
     entries = []
     with open(gcp_path) as f:
         raw = [l.rstrip("\n") for l in f if l.strip() and not l.startswith("#")]
@@ -156,6 +177,7 @@ def parse_gcp_list(gcp_path):
             "px": np.array(list(map(float, p[3:5]))),
             "image": p[5],
             "check": len(p) > 6 and p[-1].lower() == "check",
+            "label": _gcp_label(p),
         })
     return crs_header, entries
 
@@ -313,8 +335,12 @@ def gcp_correspondences(model_dir, gcp_entries, min_points=3):
         groups.setdefault(tuple(np.round(e["world"], 4)), []).append(e)
 
     local_list, world_list = [], []
+    label_list, method_list = [], []   # per-row, aligned to local/world
     n_tri = n_near = 0
     for key, es in groups.items():
+        # All entries in a group are the same physical corner seen in different
+        # images, so they share one label (take the first).
+        label = es[0].get("label")
         marked = [(e, images.get(e["image"]) or images.get(os.path.basename(e["image"])))
                   for e in es]
         marked = [(e, img) for e, img in marked if img is not None]
@@ -329,6 +355,8 @@ def gcp_correspondences(model_dir, gcp_entries, min_points=3):
         if X is not None:
             local_list.append(X)
             world_list.append(np.array(key))
+            label_list.append(label)
+            method_list.append("triangulated")
             n_tri += 1
             continue
 
@@ -348,6 +376,8 @@ def gcp_correspondences(model_dir, gcp_entries, min_points=3):
         if locs:
             local_list.append(np.mean(locs, axis=0))
             world_list.append(np.array(key))
+            label_list.append(label)
+            method_list.append("nearest_point")
             n_near += 1
 
     if len(local_list) < min_points:
@@ -357,7 +387,8 @@ def gcp_correspondences(model_dir, gcp_entries, min_points=3):
     print(f"[georef] GCP localization: {n_tri} triangulated, "
           f"{n_near} nearest-point fallback")
     return (np.array(local_list), np.array(world_list),
-            {"triangulated": n_tri, "nearest_point": n_near})
+            {"triangulated": n_tri, "nearest_point": n_near,
+             "labels": label_list, "row_method": method_list})
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +501,97 @@ def evaluate_umeyama_cp(model_dir, control, check):
     s, R, t = umeyama_similarity(lc, wc)
     lk, wk, _ = gcp_correspondences(model_dir, check, min_points=1)
     return solve_residuals(s, R, t, lk, wk)["rms_3d"]
+
+
+# OpenCV ArUco corner order is TL, TR, BR, BL → the four marker side edges (the
+# 0-2 / 1-3 diagonals are excluded: they encode size*sqrt(2), not the edge size).
+_MARKER_EDGES = [(0, 1), (1, 2), (2, 3), (3, 0)]
+
+
+def per_marker_check(local, world, labels, row_method=None):
+    """Leave-one-marker-out **independent** metric-scale size check.
+
+    Marker-corner GCPs carry an ``m<id>_c<k>`` label (see :func:`_gcp_label`);
+    corners sharing the ``m<id>`` prefix are one marker. For each marker that can
+    be held out — ≥2 of its corners localized, ≥1 OTHER marker present, and a
+    solvable (≥3 non-collinear) control set remaining — refit the similarity on
+    every corner that is NOT this marker, transform this marker's local corners
+    with that control-only fit, and measure its reconstructed edge length against
+    the world-target edge length (which already equals the printed marker size,
+    because Mensura builds the corner world coords at ``marker_mm/1000``). The
+    held-out marker never influenced the fit it is judged by, so the resulting
+    ``estimated_size_mm`` vs. ``expected_size_mm`` is an independent check.
+
+    ``size`` = mean of the four marker side edges (OpenCV order TL,TR,BR,BL); only
+    edges whose both endpoints were localized are used (handles <4 corners).
+
+    Returns ``(markers: list[dict], aggregate: dict|None)``. No-op → ``([], None)``
+    when fewer than 2 markers have ≥2 localized corners (e.g. the single-marker
+    scaling method — nothing can be held out).
+    """
+    if labels is None:
+        return [], None
+    n = len(local)
+    if row_method is None:
+        row_method = [None] * n
+
+    groups = {}    # marker id ("m7") -> {corner_index k: row index in local/world}
+    for i, lab in enumerate(labels):
+        m = re.match(r"^(m\d+)_c(\d+)$", lab) if lab else None
+        if m:
+            groups.setdefault(m.group(1), {})[int(m.group(2))] = i
+
+    if sum(1 for cs in groups.values() if len(cs) >= 2) < 2:
+        return [], None
+
+    markers = []
+    for mk in sorted(groups):
+        corners = groups[mk]                       # {k: row index}
+        if len(corners) < 2:
+            continue
+        in_marker = set(corners.values())
+        control = [i for i in range(n) if i not in in_marker]
+        if len(control) < 3:
+            continue
+        try:
+            s_c, R_c, t_c = umeyama_similarity(local[control], world[control])
+        except ValueError:
+            continue                               # collinear control set → skip
+
+        edges = [(a, b) for (a, b) in _MARKER_EDGES if a in corners and b in corners]
+        if not edges:
+            continue
+        pred = {k: s_c * (R_c @ local[corners[k]]) + t_c for k in corners}
+        est_edges = [float(np.linalg.norm(pred[a] - pred[b])) for (a, b) in edges]
+        exp_edges = [float(np.linalg.norm(world[corners[a]] - world[corners[b]]))
+                     for (a, b) in edges]
+        est_mm = float(np.mean(est_edges)) * 1000.0
+        exp_mm = float(np.mean(exp_edges)) * 1000.0
+        err_mm = est_mm - exp_mm
+        markers.append({
+            "marker_id": mk,
+            "n_corners": len(corners),
+            "expected_size_mm": exp_mm,
+            "estimated_size_mm": est_mm,
+            "error_mm": err_mm,
+            "error_pct": (100.0 * err_mm / exp_mm) if exp_mm else 0.0,
+            "edges_mm": [e * 1000.0 for e in est_edges],
+            "held_out": True,
+            # low confidence if this marker's own corners came from the weaker
+            # nearest-sparse-point fallback rather than multi-view triangulation.
+            "low_confidence": any(row_method[i] == "nearest_point" for i in in_marker),
+        })
+
+    if not markers:
+        return [], None
+    aggregate = {
+        "n_markers": len(markers),
+        "mean_estimated_size_mm": float(np.mean([m["estimated_size_mm"] for m in markers])),
+        "mean_expected_size_mm": float(np.mean([m["expected_size_mm"] for m in markers])),
+        "max_abs_error_mm": float(max(abs(m["error_mm"]) for m in markers)),
+        "max_abs_error_pct": float(max(abs(m["error_pct"]) for m in markers)),
+    }
+    return markers, aggregate
 
 
 def _xy_offset(world):
@@ -627,13 +749,24 @@ def main():
                 local, world, gcp_info = gcp_correspondences(model_dir, entries)
                 s, R, t = umeyama_similarity(local, world)
                 residuals = solve_residuals(s, R, t, local, world)
-                residuals["gcp_localization"] = gcp_info
+                residuals["gcp_localization"] = {
+                    "triangulated": gcp_info["triangulated"],
+                    "nearest_point": gcp_info["nearest_point"],
+                }
                 offset = _xy_offset(world)
                 crs = args.crs if args.crs not in ("auto", "") else crs_header
                 apply_to_obj(args.work, s, R, t, offset)
-                write({"source": "colmap-gcp", "s": s, "R": R.tolist(),
-                       "t": t.tolist(), "offset": offset.tolist(), "crs": crs,
-                       "residuals": residuals})
+                payload = {"source": "colmap-gcp", "s": s, "R": R.tolist(),
+                           "t": t.tolist(), "offset": offset.tolist(), "crs": crs,
+                           "residuals": residuals}
+                # Independent leave-one-marker-out size check — only with >=2
+                # markers (the scale-sheet method); absent for single-marker GCPs.
+                markers, marker_check = per_marker_check(
+                    local, world, gcp_info.get("labels"), gcp_info.get("row_method"))
+                if marker_check:
+                    payload["markers"] = markers
+                    payload["marker_check"] = marker_check
+                write(payload)
                 write_coords_txt(args.work, offset, crs)
                 return
             else:  # exif
