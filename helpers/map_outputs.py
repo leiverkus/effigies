@@ -167,6 +167,15 @@ def main():
     if os.path.exists(report):
         link_or_copy(report, os.path.join(P, "odm_report", "report.pdf"))
 
+    # 3a. georeferencing transform -> odm_report/georef_transform.json. The georef
+    #     bridge writes it to the workdir with the solved similarity scale and the
+    #     GCP/EXIF residuals; exposing it as a downloadable asset lets consumers
+    #     (e.g. the Mensura plugin's scale report) read the recovered scale and the
+    #     marker-fit error without re-doing any geometry.
+    gt = os.path.join(W, "georef_transform.json")
+    if os.path.exists(gt):
+        link_or_copy(gt, os.path.join(P, "odm_report", "georef_transform.json"))
+
     # change-detection stats JSON -> odm_report/ (opt-in; only with --align-to)
     chg = os.path.join(W, "odm_report", "change_detection.json")
     if os.path.exists(chg):

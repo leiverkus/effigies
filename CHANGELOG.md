@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`georef_transform.json` is now a downloadable WebODM asset** (mapped into
+  `odm_report/`). The georef bridge already writes the solved similarity scale
+  `s` and the GCP/EXIF residuals (`rms_3d`/`max_3d`) to it; exposing it lets
+  consumers read the recovered scale and marker-fit error without re-doing any
+  geometry (used by the Mensura plugin's scale-verification report).
+  `helpers/map_outputs.py` + `tests/test_map_outputs.py`.
+
 ## [0.7.2] - 2026-06-18
 
 ### Changed
