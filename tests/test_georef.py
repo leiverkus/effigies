@@ -325,6 +325,65 @@ def test_per_marker_check_flags_size_deviation():
     print("ok  per-marker check flags a known +5% size deviation")
 
 
+def test_inter_marker_consistency_recovers_distances():
+    """With a consistent reconstruction every inter-marker baseline (s*||Δlocal||)
+    must equal the printed baseline (||Δworld||)."""
+    L = 0.04
+    world, labels = _marker_world_and_labels(
+        L, [(0., 0., 0.), (0.18, 0., 0.01), (0., 0.25, 0.02), (0.18, 0.25, 0.005)])
+    s_true, ang = 0.5, 0.3
+    R = np.array([[np.cos(ang), -np.sin(ang), 0],
+                  [np.sin(ang),  np.cos(ang), 0], [0, 0, 1]])
+    t = np.array([10., -5., 2.])
+    local = ((R.T @ (world - t).T).T) / s_true
+
+    pairs, agg = gb.inter_marker_consistency(local, world, labels, s_true)
+    assert agg["n_pairs"] == 6 and agg["max_abs_error_mm"] < 1e-6, agg
+    for p in pairs:
+        assert abs(p["error_mm"]) < 1e-6, p
+    # spot-check one expected baseline directly (centroid = TL + (L/2, L/2, 0))
+    c0 = np.array([L / 2, L / 2, 0.0])
+    c1 = np.array([0.18 + L / 2, L / 2, 0.01])
+    p01 = next(p for p in pairs if {p["a"], p["b"]} == {"m0", "m1"})
+    assert abs(p01["expected_mm"] - np.linalg.norm(c0 - c1) * 1000.0) < 1e-6
+    print("ok  inter-marker consistency recovers known baselines")
+
+
+def test_inter_marker_consistency_flags_displaced_marker():
+    """Displacing ONE marker's local centroid must perturb exactly the pairs that
+    touch it (the others stay exact) — the placement error the size check misses."""
+    L = 0.04
+    world, labels = _marker_world_and_labels(
+        L, [(0., 0., 0.), (0.18, 0., 0.01), (0., 0.25, 0.02), (0.18, 0.25, 0.005)])
+    s_true, ang = 0.5, 0.3
+    R = np.array([[np.cos(ang), -np.sin(ang), 0],
+                  [np.sin(ang),  np.cos(ang), 0], [0, 0, 1]])
+    t = np.array([1., 2., 3.])
+    local = ((R.T @ (world - t).T).T) / s_true
+    local[0:4] = local[0:4] + np.array([0.06, 0.04, 0.0])     # displace m0 in local
+
+    pairs, agg = gb.inter_marker_consistency(local, world, labels, s_true)
+    for p in pairs:
+        if "m0" in (p["a"], p["b"]):
+            continue
+        assert abs(p["error_mm"]) < 1e-6, p                   # untouched pairs exact
+    worst = max(pairs, key=lambda p: abs(p["error_mm"]))
+    assert "m0" in (worst["a"], worst["b"]), worst            # error localizes to m0
+    assert agg["max_abs_error_mm"] > 1.0
+    assert abs(agg["max_abs_error_mm"] - abs(worst["error_mm"])) < 1e-9
+    print("ok  inter-marker consistency flags + localizes a displaced marker")
+
+
+def test_inter_marker_consistency_noops():
+    L = 0.04
+    world, labels = _marker_world_and_labels(L, [(0., 0., 0.), (0.18, 0., 0.0)])
+    assert gb.inter_marker_consistency(
+        world[:4], world[:4], [f"m0_c{k}" for k in range(4)], 1.0) == ([], None)
+    for bad_s in (0.0, -1.0, None):
+        assert gb.inter_marker_consistency(world, world, labels, bad_s) == ([], None)
+    print("ok  inter-marker consistency no-ops (single marker / bad scale)")
+
+
 def _build_marker_colmap(root, L=0.05, s_true=0.5, ang=0.3):
     """Synthetic COLMAP for a 4-marker scale sheet (16 labelled corner GCPs).
     Two close PINHOLE cameras give every corner real parallax → all triangulate."""
@@ -399,7 +458,13 @@ def test_marker_check_written_for_multi_marker_gcp():
         assert mc["max_abs_error_mm"] < 0.5, mc       # synthetic-exact → sub-mm
         # the localization counts must stay slim (no label/method lists leaked)
         assert set(tr["residuals"]["gcp_localization"]) == {"triangulated", "nearest_point"}
-    print(f"ok  marker_check written for 4-marker gcp (max err {mc['max_abs_error_mm']:.4f} mm)")
+        # inter-marker consistency block present alongside the per-marker check
+        assert "marker_pairs" in tr and "marker_consistency" in tr, tr.keys()
+        assert len(tr["marker_pairs"]) == 6                       # 4 markers → 6 pairs
+        assert tr["marker_consistency"]["n_pairs"] == 6
+        assert tr["marker_consistency"]["max_abs_error_mm"] < 0.5
+    print(f"ok  marker_check + consistency written for 4-marker gcp "
+          f"(size {mc['max_abs_error_mm']:.4f} mm, dist {tr['marker_consistency']['max_abs_error_mm']:.4f} mm)")
 
 
 def test_marker_check_absent_for_unlabeled_gcp():
@@ -407,7 +472,8 @@ def test_marker_check_absent_for_unlabeled_gcp():
         _build_synthetic_colmap(root)                 # bare gcp_list, no labels
         tr = _run_gcp_main(root)
         assert "markers" not in tr and "marker_check" not in tr, tr.keys()
-    print("ok  marker_check absent for unlabeled (single/non-marker) gcp_list")
+        assert "marker_pairs" not in tr and "marker_consistency" not in tr, tr.keys()
+    print("ok  marker_check + consistency absent for unlabeled gcp_list")
 
 
 if __name__ == "__main__":
@@ -423,6 +489,9 @@ if __name__ == "__main__":
     test_camera_centers_survive_empty_points2d()
     test_per_marker_check_recovers_size_and_single_marker_noops()
     test_per_marker_check_flags_size_deviation()
+    test_inter_marker_consistency_recovers_distances()
+    test_inter_marker_consistency_flags_displaced_marker()
+    test_inter_marker_consistency_noops()
     test_marker_check_written_for_multi_marker_gcp()
     test_marker_check_absent_for_unlabeled_gcp()
     print("\nall georef tests passed")

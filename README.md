@@ -155,6 +155,16 @@ lands in `georef_transform.json` as a `markers` array (per marker:
 *independent* metric-scale verification (the held-out marker never influenced the
 fit it is judged by). Both keys are omitted for single-marker / unlabelled GCPs.
 
+Alongside it, an **inter-marker distance** check compares each marker *pair*'s
+reconstructed baseline `s·‖Δlocal‖` against the printed baseline `‖Δworld‖`
+(centroid-to-centroid; uses only the scalar scale, so it is R/t-invariant and
+reflects the reconstruction's own geometry, not the fit residual). It lands as a
+`marker_pairs` array (`a`, `b`, `expected_mm`, `estimated_mm`, `error_mm`,
+`error_pct`) plus a `marker_consistency` aggregate (`n_pairs`, `max_abs_error_mm`,
+`max_abs_error_pct`, `mean_abs_error_mm`) — catching a folded sheet or a displaced
+marker that the per-marker size check (small intra-marker edges) cannot see. Also
+omitted for <2 markers / unlabelled GCPs.
+
 ### GCP-constrained bundle adjustment (`--gcp-bundle-adjust off|on|auto`)
 
 The default GCP path is **post-hoc and rigid** — COLMAP reconstructs freely and a

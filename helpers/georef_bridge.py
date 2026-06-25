@@ -503,6 +503,22 @@ def evaluate_umeyama_cp(model_dir, control, check):
     return solve_residuals(s, R, t, lk, wk)["rms_3d"]
 
 
+def _group_marker_corners(labels):
+    """Map marker-corner labels to ``{marker_id: {corner_k: row_index}}``.
+
+    Shared by per_marker_check and inter_marker_consistency. Labels not matching
+    the ``m<id>_c<k>`` convention (see _MARKER_LABEL_RE) are ignored; ``None``
+    labels → ``{}``."""
+    groups = {}
+    if labels is None:
+        return groups
+    for i, lab in enumerate(labels):
+        m = re.match(r"^(m\d+)_c(\d+)$", lab) if lab else None
+        if m:
+            groups.setdefault(m.group(1), {})[int(m.group(2))] = i
+    return groups
+
+
 # OpenCV ArUco corner order is TL, TR, BR, BL → the four marker side edges (the
 # 0-2 / 1-3 diagonals are excluded: they encode size*sqrt(2), not the edge size).
 _MARKER_EDGES = [(0, 1), (1, 2), (2, 3), (3, 0)]
@@ -535,12 +551,7 @@ def per_marker_check(local, world, labels, row_method=None):
     if row_method is None:
         row_method = [None] * n
 
-    groups = {}    # marker id ("m7") -> {corner_index k: row index in local/world}
-    for i, lab in enumerate(labels):
-        m = re.match(r"^(m\d+)_c(\d+)$", lab) if lab else None
-        if m:
-            groups.setdefault(m.group(1), {})[int(m.group(2))] = i
-
+    groups = _group_marker_corners(labels)
     if sum(1 for cs in groups.values() if len(cs) >= 2) < 2:
         return [], None
 
@@ -592,6 +603,61 @@ def per_marker_check(local, world, labels, row_method=None):
         "max_abs_error_pct": float(max(abs(m["error_pct"]) for m in markers)),
     }
     return markers, aggregate
+
+
+def inter_marker_consistency(local, world, labels, s):
+    """Independent inter-marker **distance** check (cross-sheet baselines).
+
+    The scale sheet fixes a known inter-marker geometry. For each marker take the
+    centroid of its localized corner rows in ``local`` and in ``world``; for every
+    marker PAIR (i<j) compare the *reconstructed* baseline ``s*||cl_i-cl_j||``
+    against the *printed/surveyed* baseline ``||cw_i-cw_j||`` (both → mm). This
+    uses ONLY the solved scalar scale ``s`` and the reconstruction's own local
+    centroids, so it is invariant to R/t — it reflects the reconstruction's
+    intrinsic inter-marker geometry, not the fit residual. It catches a
+    folded/curved sheet, a displaced or mis-detected marker, and large-baseline
+    drift that the small per-marker edges (and a low global fit-RMS) hide.
+
+    A centroid only needs ONE localized corner (deliberately laxer than
+    per_marker_check, which needs ≥2 corners to form an edge).
+
+    Returns ``(pairs: list[dict], aggregate: dict|None)``. No-op → ``([], None)``
+    when ``s`` is not a usable positive scale, or fewer than 2 markers have a
+    centroid (need ≥1 pair)."""
+    if s is None or not np.isfinite(s) or s <= 0:
+        return [], None
+    groups = _group_marker_corners(labels)
+    cents = {}    # marker id -> (local_centroid, world_centroid)
+    for mk in sorted(groups):
+        rows = list(groups[mk].values())          # ≥1 by construction
+        cents[mk] = (local[rows].mean(0), world[rows].mean(0))
+    if len(cents) < 2:
+        return [], None
+
+    ids = sorted(cents)
+    pairs = []
+    for ia in range(len(ids)):
+        for ib in range(ia + 1, len(ids)):
+            a, b = ids[ia], ids[ib]
+            (cl_a, cw_a), (cl_b, cw_b) = cents[a], cents[b]
+            exp_mm = float(np.linalg.norm(cw_a - cw_b)) * 1000.0
+            est_mm = float(s * np.linalg.norm(cl_a - cl_b)) * 1000.0
+            err_mm = est_mm - exp_mm
+            pairs.append({
+                "a": a, "b": b,
+                "expected_mm": exp_mm,
+                "estimated_mm": est_mm,
+                "error_mm": err_mm,
+                "error_pct": (100.0 * err_mm / exp_mm) if exp_mm else 0.0,
+            })
+
+    aggregate = {
+        "n_pairs": len(pairs),
+        "max_abs_error_mm": float(max(abs(p["error_mm"]) for p in pairs)),
+        "max_abs_error_pct": float(max(abs(p["error_pct"]) for p in pairs)),
+        "mean_abs_error_mm": float(np.mean([abs(p["error_mm"]) for p in pairs])),
+    }
+    return pairs, aggregate
 
 
 def _xy_offset(world):
@@ -766,6 +832,13 @@ def main():
                 if marker_check:
                     payload["markers"] = markers
                     payload["marker_check"] = marker_check
+                # Inter-marker distance consistency (cross-sheet baselines) — also
+                # only with >=2 markers; complements the per-marker size check.
+                pairs, marker_consistency = inter_marker_consistency(
+                    local, world, gcp_info.get("labels"), s)
+                if marker_consistency:
+                    payload["marker_pairs"] = pairs
+                    payload["marker_consistency"] = marker_consistency
                 write(payload)
                 write_coords_txt(args.work, offset, crs)
                 return

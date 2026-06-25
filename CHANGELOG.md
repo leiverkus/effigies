@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inter-marker distance consistency check.** Alongside the per-marker size
+  check, when ≥2 markers are present the georef bridge now compares each marker
+  **pair**'s reconstructed baseline `s·‖Δlocal‖` against the printed baseline
+  `‖Δworld‖` (centroid-to-centroid). The metric uses only the scalar scale `s`
+  and the reconstruction's own local centroids → invariant to R/t, so it reflects
+  the reconstruction's intrinsic inter-marker geometry rather than the fit
+  residual, and catches a folded/curved sheet, a displaced/mis-detected marker, or
+  large-baseline drift that the small per-marker edges (and a low global fit-RMS)
+  hide. Adds `marker_pairs` + `marker_consistency` to `georef_transform.json`
+  (omitted for <2 markers / unlabelled). `inter_marker_consistency` +
+  `_group_marker_corners` (shared with `per_marker_check`) in
+  `helpers/georef_bridge.py` + `tests/test_georef.py`. Consumed by Mensura's
+  scale report.
 - **Independent per-marker size check (leave-one-marker-out).** When the GCPs are
   marker corners labelled `m<id>_c<k>` and ≥2 markers are present, the georef
   bridge refits the similarity on the *other* markers for each marker, transforms
