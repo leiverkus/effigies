@@ -142,6 +142,46 @@ not a quality win to claim silently.
 recovers faithful walls from nadir-only. If the set contains obliques, verify
 they registered (camera pitch distribution from the COLMAP poses).
 
+### RESULT — run `expA-closeholes500` (2026-07-25)
+
+Single variable vs `gpu-base-01`: `mesh-close-holes 30 → 500`. Metrics from
+`scripts/experiment_metrics.py`, identical code for both runs.
+
+| Measure | baseline | close-holes 500 | Δ |
+|---|---|---|---|
+| **Boundary edges** | 12 147 | **5 590** | **−54.0 %** |
+| **Interior ortho nodata** | 0.746 % | **0.176 %** | **−76.4 %** |
+| Interior hole count | 28 | **7** | −75 % |
+| Faces | 10 608 471 | 10 640 998 | +0.3 % |
+| Non-manifold edges | 0 | 0 | — |
+| **Total runtime** | 1 h 00 m 41 s | **1 h 00 m 45 s** | **+0.1 %** |
+| └ ReconstructMesh | 3 m 55 s | 3 m 52 s | −1.3 % |
+
+**Confirmed, and it is free.** Aggressive hole-closing halves the open-edge count
+and removes three quarters of the interior ortho holes at **no runtime cost** —
+the +4 s total is far inside run-to-run variation. The prediction that
+"close-holes is cheap" holds precisely.
+
+**It does not close everything**: 5 590 boundary edges remain. That is the
+expected shape of the result rather than an under-setting to fix by raising the
+ladder to 800 — `close-holes` bridges holes up to a size threshold, and what
+survives on a purely nadir block are the *large* wall voids, which are exactly the
+surfaces the capture never observed. Raising the threshold further would start
+fabricating those walls wholesale, which is the trade-off this experiment exists
+to make explicit, not a knob to max out.
+
+**Caveat carried from the baseline:** the +0.3 % face count and the −1.3 %
+ReconstructMesh time are **below the noise floor** (see the note below) and carry
+no meaning. The two headline effects (−54 %, −76 %) are far above it.
+
+> **Noise floor, measured for free.** `close-holes` cannot affect anything before
+> `ReconstructMesh`, so baseline↔A up to that point is a repeat run at identical
+> settings. It is not bit-identical: sparse points 91 666 → 91 092 (−0.63 %),
+> dense points 17 881 137 → 17 606 192 (−1.54 %), mean reprojection error 0.7979 →
+> 0.7987 px. COLMAP's mapper (RANSAC seeds) and OpenMVS' parallel CUDA PatchMatch
+> are both non-deterministic. **Treat any delta below ~1.5 % as noise.** A dedicated
+> repeat run would tighten this estimate; this one came at zero cost.
+
 ---
 
 ## Experiment B — Densify resolution vs. runtime (`densify-resolution-level`)
