@@ -280,6 +280,64 @@ count matched to 0.3 %.
 the GSD is unchanged, both inside the noise floor. Densify resolution does not
 change *where* the reconstruction has data, only how finely it is modelled.
 
+### RESULT — compensation run `expC-densify1-mfa4` (2026-07-25)
+
+`densify-resolution-level 1` **+** `refine-max-face-area 16 → 4`, compensating the
+pixel-area rescale so the refinement target stays geometrically constant. This is
+the run that isolates densify resolution. All three side by side:
+
+| | baseline<br>res-0 / mfa-16 | B<br>res-1 / mfa-16 | C<br>res-1 / mfa-4 |
+|---|---|---|---|
+| **Total** | **1 h 00 m 41 s** | **19 m 38 s** (−67.6 %) | **54 m 52 s** (−9.6 %) |
+| DensifyPointCloud | 6 m 20 s | 3 m 52 s | 3 m 51 s |
+| ReconstructMesh | 3 m 55 s | 2 m 43 s | 2 m 38 s |
+| RefineMesh | 28 m 01 s | 6 m 38 s | 7 m 40 s |
+| TextureMesh | 17 m 44 s | 3 m 36 s | **37 m 22 s** |
+| Refined faces | 10 608 471 | 2 283 164 | 6 574 854 |
+| Texture patches | 232 716 | 89 842 | **425 527** |
+| Textured OBJ | 1.39 GB | 288 MB | 855 MB |
+| Open-edge fraction | 0.0763 % | 0.1199 % | 0.0590 % |
+| Interior ortho nodata | 0.746 % | 0.732 % | 0.645 % |
+
+**1. There is no free lunch, and the doc's premise was wrong.** Compensating the
+threshold restored faces from 2.28 M to 6.57 M — but not to the baseline's
+10.61 M. With the refinement target held geometrically constant, res-1 still
+yields **38 % fewer faces**. So densify density *does* contribute to final mesh
+detail; RefineMesh does **not** recover it "largely independent of densify
+density". Experiment B's collapse was *mostly*, but not wholly, the coupling.
+
+**2. The runtime saving nearly evaporates: −67.6 % → −9.6 %.** B's headline was
+bought by coarser refinement, not by cheaper densify.
+
+**3. And the residual saving is eaten by a texture-stage blow-up.** The front half
+(densify + reconstruct + refine) does drop hard, 38 m 16 s → 14 m 09 s (−63 %),
+but TextureMesh **more than doubles** against the baseline, 17 m 44 s → 37 m 22 s.
+The cause is patch count, not face count: C has 62 % of the baseline's faces but
+**1.83× its texture patches** (425 527 vs 232 716), and atlas packing scales
+superlinearly — 3.4× the time for 1.83× the patches. A patch is a run of adjacent
+faces sharing the same best view; a finely subdivided mesh on *half-resolution*
+imagery fragments view selection badly. **`res-1` + `mfa-4` is the worst of the
+three combinations** — it pays full price for texturing and still delivers 38 %
+fewer faces.
+
+**4. Geometry quality otherwise holds up.** C is proportionally the *least* open of
+the three (open-edge fraction 0.0590 % vs the baseline's 0.0763 %), and interior
+ortho nodata 0.645 % is at or below the baseline. Coverage and watertightness are
+not what res-1 costs; face density is.
+
+**Conclusion for profile calibration.** The `drone-3d` default (`res-1`,
+`mfa-16` = run B) is genuinely fast and genuinely coarser — a defensible
+production default, but it must be described that way, not as "same quality,
+cheaper". Compensating through `refine-max-face-area` is **counterproductive**:
+it recovers only part of the detail and triggers the patch explosion. If baseline
+detail is wanted, res-0 is what buys it, and the 28 m of RefineMesh against
+full-resolution imagery is the price of the photometric detail this node exists
+for — not waste.
+
+**Open question, not answered here:** an intermediate `mfa-8` at res-1 might sit
+between B and C, but C's patch-count curve suggests the texture cost rises faster
+than the detail does. Worth one run before any profile change is baked in.
+
 ---
 
 ## Notes

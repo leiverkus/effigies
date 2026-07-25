@@ -485,11 +485,24 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       density. **And the test was not actually single-variable:**
       `refine-max-face-area` is a *pixel*-area threshold, so halving image
       resolution quarters it and silently coarsens the refinement target too.
-- [ ] **Follow-up: res-1 with `refine-max-face-area 4`.** The one run that answers
-      what Experiment B was meant to ask, by compensating the pixel-area coupling
-      and holding the refinement target constant. Until it exists, res-1 must not
-      be promoted as "same quality, cheaper" — measured, it is "much coarser,
-      68 % cheaper". Blocks the profile calibration below.
+- [x] **Compensation run: res-1 with `refine-max-face-area 4`** (`expC`, 2026-07-25)
+      — the run that isolates densify resolution by holding the refinement target
+      geometrically constant. **There is no free lunch.** Compensating restored
+      faces 2.28 M → 6.57 M but not to the baseline's 10.61 M, so res-1 still costs
+      **38 % of the face density** even with the threshold corrected: densify
+      density *does* feed final detail, contrary to the premise. And the runtime
+      saving collapses from −67.6 % to **−9.6 %**, because TextureMesh **more than
+      doubles** (17 m 44 s → 37 m 22 s). Cause is patch count, not faces: 62 % of
+      the baseline's faces but **1.83× its texture patches** (fine subdivision on
+      half-resolution imagery fragments view selection), and atlas packing is
+      superlinear. `res-1` + `mfa-4` is the worst of the three combinations.
+- [ ] **Profile decision, now decidable.** The `drone-3d` default (`res-1`,
+      `mfa-16`) is a defensible production setting — but it must be documented as
+      *fast and coarser*, not "same quality, cheaper". Compensating via
+      `refine-max-face-area` is counterproductive and should not be adopted. One
+      optional run remains before baking anything in: `mfa-8` at res-1, to see
+      whether an intermediate exists — C's patch-count curve suggests texture cost
+      rises faster than detail does.
 - [ ] **Profile calibration.** Sweep the key levers (esp. `RefineMesh`
       iterations / `max-face-area` / `gradient-step`, `densify-resolution-level`,
       `number-views-fuse`) per capture type against the benchmark metrics, find
