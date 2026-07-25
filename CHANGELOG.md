@@ -30,6 +30,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   COLMAP's MVS module only cost build time and image size.
 
 ### Added
+- **`--features`: the learned SfM front-end is now reachable from the engine.**
+  Closes the ROADMAP item that waited on stable COLMAP 4.1. One option selects
+  extractor *and* matcher together — `sift` (default, unchanged), `sift-lightglue`,
+  `aliked-n16rot`, `aliked-n32` — because upstream documents that mixing feature
+  types fails and that one `database.db` cannot hold two of them. Deriving both ends
+  from a single value makes that mismatch **unrepresentable** rather than merely
+  documented, and two tests lock the property in place (every advertised choice has
+  a case arm; extractor and matcher families always agree).
+  For `features=sift` **no new flags are passed at all**, so the default path stays
+  byte-identical and cannot regress. Model paths point at the baked-in
+  `EFFIGIES_MODEL_DIR`; COLMAP's own defaults are `URL;file;sha256` triples it would
+  otherwise download at first use, which would break the offline contract silently —
+  a missing model now fails loudly instead. With `matcher=vocab_tree` the retrieval
+  tree switches to the matching ALIKED-trained one, which is what makes the option
+  usable past ~150 images (LightGlue is pairwise and still needs retrieval in front).
+  Availability is probed on the binary (`--FeatureExtraction.type`) rather than
+  trusted from `COLMAP_VERSION`. `run.sh`, `pipeline/sparse_colmap.sh`,
+  `options.json`, `tests/test_options.py`, README.
+  **Verified end-to-end on the A4000**: `--features aliked-n16rot` on 67 × 12 MP
+  images registered **67/67**, 54 214 points, 241 311 observations, mean track
+  length 4.45, mean reprojection error **1.363 px**, and produced a 109 MB textured
+  OBJ. A SIFT-vs-ALIKED *comparison* is deliberately not claimed here — one dataset
+  at one setting is not evidence; that is the v0.8.0 benchmark campaign's job.
 - **ALIKED + LightGlue ONNX models baked into both images** (~136 MB), SHA256-pinned
   from the upstream `3.13.0` release assets: `aliked-n16rot`/`aliked-n32` extractors,
   `aliked-lightglue` and `sift-lightglue` matchers, `bruteforce-matcher`, **and the
@@ -45,6 +68,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separate so the GPU validation stays a single-variable test.
 
 ### Fixed
+- **The CUDA runtime base must be the `-cudnn-` variant.** ONNX Runtime's CUDA
+  execution provider — which COLMAP uses for ALIKED/LightGlue whenever `use_gpu` is
+  on — `dlopen`s `libonnxruntime_providers_cuda.so`, which needs `libcudnn.so.9`.
+  The plain `-runtime` base ships no cuDNN. The provider is loaded **lazily**, so
+  nothing fails at build time: the image builds green and then
+  `feature_extractor --FeatureExtraction.type ALIKED_N16ROT` aborts with a core dump
+  and *"Failed to load library … libcudnn.so.9"*. Costs ~+1.8 GB (14.8 → 16.6 GB).
+  The builder stage stays on plain `-devel` — cuDNN is only needed to run inference,
+  never to compile, and that stage is discarded.
+- **`scripts/gpu-smoke-run.sh` wrote its results into the current directory**, i.e.
+  normally the repo checkout — where an `rsync --delete` of that checkout silently
+  destroys the evidence of previous runs. Now defaults to `$HOME`, override with
+  `EFFIGIES_SMOKE_OUT`.
 - **The CUDA image now actually builds and runs — first time ever.** Two defects
   surfaced on the first real build, on an RTX A4000 host:
   - **`libglew2.2` + `libopengl0` missing from the slim runtime stage.** COLMAP

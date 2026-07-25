@@ -342,8 +342,18 @@ RUN npm install --production
 # the devel->runtime CUDA base. Keep this lock-step with Dockerfile.cpu's runtime
 # stage (the runtime apt set is verified there end-to-end); the only delta is the
 # CUDA base.
+#
+# The *-cudnn-* variant is required, not cosmetic: ONNX Runtime's CUDA execution
+# provider — which COLMAP 4.1 uses for ALIKED/LightGlue whenever use_gpu is on —
+# dlopens libonnxruntime_providers_cuda.so, which needs libcudnn.so.9. The plain
+# `-runtime` base does not ship cuDNN, and the failure appears only at INFERENCE
+# time, not at build time: the provider is loaded lazily, so the build succeeds and
+# then `colmap feature_extractor --FeatureExtraction.type ALIKED_N16ROT` aborts with
+# "Failed to load library ... libcudnn.so.9". Costs roughly +0.7 GB compressed.
+# The builder stage deliberately stays on plain `-devel`: cuDNN is only needed to
+# RUN inference, never to compile, and that stage is discarded anyway.
 # ===========================================================================
-FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS runtime
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu${UBUNTU_VERSION} AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Runtime shared libraries (same noble package names as the CPU image; the CUDA

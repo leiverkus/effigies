@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Patrick Leiverkus
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # COLMAP sparse stage.
-# args: IMAGES WORK MATCHER CAMERA_MODEL GPU_FLAG [MAPPER] [GCP_FILE] [CRS] [GCP_BA]
+# args: IMAGES WORK MATCHER CAMERA_MODEL GPU_FLAG [MAPPER] [GCP_FILE] [CRS] [GCP_BA] [FEATURES]
 set -euo pipefail
 IMAGES="$1"; WORK="$2"; MATCHER="$3"; CAMERA_MODEL="$4"; GPU="$5"; MAPPER="${6:-incremental}"
-GCP_FILE="${7:-}"; CRS="${8:-auto}"; GCP_BA="${9:-false}"
+GCP_FILE="${7:-}"; CRS="${8:-auto}"; GCP_BA="${9:-false}"; FEATURES="${10:-sift}"
 
 DB="$WORK/database.db"
 mkdir -p "$WORK/sparse"
@@ -26,6 +26,68 @@ if colmap feature_extractor --help 2>&1 | grep -q -- '--FeatureExtraction.use_gp
 else
   FEAT_EXTRACT=SiftExtraction
   FEAT_MATCH=SiftMatching
+fi
+
+# --- Feature front-end (--features) -----------------------------------------
+# ONE knob selects extractor AND matcher together, deliberately: upstream states
+# that mixing feature types fails (SIFT descriptors with an ALIKED matcher) and
+# that a single database.db cannot hold two feature types. Deriving both ends from
+# one value makes that mismatch unrepresentable instead of merely documented.
+#
+#   sift            SIFT + brute force      — the default; unchanged behaviour
+#   sift-lightglue  SIFT + LightGlue        — keep SIFT descriptors, learned matcher
+#   aliked-n16rot   ALIKED_N16ROT + LightGlue — faster, some viewpoint invariance
+#   aliked-n32      ALIKED_N32   + LightGlue — costlier, no explicit viewpoint training
+#
+# The ONNX models are baked into the image (EFFIGIES_MODEL_DIR). COLMAP's own
+# defaults for these options are "URL;filename;sha256" triples that it downloads
+# and caches on first use — passing local paths keeps the node offline-capable.
+#
+# For features=sift NO new flags are passed at all, so the default path stays
+# byte-identical to before this option existed and cannot regress.
+MODELS="${EFFIGIES_MODEL_DIR:-/usr/local/share/effigies/models}"
+EXTRACT_FEAT=()
+MATCH_FEAT=()
+VOCAB_SUFFIX=""          # retrieval tree must match the feature type (see vocab_tree below)
+
+if [[ "$FEATURES" != "sift" ]]; then
+  # Probe rather than trust COLMAP_VERSION: --FeatureExtraction.type arrived in
+  # COLMAP 4.1. Passing an unknown option aborts the run, and upstream that is only
+  # the opaque NodeODM "Cannot process dataset".
+  if ! colmap feature_extractor --help 2>&1 | grep -q -- '--FeatureExtraction.type'; then
+    echo "[colmap] FATAL: --features=$FEATURES needs COLMAP >= 4.1 (no --FeatureExtraction.type in this build). Use --features sift or rebuild the image." >&2
+    exit 1
+  fi
+  case "$FEATURES" in
+    sift-lightglue)
+      EXTRACT_FEAT=(--FeatureExtraction.type SIFT)
+      MATCH_FEAT=(--FeatureMatching.type SIFT_LIGHTGLUE
+                  --SiftMatching.lightglue_model_path "$MODELS/sift-lightglue.onnx") ;;
+    aliked-n16rot)
+      EXTRACT_FEAT=(--FeatureExtraction.type ALIKED_N16ROT
+                    --AlikedExtraction.n16rot_model_path "$MODELS/aliked-n16rot.onnx")
+      MATCH_FEAT=(--FeatureMatching.type ALIKED_LIGHTGLUE
+                  --AlikedMatching.lightglue_model_path "$MODELS/aliked-lightglue.onnx")
+      VOCAB_SUFFIX="_aliked_n16rot" ;;
+    aliked-n32)
+      EXTRACT_FEAT=(--FeatureExtraction.type ALIKED_N32
+                    --AlikedExtraction.n32_model_path "$MODELS/aliked-n32.onnx")
+      MATCH_FEAT=(--FeatureMatching.type ALIKED_LIGHTGLUE
+                  --AlikedMatching.lightglue_model_path "$MODELS/aliked-lightglue.onnx")
+      VOCAB_SUFFIX="_aliked_n32" ;;
+    *)
+      echo "[colmap] FATAL: unknown --features '$FEATURES' (sift, sift-lightglue, aliked-n16rot, aliked-n32)" >&2
+      exit 1 ;;
+  esac
+  # Fail loudly on a missing model rather than letting COLMAP silently fall back to
+  # downloading it (its default is a URL) — that would need runtime network and
+  # break the offline contract without any visible sign.
+  for i in "${EXTRACT_FEAT[@]}" "${MATCH_FEAT[@]}"; do
+    case "$i" in
+      "$MODELS"/*) [[ -f "$i" ]] || { echo "[colmap] FATAL: model '$i' missing from the image. Set EFFIGIES_MODEL_DIR or rebuild." >&2; exit 1; } ;;
+    esac
+  done
+  echo "[colmap] features=$FEATURES (models: $MODELS)"
 fi
 
 # CPU memory guards. Two distinct failure modes appear only on the CPU path and
@@ -61,14 +123,15 @@ colmap feature_extractor \
   --ImageReader.camera_model "$CAMERA_MODEL" \
   --ImageReader.single_camera_per_folder 1 \
   --${FEAT_EXTRACT}.use_gpu "$GPU" \
+  "${EXTRACT_FEAT[@]}" \
   "${EXTRACT_THREADS[@]}"
 
 progress 10
 echo "[colmap] ${MATCHER}_matcher"
 case "$MATCHER" in
-  exhaustive) colmap exhaustive_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" "${EXHAUSTIVE_CPU[@]}" ;;
-  sequential) colmap sequential_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
-  spatial)    colmap spatial_matcher    --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+  exhaustive) colmap exhaustive_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_FEAT[@]}" "${MATCH_THREADS[@]}" "${EXHAUSTIVE_CPU[@]}" ;;
+  sequential) colmap sequential_matcher --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_FEAT[@]}" "${MATCH_THREADS[@]}" ;;
+  spatial)    colmap spatial_matcher    --database_path "$DB" --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_FEAT[@]}" "${MATCH_THREADS[@]}" ;;
   vocab_tree)
     # Image-retrieval matching for large sets: instead of all O(n^2) pairs, each
     # image queries a pre-trained vocabulary tree for its most similar images and
@@ -77,13 +140,22 @@ case "$MATCHER" in
     # is absent, fail with guidance rather than the opaque NodeODM "Cannot process
     # dataset" COLMAP would otherwise produce for an empty --vocab_tree_path.
     VOCAB="${EFFIGIES_VOCAB_TREE:-/usr/local/share/effigies/vocab_tree.bin}"
+    # RETRIEVAL DESCRIPTORS MUST MATCH THE FEATURE TYPE. The baked-in default tree
+    # is SIFT-trained and cannot serve ALIKED retrieval, so an ALIKED run switches
+    # to the matching vocab_tree_*_aliked_* tree (both are baked in). This is what
+    # makes --features usable beyond ~150 images, where autoscale.sh flips the
+    # matcher from exhaustive to vocab_tree: LightGlue is pairwise and still needs
+    # a retrieval stage in front of it.
+    if [[ -n "$VOCAB_SUFFIX" ]]; then
+      VOCAB="$MODELS/vocab_tree_faiss_flickr100K_words64K${VOCAB_SUFFIX}.bin"
+    fi
     if [[ ! -f "$VOCAB" ]]; then
       echo "[colmap] matcher=vocab_tree needs a COLMAP vocabulary tree, but none was found at '$VOCAB'. The Effigies image bakes one in there; set EFFIGIES_VOCAB_TREE to a vocab-tree .bin to override, or use matcher=exhaustive (recommended for close-range object sets)." >&2
       exit 1
     fi
     colmap vocab_tree_matcher --database_path "$DB" \
       --VocabTreeMatching.vocab_tree_path "$VOCAB" \
-      --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_THREADS[@]}" ;;
+      --${FEAT_MATCH}.use_gpu "$GPU" "${MATCH_FEAT[@]}" "${MATCH_THREADS[@]}" ;;
   *) echo "[colmap] unknown/unsupported matcher '$MATCHER'" >&2; exit 1 ;;
 esac
 

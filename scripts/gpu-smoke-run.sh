@@ -145,7 +145,12 @@ else
 fi
 
 # Keep the log and samples out of the temp dir before the trap wipes it.
-OUT="./gpu-smoke-$(date -u +%Y%m%dT%H%M%SZ)"
+#
+# NOT into the current directory: this script is normally invoked from the repo
+# checkout, and an `rsync --delete` of that checkout then silently destroys the
+# evidence of previous runs (learned the hard way). Defaults to $HOME; override
+# with EFFIGIES_SMOKE_OUT.
+OUT="${EFFIGIES_SMOKE_OUT:-$HOME}/gpu-smoke-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$OUT" && cp "$LOG" "$SAMPLES" "$OUT/" 2>/dev/null || true
 echo
 echo "  log + GPU samples kept in: $OUT"

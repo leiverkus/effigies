@@ -89,9 +89,60 @@ def test_enum_default_is_a_choice():
     print("ok  enum defaults are within their choices")
 
 
+SPARSE_COLMAP = os.path.join(HERE, "..", "pipeline", "sparse_colmap.sh")
+
+
+def test_every_features_value_is_wired_in_sparse_colmap():
+    """Each --features choice must have a case arm in pipeline/sparse_colmap.sh.
+
+    The failure this guards against is silent and expensive: a value advertised in
+    options.json that the pipeline does not handle reaches COLMAP as an unknown
+    argument, aborts the run, and surfaces in WebODM only as "Cannot process
+    dataset". 'sift' is exempt — it is the default and deliberately passes NO extra
+    flags, so the pre-existing code path stays byte-identical.
+    """
+    src = {opt["name"]: opt for opt in _load()}
+    assert "features" in src, "the features option disappeared from options.json"
+    with open(SPARSE_COLMAP) as f:
+        script = f.read()
+    for choice in src["features"]["domain"]:
+        if choice == "sift":
+            continue
+        assert re.search(rf"^\s*{re.escape(choice)}\)", script, re.M), \
+            f"--features={choice} is advertised but has no case arm in sparse_colmap.sh"
+    print("ok  every features choice is wired in sparse_colmap.sh")
+
+
+def test_features_and_matcher_types_stay_paired():
+    """ALIKED extraction must never be paired with a SIFT matcher, or vice versa.
+
+    Upstream documents that mixing feature types fails and that one database.db
+    cannot hold two of them. The pipeline derives both ends from a single option so
+    the mismatch is unrepresentable; this test locks that property in place.
+    """
+    with open(SPARSE_COLMAP) as f:
+        script = f.read()
+    for arm, extract, match in [
+        ("sift-lightglue", "SIFT", "SIFT_LIGHTGLUE"),
+        ("aliked-n16rot", "ALIKED_N16ROT", "ALIKED_LIGHTGLUE"),
+        ("aliked-n32", "ALIKED_N32", "ALIKED_LIGHTGLUE"),
+    ]:
+        body = script.split(f"{arm})", 1)[1].split(";;", 1)[0]
+        assert f"--FeatureExtraction.type {extract}" in body, \
+            f"{arm}: wrong or missing extractor type"
+        assert f"--FeatureMatching.type {match}" in body, \
+            f"{arm}: wrong or missing matcher type"
+        family_e = "ALIKED" if extract.startswith("ALIKED") else "SIFT"
+        family_m = "ALIKED" if match.startswith("ALIKED") else "SIFT"
+        assert family_e == family_m, f"{arm}: extractor/matcher families disagree"
+    print("ok  extractor and matcher families are paired for every features choice")
+
+
 if __name__ == "__main__":
     test_keys_are_double_dash_flags()
     test_type_mapping_matches_nodeodm_expectations()
     test_all_metavar_domains_are_nodeodm_valid()
     test_enum_default_is_a_choice()
+    test_every_features_value_is_wired_in_sparse_colmap()
+    test_features_and_matcher_types_stay_paired()
     print("\nall options tests passed")

@@ -23,6 +23,19 @@
     "help": "Structure-from-Motion backend for the sparse reconstruction. 'colmap' handles both close-range / convergent imagery (objects, architecture) and aerial / GPS sets (with EXIF-GPS or GCP georeferencing and split-merge tiling for large counts). An OpenSfM backend for very large GPS-only nadir missions is planned but not yet available. Default: %(default)s"
   },
   {
+    "name": "features",
+    "title": "Feature Front-End",
+    "value": "sift",
+    "domain": [
+      "sift",
+      "sift-lightglue",
+      "aliked-n16rot",
+      "aliked-n32"
+    ],
+    "type": "enum",
+    "help": "Detector + matcher used for the sparse reconstruction (COLMAP 4.1+). 'sift' is the classic hand-crafted pipeline and stays the default. The other values switch on the learned front-end, which is aimed at the surfaces SIFT is structurally weak on: low-texture earth / planum, section profiles and repetitive stone settings. 'sift-lightglue' keeps SIFT descriptors but replaces brute-force matching with the learned LightGlue matcher — the cheapest upgrade. 'aliked-n16rot' uses learned ALIKED features (faster, trained for some viewpoint invariance) with LightGlue; 'aliked-n32' is the costlier ALIKED variant without explicit viewpoint training. Extractor and matcher are always selected together, because mixing feature types fails and one database cannot hold two of them. Runs via ONNX (models are baked into the image, no network needed); the ONNX runtime has CPU and GPU providers, so this is not GPU-only. With vocab_tree matching the retrieval tree is switched to the matching ALIKED-trained one automatically. Default: %(default)s"
+  },
+  {
     "name": "matcher",
     "title": "COLMAP Matcher",
     "value": "exhaustive",

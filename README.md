@@ -87,6 +87,7 @@ Advertised in [`options.json`](options.json) and surfaced in the WebODM task UI:
 | Option | Default | Purpose |
 |---|---|---|
 | `sparse-engine` | `colmap` | SfM backend (`colmap` for close-range, `opensfm` for aerial). |
+| `features` | `sift` | Detector + matcher for the sparse stage. `sift` = classic (default, unchanged). `sift-lightglue` keeps SIFT descriptors with the learned LightGlue matcher; `aliked-n16rot` / `aliked-n32` use learned ALIKED features with LightGlue — aimed at low-texture earth/planum, section profiles and repetitive stone settings, where SIFT is structurally weak. Extractor and matcher are always chosen together (mixing feature types fails). Models are baked in; runs via ONNX, not GPU-only. |
 | `matcher` | `exhaustive` | COLMAP feature matching strategy. |
 | `camera-model` | `OPENCV` | COLMAP self-calibration model. |
 | `densify-resolution-level` | `1` | OpenMVS densify downscale (`0` = full res). |

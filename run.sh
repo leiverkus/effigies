@@ -15,6 +15,7 @@ set -euo pipefail
 declare -A OPT=(
   [profile]=none
   [sparse-engine]=colmap
+  [features]=sift
   [matcher]=exhaustive
   [mapper]=incremental
   [camera-model]=OPENCV
@@ -151,7 +152,7 @@ source "$(dirname "$0")/pipeline/openmvs_bin.sh"
 progress 1
 
 echo "[effigies] project: $PROJ ($N_IMAGES images)"
-echo "[effigies] sparse-engine=${OPT[sparse-engine]} matcher=${OPT[matcher]} mapper=${OPT[mapper]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
+echo "[effigies] sparse-engine=${OPT[sparse-engine]} features=${OPT[features]} matcher=${OPT[matcher]} mapper=${OPT[mapper]} refine-iters=${OPT[refine-mesh-iters]} crs=${OPT[crs]}"
 
 # Resolve GPU usage. GPU is used by default when present (--no-gpu forces CPU);
 # we still probe and fall back to CPU when no usable CUDA
@@ -225,7 +226,7 @@ fi
 TILE_N=0
 bash "$(dirname "$0")/pipeline/sparse_colmap.sh" \
      "$IMAGES" "$WORK" "${OPT[matcher]}" "${OPT[camera-model]}" "$GPU_FLAG" "${OPT[mapper]}" \
-     "${OPT[gcp]}" "${OPT[crs]}" "$GCP_BA"
+     "${OPT[gcp]}" "${OPT[crs]}" "$GCP_BA" "${OPT[features]}"
 TILE_N=$(python3 "$(dirname "$0")/helpers/tiling.py" --decide --work "$WORK" \
            --tiles "${OPT[tiles]}" --budget "${OPT[tile-budget]}" \
            --res-level "${OPT[densify-resolution-level]}" 2>/dev/null || echo 0)

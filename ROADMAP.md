@@ -568,15 +568,28 @@ What remains is exposing it through the engine.
       upstream `3.13.0` release assets, including the **ALIKED-specific retrieval
       trees** — SIFT vocab trees cannot serve ALIKED retrieval. No hloc/torch
       pipeline, no manual `database.db` import.
-- [ ] **Wiring — expose it through the engine.** The CLI surface is
-      `--FeatureExtraction.type ALIKED_N16ROT|ALIKED_N32`,
-      `--FeatureMatching.type ALIKED_LIGHTGLUE|ALIKED_BRUTEFORCE|SIFT_LIGHTGLUE`,
-      `--AlikedExtraction.*_model_path` (point at `$EFFIGIES_MODEL_DIR`),
-      `--AlikedMatching.min_cossim`. Needs a `features` option in `options.json`,
-      the flags in `sparse_colmap.sh`, and the retrieval-tree selection switched to
-      the matching `_aliked_*` tree. **Extraction and matching types must agree** —
-      upstream documents that mixing SIFT features with an ALIKED matcher fails, and
-      that feature types cannot be mixed in one `database.db`.
+- [x] **Wiring — exposed through the engine as `--features`.** Done: one option
+      selects extractor *and* matcher (`sift` | `sift-lightglue` | `aliked-n16rot` |
+      `aliked-n32`), so the documented mismatch — SIFT descriptors with an ALIKED
+      matcher, or two feature types in one `database.db` — is unrepresentable rather
+      than merely warned about; two tests lock that. `features=sift` passes no new
+      flags, keeping the default path byte-identical. Model paths resolve to the
+      baked-in `EFFIGIES_MODEL_DIR` (COLMAP's defaults are URLs it would fetch at
+      first use), a missing model fails loudly, `vocab_tree` switches to the matching
+      `_aliked_*` retrieval tree, and availability is probed on the binary rather
+      than inferred from `COLMAP_VERSION`.
+
+      Verified on the A4000: `aliked-n16rot` on 67 × 12 MP images →
+      **67/67 registered**, 54 214 points, 241 311 observations, mean track length
+      4.45, mean reprojection error **1.363 px**, 109 MB textured OBJ.
+      Required one more build fix: the CUDA **runtime** base had to become the
+      `-cudnn-` variant, because ONNX Runtime's CUDA provider dlopens
+      `libcudnn.so.9` and the plain base ships none — a *lazy* load, so the image
+      built green and only aborted at inference.
+- [ ] **Quantify it.** No SIFT-vs-ALIKED claim is made from the run above: one
+      dataset at one setting is not evidence. Registered-image count, sparse-point
+      count and downstream completeness on planum / profile / stone-setting sets
+      belong to the v0.8.0 campaign — where this now *can* run, on the same host.
       **ONNX (not torch)** is a far lighter dependency, and ONNX Runtime has CPU **and**
       GPU execution providers (CUDA / CoreML) → softens the GPU requirement.
       License-clean: COLMAP took **ALIKED + LightGlue** (both permissive), **not**
