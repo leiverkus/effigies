@@ -470,10 +470,26 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       honest headline is narrow-but-deep: refined-mesh surface detail (see the
       ODM comparison in the v0.4.0 notes — ODM leads on ortho maturity / DSM-DTM
       breadth / scaling, Effigies on RefineMesh geometry).
-- [ ] **Two queued single-variable experiments** specified against a shared
-      baseline run in [docs/planned-experiments.md](docs/planned-experiments.md):
-      watertightness (`mesh-close-holes`) and densify-resolution vs. runtime —
-      both double as profile-calibration data points.
+- [x] **Two queued single-variable experiments** — **both run 2026-07-25** against
+      `gpu-base-01`; full results in
+      [docs/planned-experiments.md](docs/planned-experiments.md).
+      **A (watertightness, `mesh-close-holes` 30→500):** confirmed and free —
+      boundary edges −54 %, interior ortho nodata −76 %, runtime +0.1 %. It does
+      not close everything (5 590 open edges remain), which is the honest shape of
+      the result on a nadir-only block, not an under-setting.
+      **B (`densify-resolution-level` 0→1):** runtime −67.6 % (1 h 00 m 41 s →
+      19 m 38 s), well beyond the predicted ~40 %, with the saving coming from the
+      cascade into RefineMesh/TextureMesh rather than densify itself. **But the
+      quality premise was contradicted** — the refined mesh lost 78.5 % of its
+      faces, so RefineMesh does *not* re-supply detail independently of densify
+      density. **And the test was not actually single-variable:**
+      `refine-max-face-area` is a *pixel*-area threshold, so halving image
+      resolution quarters it and silently coarsens the refinement target too.
+- [ ] **Follow-up: res-1 with `refine-max-face-area 4`.** The one run that answers
+      what Experiment B was meant to ask, by compensating the pixel-area coupling
+      and holding the refinement target constant. Until it exists, res-1 must not
+      be promoted as "same quality, cheaper" — measured, it is "much coarser,
+      68 % cheaper". Blocks the profile calibration below.
 - [ ] **Profile calibration.** Sweep the key levers (esp. `RefineMesh`
       iterations / `max-face-area` / `gradient-step`, `densify-resolution-level`,
       `number-views-fuse`) per capture type against the benchmark metrics, find

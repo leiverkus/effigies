@@ -220,10 +220,75 @@ i.e. res-0 is mostly wasted cost here. If confirmed, `drone-3d`'s default
 (level 1) is the right production setting and res-0 is a niche max-density
 option.
 
+### RESULT — run `expB-densify1` (2026-07-25)
+
+Single variable vs `gpu-base-01`: `densify-resolution-level 0 → 1`.
+
+| Stage | baseline | res-1 | Δ |
+|---|---|---|---|
+| DensifyPointCloud | 6 m 20 s | 3 m 52 s | −39 % |
+| ReconstructMesh | 3 m 55 s | 2 m 43 s | −31 % |
+| RefineMesh | 28 m 01 s | **6 m 38 s** | **−76 %** |
+| TextureMesh | 17 m 44 s | **3 m 36 s** | **−80 %** |
+| **Total** | **1 h 00 m 41 s** | **19 m 38 s** | **−67.6 %** |
+
+| Output | baseline | res-1 | Δ |
+|---|---|---|---|
+| Dense points | 17 881 137 | 11 522 519 | −35.6 % |
+| Faces after ReconstructMesh | 21 017 255 | 14 102 455 | −32.9 % |
+| **Faces after RefineMesh** | 10 608 471 | **2 283 164** | **−78.5 %** |
+| Textured OBJ | 1.39 GB | 288 MB | −79 % |
+| Interior ortho nodata | 0.746 % | 0.732 % | −1.9 % (noise) |
+| Ortho GSD | 4.71 cm | 4.69 cm | unchanged |
+
+**Runtime: confirmed, and then some** — −67.6 %, not the predicted ~40 %. The
+saving comes overwhelmingly from the cascade, exactly as the GPU baseline's stage
+shares implied: RefineMesh and TextureMesh together drop from 45 m 45 s to
+10 m 14 s. Densify itself contributes only 2 m 28 s of the 41 m saved.
+
+**Quality: the prediction is contradicted.** The doc argued that "RefineMesh is
+photometric — it recovers geometric detail from the source images largely
+independent of densify density — so final detail should be near-unchanged". The
+refined mesh has **78.5 % fewer faces**. RefineMesh did *not* re-supply the
+detail; its output scales with what ReconstructMesh handed it.
+
+**The likely mechanism, and why this is not a clean single-variable test.**
+`refine-max-face-area 16` is a threshold on face area *projected into the images*,
+i.e. in **pixels**. At res-1 the images are half-resolution, so the same geometric
+face projects to a quarter of the pixel area, far fewer faces exceed 16 px², and
+subdivision largely stops. Note the ratios: baseline 21.0 M → 10.6 M faces
+(÷1.98), res-1 14.1 M → 2.3 M (÷6.18). So `densify-resolution-level` and
+`refine-max-face-area` are **coupled**, and changing the first silently changes the
+effective refinement target. This experiment therefore measured
+*densify-resolution **and** a 4× coarser refinement target* together.
+
+**Follow-up required before any profile decision:** re-run at
+`densify-resolution-level 1` with `refine-max-face-area 4` (16 ÷ 4, compensating
+the pixel-area rescale) to hold the refinement target constant. Only that run
+answers the question this experiment was meant to ask. Until then, **do not**
+promote res-1 as "same quality, ~40 % cheaper" — on this evidence it is
+"much coarser, 68 % cheaper", and part of the coarsening is an artefact of the
+coupling rather than of densify density.
+
+**Boundary-edge counts are not comparable here.** Raw counts fell 12 147 → 4 110
+(−66 %), but the mesh also lost 78.5 % of its faces. As a *fraction* of all edges,
+openness went **up**: 0.0763 % → 0.1199 % (+57 %). Absolute counts are only
+comparable between runs of similar mesh size — as in Experiment A, where the face
+count matched to 0.3 %.
+
+**Coverage is genuinely unaffected**: interior ortho nodata 0.746 % → 0.732 % and
+the GSD is unchanged, both inside the noise floor. Densify resolution does not
+change *where* the reconstruction has data, only how finely it is modelled.
+
 ---
 
 ## Notes
 
+- **Both experiments are RUN (2026-07-25).** Results are recorded inline above.
+  Headline: A confirmed and free; B's runtime saving confirmed and larger than
+  predicted, but its *quality* premise was contradicted and the test turned out
+  not to be single-variable (`refine-max-face-area` is pixel-based and couples to
+  densify resolution). The queued follow-up is the res-1 + `max-face-area 4` run.
 - Both are **one-variable** tests vs the GPU baseline `gpu-base-01`; do not combine parameters
   in a single run or the attribution is lost. A later **combined** run
   (`densify-level 1` + `close-holes 500`) is worth doing once each is
