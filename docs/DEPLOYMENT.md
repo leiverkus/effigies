@@ -86,19 +86,43 @@ first run: `sparse-engine=colmap`, `refine-mesh-iters=1`, `georeference=none`.
 
 On a Linux machine with an NVIDIA GPU and the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-installed (`docker info | grep -i nvidia` should list the runtime):
+installed (`docker info | grep -i nvidia` should list the runtime).
+
+### Provisioning a fresh Ubuntu 24.04 host
+
+`scripts/provision-gpu-host.sh` installs Docker CE + the NVIDIA Container Toolkit,
+wires the runtime into Docker, and smoke-tests device passthrough. It is
+idempotent and opens no ports. It deliberately does **not** install the GPU
+driver (that needs a reboot) — if `nvidia-smi` is missing it prints
+`sudo ubuntu-drivers install` and stops.
+
+```bash
+sudo ./scripts/provision-gpu-host.sh
+```
+
+It ends by printing the card's compute capability, which is what you want for the
+narrowed build below.
+
+### Build and run
 
 ```bash
 # build (compiles COLMAP 4.0.4 + OpenMVS v2.4.0 with CUDA; this takes a while)
 docker build -t effigies:gpu .
 
-# optionally narrow the GPU arch to speed the build, e.g. for a single card:
+# narrow the GPU arch to the installed card to speed the build up considerably —
+# provision-gpu-host.sh prints the value (e.g. 86 for an Ampere A4000):
 # docker build --build-arg CUDA_ARCH="86" -t effigies:gpu .
 
 # run, exposing the NodeODM port
 docker run -d --name effigies-gpu --gpus all -p 3001:3000 \
   --restart unless-stopped effigies:gpu
 ```
+
+> **On a host that is directly reachable from the internet, do not use
+> `-p 3001:3000`.** NodeODM has no authentication by default: anyone who can
+> reach the port can submit tasks, upload files and consume the GPU. Bind it to
+> loopback (`-p 127.0.0.1:3001:3000`) and reach it through an SSH tunnel, or
+> restrict the port to the WebODM host with a default-deny firewall.
 
 ### Add it to WebODM (even a WebODM running elsewhere)
 
@@ -159,6 +183,30 @@ image manually:
 docker run --rm effigies:cpu bash -lc \
   'which colmap DensifyPointCloud ReconstructMesh RefineMesh TextureMesh InterfaceCOLMAP pdal'
 ```
+
+### Verifying a **GPU** build
+
+The `which` gate above passes on the CPU image too — it says nothing about CUDA.
+Two scripts supply the discriminating evidence.
+
+```bash
+./scripts/verify-gpu-image.sh effigies:gpu        # static, seconds, no dataset
+./scripts/gpu-smoke-run.sh /path/to/images effigies:gpu   # end-to-end run
+```
+
+`verify-gpu-image.sh` asserts that `DensifyPointCloud` accepts `--cuda-device`
+(the same probe `pipeline/dense_openmvs.sh` uses — a CPU build rejects it), that
+the binaries link the CUDA runtime, and that the engine's own GPU probe
+(`nvidia-smi -L`, `run.sh`) succeeds inside the container. It includes a
+**negative control**: the probe must *fail* without `--gpus`, otherwise the
+positive check proves nothing about passthrough.
+
+`gpu-smoke-run.sh` drives `run.sh` directly (no NodeODM, no exposed port) on a
+small image set and samples the device from the host while it runs. This matters
+because **a successful run is not evidence of GPU use**: when the probe fails the
+engine logs a warning and completes on CPU. The script therefore requires
+positive evidence — engine processes resident on the device, non-zero utilisation,
+and the absence of the fallback warning — and fails otherwise.
 
 ## Logs / troubleshooting
 

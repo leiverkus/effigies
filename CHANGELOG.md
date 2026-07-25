@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GPU host provisioning + CUDA-build verification** (`scripts/provision-gpu-host.sh`,
+  `scripts/verify-gpu-image.sh`, `scripts/gpu-smoke-run.sh`). The CUDA image had
+  never been compiled or run — it was parked in the ROADMAP as *"no NVIDIA machine
+  available"*. With a test host available, these three scripts make that first
+  validation reproducible instead of hand-driven (the host is temporary).
+  `provision-gpu-host.sh` installs Docker CE + the NVIDIA Container Toolkit,
+  configures the runtime and smoke-tests passthrough (idempotent; refuses to
+  install the driver, which needs a reboot; prints the card's compute capability
+  for a narrowed `CUDA_ARCH` build). `verify-gpu-image.sh` supplies the evidence
+  the existing `which` gate cannot: `DensifyPointCloud --cuda-device` acceptance
+  (the same probe `pipeline/dense_openmvs.sh` uses, rejected by a CPU build), CUDA
+  runtime linkage, and the engine's own `nvidia-smi -L` probe — **plus a negative
+  control** (the probe must fail without `--gpus`, else the positive result proves
+  nothing). `gpu-smoke-run.sh` drives `run.sh` through its documented contract (no
+  NodeODM, no exposed port) and samples the device from the host, because
+  `run.sh` falls back to CPU with a warning and still **exits 0** — so a green run
+  is not evidence of GPU use; it asserts engine processes on the device, non-zero
+  utilisation, and absence of the fallback warning. Docs in `docs/DEPLOYMENT.md`
+  (new *"Provisioning a fresh Ubuntu 24.04 host"* + *"Verifying a GPU build"*).
+
+### Security
+- **`docs/DEPLOYMENT.md` now warns against publishing the NodeODM port on an
+  internet-facing host.** Section B's `-p 3001:3000` binds all interfaces, and
+  NodeODM has no authentication by default — anyone reaching the port can submit
+  tasks, upload files and consume the GPU. The doc now points to loopback binding
+  plus an SSH tunnel, or a default-deny firewall restricted to the WebODM host.
 - **Inter-marker distance consistency check.** Alongside the per-marker size
   check, when ≥2 markers are present the georef bridge now compares each marker
   **pair**'s reconstructed baseline `s·‖Δlocal‖` against the printed baseline

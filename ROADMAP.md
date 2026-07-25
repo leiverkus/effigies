@@ -580,12 +580,27 @@ the numbered items above are pulled ahead of it.
       on planum / profile / stone-setting datasets: registered-image count, sparse-point
       count, downstream completeness. Needs a **GPU** (none on this host).
 
-## Parked (no hardware)
+## GPU validation *(unparked — test host available since 2026-07-25)*
 
-- **CUDA/production image GPU build + run.** The image is built from the same
-  pinned sources as the validated CPU image and passes `docker build --check`, but
-  there is no NVIDIA machine available to compile and run it. Parked indefinitely;
-  revisit only if GPU hardware appears.
+- [ ] **CUDA/production image GPU build + run.** The image is built from the same
+      pinned sources as the validated CPU image and passes `docker build --check`,
+      but had never been compiled or executed for want of an NVIDIA machine. A
+      temporary bare-metal test host (Intel i9-13xxx, P-cores only, 128 GB RAM,
+      NVIDIA RTX 4000 / 16 GB VRAM, Ubuntu 24.04) is now available — which matches
+      the *recommended production box* in `docs/DEPLOYMENT.md`'s sizing table.
+      Scope for now is deliberately narrow: **does the engine work on a GPU at
+      all** — not benchmarking (that is v0.8.0 and still gated on reference data).
+      Tooling is in place and reproducible, since the host is temporary:
+      `scripts/provision-gpu-host.sh` (Docker + NVIDIA Container Toolkit),
+      `scripts/verify-gpu-image.sh` (static CUDA assertions incl. a negative
+      control), `scripts/gpu-smoke-run.sh` (end-to-end run with host-side device
+      sampling — a green run alone is *not* evidence, `run.sh` falls back to CPU
+      and still exits 0). Remaining: run them, then record the outcome here.
+- [ ] **A GPU baseline run.** The shared baseline in `docs/planned-experiments.md`
+      (`8d2d31de`) is CPU/arm64. Every runtime figure there is non-comparable on
+      GPU/x86, so the two queued single-variable experiments need a fresh baseline
+      before their deltas mean anything. Not urgent at the current scope; noted so
+      the old baseline is not reused by accident.
 
 ---
 
