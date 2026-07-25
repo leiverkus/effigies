@@ -14,7 +14,8 @@ source "$(dirname "$0")/progress.sh"   # WebODM progress bar (no-op outside Node
 # COLMAP CLI option naming changed across versions. COLMAP 3.13 renamed the
 # generic feature options SiftExtraction/SiftMatching.{use_gpu,num_threads} ->
 # Feature{Extraction,Matching}.* (the SIFT-*algorithm* options keep the Sift*
-# prefix). Both Effigies images now build COLMAP 4.0.4 (the new Feature* names),
+# prefix). Both Effigies images now build COLMAP 4.1.1 (the new Feature* names, unchanged
+# from 4.0.x),
 # but we still probe the actual binary's help and fall back to the legacy Sift*
 # names so the script keeps working if COLMAP_VERSION is overridden to a pre-4
 # build: passing an option the installed COLMAP does not know aborts the run, and

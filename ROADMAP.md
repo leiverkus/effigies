@@ -26,7 +26,8 @@ bridge → WebODM asset mapping, with unit tests and CI. See the changelog.
 
 Made the image trustworthy and the output cloud web-ready.
 
-- [x] **Source-built, pinned Dockerfiles.** Both images build COLMAP `4.0.4` and
+- [x] **Source-built, pinned Dockerfiles.** Both images build COLMAP `4.0.4` (the
+      pin at this release; `4.1.1` today — see the GPU-validation section) and
       OpenMVS `v2.4.0` from source (versions as build `ARG`s) from identical pinned
       sources — the production `Dockerfile` differs from `Dockerfile.cpu` only in
       the CUDA base and the `-D*CUDA*` flags. A build-time gate
@@ -96,7 +97,8 @@ Made the image trustworthy and the output cloud web-ready.
 
 ## COLMAP 4 migration *(done — folded into v0.2.0)*
 
-Both images are now on **COLMAP 4.0.4 + OpenMVS 2.4.0**, built from identical pinned
+Both images are now on **COLMAP 4.1.1 + OpenMVS 2.4.0** (the COLMAP 4 migration
+landed on 4.0.4; bumped to 4.1.1 in 2026-07 for the learned front-end), built from identical pinned
 sources and run-verified end-to-end on the CPU image. The originally-planned
 three-step sequence (24.04 base → GPU OpenMVS 2.4.0 → COLMAP 3.13 → 4.0.x) collapsed:
 **the base bump to 24.04 was not blocking** — COLMAP 4 already built on Ubuntu 22.04 once
@@ -544,21 +546,37 @@ MASt3R replaces the whole SfM *front-end*.
       reproducible-reference identity. Higher-risk, opt-in experiment, to be quantified on
       artefact / ceramic / statue datasets in the v0.8.0 campaign.
 
-## Learned SfM front-end (LightGlue) — *deferred to the COLMAP 4.1 stable release (no Effigies version)*
+## Learned SfM front-end (LightGlue) — *gate OPEN: stable 4.1 shipped 2026-06-26; build side landed, wiring open*
 
 The learned detector + matcher (**ALIKED** features + **LightGlue**) is the single
 most visible quality lever for the hard surfaces archaeological documentation lives
 on — **low-texture earth / planum**, **section profiles**, **repetitive stone
-settings** — where SIFT (`exhaustive` / `vocab_tree`) is structurally weak. It is
+settings** — where SIFT (`exhaustive` / `vocab_tree`) is structurally weak. It was
 **deferred to the COLMAP 4.1 release rather than given an Effigies version**, because
-the clean way to get it is now upstream and the trigger is a date we do not control;
-the numbered items above are pulled ahead of it.
+the clean way to get it is upstream and the trigger was a date we do not control.
 
-- [ ] **Plan — native via a COLMAP 4.1 bump (gated on *stable* 4.1).** COLMAP **4.1**
-      (dev `4.1.0.dev0`, ~2026-03) builds **ALIKED extraction + LightGlue matching
-      natively via ONNX** (SIFT *and* ALIKED) + Python bindings. That collapses the work
-      to a **version bump (4.0.4 → stable 4.1) + wiring the native flags** in
-      `sparse_colmap.sh` — no hloc/torch pipeline, no manual `database.db` import.
+**That trigger has fired.** COLMAP **4.1.0** released 2026-06-26 — one day after this
+repo's last commit, which is why the pin sat at 4.0.4 for a month — and **4.1.1** on
+2026-07-17. Both images are now pinned to **4.1.1** with `ONNX_ENABLED=ON` and the
+ALIKED/LightGlue ONNX models baked in, so the capability is *present in the image*.
+What remains is exposing it through the engine.
+
+- [x] **Build side — native via the COLMAP 4.1 bump.** Done: `COLMAP_VERSION=4.1.1`
+      in both Dockerfiles, `ONNX_ENABLED=OFF → ON` (the version bump alone does not
+      suffice — that flag was the real gate), `MVS_ENABLED=OFF` (COLMAP's dense stack
+      is unused; OpenMVS does that work). Models baked in and SHA256-pinned from the
+      upstream `3.13.0` release assets, including the **ALIKED-specific retrieval
+      trees** — SIFT vocab trees cannot serve ALIKED retrieval. No hloc/torch
+      pipeline, no manual `database.db` import.
+- [ ] **Wiring — expose it through the engine.** The CLI surface is
+      `--FeatureExtraction.type ALIKED_N16ROT|ALIKED_N32`,
+      `--FeatureMatching.type ALIKED_LIGHTGLUE|ALIKED_BRUTEFORCE|SIFT_LIGHTGLUE`,
+      `--AlikedExtraction.*_model_path` (point at `$EFFIGIES_MODEL_DIR`),
+      `--AlikedMatching.min_cossim`. Needs a `features` option in `options.json`,
+      the flags in `sparse_colmap.sh`, and the retrieval-tree selection switched to
+      the matching `_aliked_*` tree. **Extraction and matching types must agree** —
+      upstream documents that mixing SIFT features with an ALIKED matcher fails, and
+      that feature types cannot be mixed in one `database.db`.
       **ONNX (not torch)** is a far lighter dependency, and ONNX Runtime has CPU **and**
       GPU execution providers (CUDA / CoreML) → softens the GPU requirement.
       License-clean: COLMAP took **ALIKED + LightGlue** (both permissive), **not**
@@ -578,11 +596,12 @@ the numbered items above are pulled ahead of it.
       opt-in only, never baked in. `THIRD_PARTY_LICENSES.md` updated for whatever weights ship.
 - [ ] **Validation folds into the benchmark campaign (v0.8.0).** SIFT vs ALIKED+LightGlue
       on planum / profile / stone-setting datasets: registered-image count, sparse-point
-      count, downstream completeness. Needs a **GPU** (none on this host).
+      count, downstream completeness. Needs a **GPU** — available since 2026-07-25
+      (see the GPU-validation section), so this is no longer hardware-blocked.
 
-## GPU validation *(unparked — test host available since 2026-07-25)*
+## GPU validation *(unparked 2026-07-25 — build + run VERIFIED on an RTX A4000)*
 
-- [ ] **CUDA/production image GPU build + run.** The image is built from the same
+- [x] **CUDA/production image GPU build + run.** The image is built from the same
       pinned sources as the validated CPU image and passes `docker build --check`,
       but had never been compiled or executed for want of an NVIDIA machine. A
       temporary bare-metal test host (Intel i9-13xxx, P-cores only, 128 GB RAM,
@@ -595,7 +614,43 @@ the numbered items above are pulled ahead of it.
       `scripts/verify-gpu-image.sh` (static CUDA assertions incl. a negative
       control), `scripts/gpu-smoke-run.sh` (end-to-end run with host-side device
       sampling — a green run alone is *not* evidence, `run.sh` falls back to CPU
-      and still exits 0). Remaining: run them, then record the outcome here.
+      and still exits 0).
+
+      **DONE — 2026-07-25. The CUDA image builds and Effigies runs on a GPU.**
+      Host: RTX A4000 (GA104, sm_86, 16 GB), driver 595.84, i9-13900KS (8 P-cores /
+      16 threads), 125 GB RAM, Ubuntu 24.04.4, built with `CUDA_ARCH=86`.
+      `verify-gpu-image.sh` 13/13; `gpu-smoke-run.sh` PASS on 67 × 12 MP iPhone
+      images (Zionsberg 2023, trench 8-1) at `densify-resolution-level 2`,
+      `refine-mesh-iters 1`, `--georeference none`:
+
+      | Stage | Result |
+      |---|---|
+      | COLMAP sparse | SIFT **GPU** extractor + matcher (log-confirmed) |
+      | DensifyPointCloud | 67 depth maps in **11 s**, 1 216 201 points, 29.7 s total |
+      | ReconstructMesh | 655 673 vertices / 1 310 870 faces, 16.8 s |
+      | RefineMesh | 459 405 vertices / 917 675 faces, 1 m 51.6 s |
+      | Peak GPU utilisation | **98 %** |
+      | Output | `odm_textured_model_geo.obj`, 108 MB |
+
+      End-to-end ≈ 10 min. No CPU-fallback warning; OpenMVS logged
+      `CUDA device 0 initialized: NVIDIA RTX A4000`. Two real defects surfaced,
+      both fixed: (1) COLMAP 4.1.1 links GLEW/OpenGL even with `GUI_ENABLED=OFF`
+      (`OPENGL_ENABLED` defaults ON), so the slim runtime stage needed
+      `libglew2.2 libopengl0` — it failed as pycolmap's opaque "Cannot import the
+      C++ backend"; (2) the runtime gate asserted the OpenMVS binaries *start*
+      during `docker build`, which they never can: they link `libcuda.so.1`, the
+      NVIDIA **driver** library, injected only at `docker run --gpus`. That was a
+      latent bug that could only surface once this image was actually built for the
+      first time; the gate now checks library resolution with `ldd` (stronger — it
+      sees the whole unresolved set, not just the first miss) and
+      `verify-gpu-image.sh` asserts the binaries really start under `--gpus`.
+
+      Open detail: `RefineMesh` links the CUDA **driver** API (`libcuda.so.1`, not
+      `libcudart`) and was **not** observed holding device memory in the 5 s
+      sampling, unlike Densify/ReconstructMesh/TextureMesh. So
+      `docs/DEPLOYMENT.md`'s "GPU VRAM → DensifyPointCloud **and** RefineMesh" may
+      overstate RefineMesh's GPU role at `scales=1`; worth measuring before the
+      sizing table is quoted in the paper.
 - [ ] **A GPU baseline run.** The shared baseline in `docs/planned-experiments.md`
       (`8d2d31de`) is CPU/arm64. Every runtime figure there is non-comparable on
       GPU/x86, so the two queued single-variable experiments need a fresh baseline

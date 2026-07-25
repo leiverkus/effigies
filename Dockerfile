@@ -37,10 +37,18 @@ FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS engine
 
 # --- Pinned upstream versions (identical to Dockerfile.cpu; bump both together) ---
 # OpenMVS 2.4.0 swaps the FLANN-based nearest-neighbour code for nanoflann and
-# brings dense-stage stability fixes over 2.3.0; COLMAP 4.0.4 is the validated
-# baseline (CLI option names, built-in GLOMAP, FAISS retrieval). The which-gate
-# below guards regressions.
-ARG COLMAP_VERSION=4.0.4
+# brings dense-stage stability fixes over 2.3.0.
+#
+# COLMAP 4.1.1 (was 4.0.4): 4.1.0 is the *stable* 4.1 the ROADMAP's learned
+# SfM front-end waited for — ALIKED extraction + LightGlue matching built in
+# natively via ONNX (see ONNX_ENABLED below), plus the Caspar GPU bundle-adjustment
+# backend and spherical camera models. 4.1.1 is taken over 4.1.0 for one reason
+# above all: it fixes a ~4-6x feature-matching slowdown caused by a process-global
+# OpenMP critical section in RANSAC/LORANSAC. The only breaking change across the
+# whole jump is the pycolmap enum GPSTransfrom->GPSTransformEllipsoid, which this
+# engine does not use; CLI option names are unchanged (and sparse_colmap.sh probes
+# them anyway). The which-gate below guards regressions.
+ARG COLMAP_VERSION=4.1.1
 ARG OPENMVS_VERSION=v2.4.0
 # VCGlib has no release tags aligned to OpenMVS. Pinned to the cdcseacave/VCG
 # commit the 2.4.0 engine was built and validated end-to-end against.
@@ -86,7 +94,19 @@ RUN git clone --depth 1 --branch ${PDAL_VERSION} https://github.com/PDAL/PDAL.gi
     rm -rf /opt/pdal && \
     pdal --version
 
-# --- COLMAP from pinned source, CUDA-enabled, no GUI ---
+# --- COLMAP from pinned source, CUDA- and ONNX-enabled, no GUI, no MVS ---
+# ONNX_ENABLED=ON (was OFF) is what actually unlocks ALIKED extraction and
+# LightGlue matching — the version bump alone does not. Upstream defaults
+# ONNX_ENABLED and FETCH_ONNX to ON, so ONNX Runtime is pulled in by FetchContent
+# during the build; no extra apt dependency. The models themselves are baked in
+# below (offline requirement), and the ALIKED_*/LIGHTGLUE CLI types are not wired
+# into pipeline/sparse_colmap.sh yet — that is the ROADMAP's separate step.
+#
+# MVS_ENABLED=OFF (new option in 4.1): Effigies never calls COLMAP's dense stack
+# (patch_match_stereo / stereo_fusion / *_mesher) — DensifyPointCloud onward is
+# OpenMVS' job, which is the whole point of this node. Compiling COLMAP's MVS
+# module would only add build time and image size.
+#
 # After installing libcolmap, build the matching pycolmap from the SAME tree:
 # helpers/gcp_bundle_adjust.py drives COLMAP's own Ceres BA through pycolmap for
 # GCP-constrained bundle adjustment. It is built from source against the
@@ -101,7 +121,8 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
       -DCUDA_ENABLED=ON \
       -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} \
       -DGUI_ENABLED=OFF \
-      -DONNX_ENABLED=OFF \
+      -DONNX_ENABLED=ON \
+      -DMVS_ENABLED=OFF \
       -DTESTS_ENABLED=OFF \
       -DCMAKE_INSTALL_PREFIX=/usr/local && \
     ninja -C /opt/colmap/build install && \
@@ -129,6 +150,45 @@ RUN mkdir -p /usr/local/share/effigies && \
     echo "${VOCAB_TREE_SHA256}  /usr/local/share/effigies/vocab_tree.bin" | sha256sum -c - && \
     echo "[effigies] COLMAP vocab tree baked in (FAISS, Flickr100K 256K words)"
 ENV EFFIGIES_VOCAB_TREE=/usr/local/share/effigies/vocab_tree.bin
+
+# --- ALIKED + LightGlue ONNX models (learned SfM front-end, COLMAP 4.1) ---
+# Same offline rationale as the vocab tree above: COLMAP accepts a URL in
+# --AlikedExtraction.*_model_path and downloads+caches it on first use, which needs
+# runtime network and an ephemeral cache. Baked in and SHA256-pinned instead.
+#
+# Upstream hosts these as assets on the 3.13.0 *release tag* (the tag is where the
+# assets live, not the COLMAP version we build — same convention as the vocab tree).
+#
+# RETRIEVAL DESCRIPTORS MUST MATCH THE FEATURE TYPE. The SIFT tree above cannot
+# serve ALIKED retrieval, so the matching vocab_tree_*_aliked_* trees come along:
+# LightGlue is pairwise, and sets beyond ~150 images need a retrieval stage on top
+# (see ROADMAP). Both ALIKED variants are shipped: n16rot is faster and trained for
+# some viewpoint invariance (the better default for convergent close-range work),
+# n32 is more expensive without explicit viewpoint training.
+#
+# sift-lightglue.onnx is included too: it allows SIFT_LIGHTGLUE — keep SIFT
+# features, gain the learned matcher — whose integration 4.1.0 fixed. Total ~136 MB.
+ARG COLMAP_MODEL_TAG=3.13.0
+RUN set -eu; \
+    D=/usr/local/share/effigies/models; mkdir -p "$D"; \
+    B="https://github.com/colmap/colmap/releases/download/${COLMAP_MODEL_TAG}"; \
+    while read -r name sha; do \
+      [ -n "$name" ] || continue; \
+      python3 -c "import urllib.request,sys; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])" \
+        "$B/$name" "$D/$name"; \
+      echo "$sha  $D/$name" | sha256sum -c - >/dev/null; \
+    done <<'MODELS'
+aliked-n16rot.onnx 39c423d0a6f03d39ec89d3d1d61853765c2fb6a8b8381376c703e5758778a547
+aliked-n32.onnx a077728a02d2de1a775c66df6de8cfeb7c6b51ca57572c64c680131c988c8b3c
+aliked-lightglue.onnx b9a5de7204648b18a8cf5dcac819f9d30de1a5961ef03756803c8b86c2dceb8d
+sift-lightglue.onnx e0500228472b43f92b3d36881a09b3310d3b058b56187b246cc7b9ab6429096e
+bruteforce-matcher.onnx 3c1282f96d83f5ffc861a873298d08bbe5219f59af59223f5ceab5c41a182a47
+vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin 8b2f9bdc44ca7204d8543bb3adab4c03ba9336c84ef41220b5007991036f075e
+vocab_tree_faiss_flickr100K_words64K_aliked_n32.bin 65619481045b8f933268f10c31ad180eb1ee7881182873efe0f5753972ef6a20
+MODELS
+RUN echo "[effigies] ALIKED/LightGlue ONNX models baked in:" && \
+    ls -1sh /usr/local/share/effigies/models
+ENV EFFIGIES_MODEL_DIR=/usr/local/share/effigies/models
 
 # --- Obj2Tiles (OpenDroneMap) for the 3D Tiles export (opt-in --3d-tiles) ---
 # Self-contained single-file binary (bundles its own .NET runtime — no runtime to
@@ -290,9 +350,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 # runtime libs come from the base). Derived empirically via readelf -d NEEDED.
 # libtbb12 (OpenPointClass) and libicu74 (Obj2Tiles' bundled .NET) are
 # belt-and-braces; the exercise gate below catches any miss.
+#
+# libglew2.2 + libopengl0 arrived with COLMAP 4.1.1: upstream defaults
+# OPENGL_ENABLED to ON, so libcolmap (and therefore pycolmap._core) links GLEW and
+# OpenGL even though we build GUI_ENABLED=OFF. Without them the gate below fails
+# with pycolmap's generic "Cannot import the C++ backend" — the real cause is only
+# visible by importing pycolmap._core directly. OpenGL is also COLMAP's non-CUDA
+# SIFT-GPU fallback path, so keep it rather than building -DOPENGL_ENABLED=OFF.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       libblas3 liblapack3 libgomp1 \
+      libglew2.2 libopengl0 \
       libboost-iostreams1.83.0 libboost-program-options1.83.0 libboost-serialization1.83.0 \
       libceres4t64 libcholmod5 libmetis5 libgoogle-glog0v6t64 \
       libgmp10 \
@@ -320,15 +388,30 @@ RUN rm -rf /usr/local/include /usr/local/lib/cmake /usr/local/lib/pkgconfig \
 ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
 ENV EFFIGIES_VOCAB_TREE=/usr/local/share/effigies/vocab_tree.bin
 ENV EFFIGIES_OPC_MODEL=/usr/local/share/effigies/opc_model.bin
+# ENV does not cross build stages — the files arrive via COPY --from=engine
+# /usr/local above, but every EFFIGIES_* path must be re-declared here or it is
+# empty at runtime.
+ENV EFFIGIES_MODEL_DIR=/usr/local/share/effigies/models
 
 # --- our engine code (last layer, so source edits never bust the heavy ones) ---
 COPY . /opt/effigies
 ENV ODM_PATH=/opt/effigies
 RUN ln -sf /opt/effigies/helpers/optionsToJson.py /opt/NodeODM/helpers/odmOptionsToJson.py || true
 
-# --- Exercise every engine binary: a missing runtime .so fails the BUILD. The
-#     CUDA binaries load their runtime libs here (device init happens only at
-#     real use, so this passes on a GPU-less builder too). ---
+# --- Exercise every engine binary: a missing runtime .so fails the BUILD. ---
+#     The OpenMVS binaries CANNOT be started here, and that is by design, not a
+#     defect: they link libcuda.so.1, which is the NVIDIA *driver* library. It is
+#     not part of the CUDA toolkit and not in any base image — the container
+#     runtime injects it at `docker run --gpus`. So `--help` aborts at load time
+#     during `docker build` on every host, GPU or not. (The earlier claim here that
+#     "device init happens only at real use, so this passes on a GPU-less builder"
+#     was wrong: init is deferred, but LOADING the NEEDED libcuda is not. It went
+#     unnoticed because this CUDA image had never actually been built.)
+#
+#     They are therefore checked with ldd, ignoring libcuda.so.1. That is strictly
+#     STRONGER than the --help probe for these binaries: the loader aborts on the
+#     first missing library it hits, whereas ldd reports the whole unresolved set —
+#     so a second missing .so can no longer hide behind libcuda.
 RUN set -eu; \
     fail=0; \
     exercise() { \
@@ -338,11 +421,15 @@ RUN set -eu; \
           echo "FATAL: $1 fails to load: $out" >&2; fail=1 ;; \
       esac; \
     }; \
+    ldd_check() { \
+      miss="$(ldd "$(command -v "$1")" 2>/dev/null | grep "not found" | grep -v "libcuda\.so\.1" || true)"; \
+      [ -z "$miss" ] || { echo "FATAL: $1 has unresolved libraries: $miss" >&2; fail=1; }; \
+    }; \
     command -v colmap >/dev/null || { echo "FATAL: colmap missing"; fail=1; }; \
     out="$(colmap -h 2>&1 || true)"; case "$out" in *"shared object"*|*"loading shared libraries"*) echo "FATAL: colmap loader: $out"; fail=1;; esac; \
     for b in DensifyPointCloud ReconstructMesh RefineMesh TextureMesh InterfaceCOLMAP TransformScene; do \
       command -v "$b" >/dev/null || { echo "FATAL: OpenMVS $b missing"; fail=1; continue; }; \
-      exercise "$b"; \
+      ldd_check "$b"; \
     done; \
     exercise pdal; exercise entwine; \
     out="$(pcclassify 2>&1 </dev/null || true)"; case "$out" in *"shared object"*|*"loading shared libraries"*) echo "FATAL: pcclassify loader: $out"; fail=1;; esac; \
@@ -350,7 +437,7 @@ RUN set -eu; \
     python3 -c "import pycolmap, py4dgeo, numpy, scipy, osgeo.gdal, pyproj, PIL, reportlab; print('[effigies] python extension imports OK')" || fail=1; \
     node -e "process.exit(0)" || { echo "FATAL: node broken"; fail=1; }; \
     [ "$fail" = 0 ] || { echo "FATAL: runtime binary verification failed" >&2; exit 1; }; \
-    echo "[effigies] runtime image: all engine binaries load and run (CUDA slim)"
+    echo "[effigies] runtime image: libraries resolve for every engine binary (CUDA slim; the OpenMVS binaries' libcuda.so.1 arrives with --gpus at run time — scripts/verify-gpu-image.sh asserts they actually start there)"
 
 # NodeODM reads config-default.json relative to its working dir — run from there.
 WORKDIR /opt/NodeODM

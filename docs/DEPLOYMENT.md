@@ -106,7 +106,7 @@ narrowed build below.
 ### Build and run
 
 ```bash
-# build (compiles COLMAP 4.0.4 + OpenMVS v2.4.0 with CUDA; this takes a while)
+# build (compiles COLMAP 4.1.1 + OpenMVS v2.4.0 with CUDA; this takes a while)
 docker build -t effigies:gpu .
 
 # narrow the GPU arch to the installed card to speed the build up considerably —

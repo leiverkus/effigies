@@ -38,7 +38,20 @@ N_IMG=$(find "$SRC" -maxdepth 1 -type f \
 
 # --- Stage the ODM project layout: <root>/<name>/images/ ---------------------
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/effigies-smoke.XXXXXX")"
-trap 'rm -rf "$ROOT"' EXIT
+
+# The engine runs as root inside the container, so every output it writes into the
+# bind mount is root-owned and a plain `rm -rf` as the invoking user fails with
+# "Permission denied" — leaving ~700 MB of results behind on each run. Delete the
+# tree from inside a throwaway container (as root) first, then remove the husk.
+cleanup() {
+  [ -n "${ROOT:-}" ] || return 0
+  if ! rm -rf "$ROOT" 2>/dev/null; then
+    docker run --rm -v "$ROOT:/wipe" --entrypoint sh "$IMG" \
+      -c 'rm -rf /wipe/* /wipe/.[!.]* 2>/dev/null || true' >/dev/null 2>&1 || true
+    rm -rf "$ROOT" 2>/dev/null || echo "NOTE: could not remove $ROOT — remove it manually" >&2
+  fi
+}
+trap cleanup EXIT
 mkdir -p "$ROOT/$NAME/images"
 find "$SRC" -maxdepth 1 -type f \
      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.tif' \) \
@@ -67,7 +80,7 @@ sample_gpu() {
   done
 }
 sample_gpu & SAMPLER=$!
-trap 'kill "$SAMPLER" 2>/dev/null || true; rm -rf "$ROOT"' EXIT
+trap 'kill "$SAMPLER" 2>/dev/null || true; cleanup' EXIT
 
 # --- Run the engine ---------------------------------------------------------
 # Deliberately cheap settings, following DEPLOYMENT.md's "good first run", plus

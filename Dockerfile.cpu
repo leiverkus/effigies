@@ -40,8 +40,13 @@ FROM ubuntu:${UBUNTU_VERSION} AS engine
 # brings dense-stage stability fixes over 2.3.0 — it matters specifically on the
 # CPU/arm64 build, where 2.3.0's DensifyPointCloud corrupts the heap and aborts;
 # 2.4.0 runs the full Densify -> ReconstructMesh -> RefineMesh -> TextureMesh
-# chain cleanly. COLMAP 4.0.4 is the shared baseline.
-ARG COLMAP_VERSION=4.0.4
+# chain cleanly.
+#
+# COLMAP 4.1.1 (was 4.0.4) is the shared baseline — see the CUDA Dockerfile for the
+# full rationale (stable 4.1 = native ALIKED/LightGlue via ONNX; 4.1.1 fixes a
+# ~4-6x feature-matching slowdown in RANSAC/LORANSAC; the single breaking change,
+# the pycolmap GPSTransform enum rename, does not affect this engine).
+ARG COLMAP_VERSION=4.1.1
 ARG OPENMVS_VERSION=v2.4.0
 # VCGlib has no release tags aligned to OpenMVS. Pinned to the cdcseacave/VCG
 # master commit the 2.4.0 CPU image was built and validated end-to-end against.
@@ -90,11 +95,22 @@ RUN git clone --depth 1 --branch ${PDAL_VERSION} https://github.com/PDAL/PDAL.gi
     pdal --version
 
 # --- COLMAP from pinned source, CPU-only, no GUI ---
+# ONNX_ENABLED=ON and MVS_ENABLED=OFF: kept in lockstep with the CUDA Dockerfile,
+# see there for the rationale. ONNX Runtime ships CPU execution providers, so the
+# learned front-end is not GPU-only.
+#
+# UNVERIFIED ON arm64: this image builds natively on Apple Silicon, and upstream's
+# FETCH_ONNX pulls a prebuilt ONNX Runtime. Whether an aarch64-linux artefact is
+# resolved there has NOT been tested — the same class of arm64 gap that already
+# forces a source build for py4dgeo and a per-arch asset for Obj2Tiles. If the
+# build fails resolving onnxruntime on arm64, set --build-arg for ONNX off on this
+# image rather than un-pinning anything; the CUDA image (x86_64) is unaffected.
+#
 # After installing libcolmap, build the matching pycolmap from the SAME tree:
 # helpers/gcp_bundle_adjust.py drives COLMAP's own Ceres BA through pycolmap for
 # GCP-constrained bundle adjustment. There is no prebuilt wheel for
 # linux/aarch64+py3.12, so it is built from source against the just-installed
-# COLMAP (find_package(colmap) resolves under /usr/local). In COLMAP 4.0.4 pycolmap
+# COLMAP (find_package(colmap) resolves under /usr/local). In COLMAP 4.1.1 pycolmap
 # builds from the repo ROOT (top-level pyproject.toml, scikit-build-core,
 # cmake.source-dir=python/); vcpkg.json is for CI wheels only — a plain pip install
 # links against the installed COLMAP. Build deps (pybind11, scikit-build-core, …)
@@ -104,7 +120,8 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
       -DCMAKE_BUILD_TYPE=Release \
       -DCUDA_ENABLED=OFF \
       -DGUI_ENABLED=OFF \
-      -DONNX_ENABLED=OFF \
+      -DONNX_ENABLED=ON \
+      -DMVS_ENABLED=OFF \
       -DTESTS_ENABLED=OFF \
       -DCMAKE_INSTALL_PREFIX=/usr/local && \
     ninja -C /opt/colmap/build install && \
@@ -123,7 +140,7 @@ RUN git clone --depth 1 --branch ${COLMAP_VERSION} https://github.com/colmap/col
 # FLANN-format trees from demuc.de make COLMAP 4 abort with std::invalid_argument
 # in IndexImages(). This is exactly the tree COLMAP 4 auto-downloads when no path
 # is given; we pin it here. (The "3.11.1" in the URL is the GitHub *release tag*
-# that hosts the asset, not the COLMAP version — both images build COLMAP 4.0.4.)
+# that hosts the asset, not the COLMAP version — both images build COLMAP 4.1.1.)
 # Flickr100K, 256K words (~72 MB). Override with --build-arg VOCAB_TREE_URL=/SHA256=.
 ARG VOCAB_TREE_URL=https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
 ARG VOCAB_TREE_SHA256=96ca8ec8ea60b1f73465aaf2c401fd3b3ca75cdba2d3c50d6a2f6f760f275ddc
@@ -132,6 +149,32 @@ RUN mkdir -p /usr/local/share/effigies && \
     echo "${VOCAB_TREE_SHA256}  /usr/local/share/effigies/vocab_tree.bin" | sha256sum -c - && \
     echo "[effigies] COLMAP vocab tree baked in (FAISS, Flickr100K 256K words)"
 ENV EFFIGIES_VOCAB_TREE=/usr/local/share/effigies/vocab_tree.bin
+
+# --- ALIKED + LightGlue ONNX models (learned SfM front-end, COLMAP 4.1) ---
+# Lockstep with the CUDA Dockerfile — see there for the full rationale (offline
+# requirement, why the ALIKED-specific retrieval trees are required, why
+# sift-lightglue is included). Assets live on the 3.13.0 release tag; ~136 MB.
+ARG COLMAP_MODEL_TAG=3.13.0
+RUN set -eu; \
+    D=/usr/local/share/effigies/models; mkdir -p "$D"; \
+    B="https://github.com/colmap/colmap/releases/download/${COLMAP_MODEL_TAG}"; \
+    while read -r name sha; do \
+      [ -n "$name" ] || continue; \
+      python3 -c "import urllib.request,sys; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])" \
+        "$B/$name" "$D/$name"; \
+      echo "$sha  $D/$name" | sha256sum -c - >/dev/null; \
+    done <<'MODELS'
+aliked-n16rot.onnx 39c423d0a6f03d39ec89d3d1d61853765c2fb6a8b8381376c703e5758778a547
+aliked-n32.onnx a077728a02d2de1a775c66df6de8cfeb7c6b51ca57572c64c680131c988c8b3c
+aliked-lightglue.onnx b9a5de7204648b18a8cf5dcac819f9d30de1a5961ef03756803c8b86c2dceb8d
+sift-lightglue.onnx e0500228472b43f92b3d36881a09b3310d3b058b56187b246cc7b9ab6429096e
+bruteforce-matcher.onnx 3c1282f96d83f5ffc861a873298d08bbe5219f59af59223f5ceab5c41a182a47
+vocab_tree_faiss_flickr100K_words64K_aliked_n16rot.bin 8b2f9bdc44ca7204d8543bb3adab4c03ba9336c84ef41220b5007991036f075e
+vocab_tree_faiss_flickr100K_words64K_aliked_n32.bin 65619481045b8f933268f10c31ad180eb1ee7881182873efe0f5753972ef6a20
+MODELS
+RUN echo "[effigies] ALIKED/LightGlue ONNX models baked in:" && \
+    ls -1sh /usr/local/share/effigies/models
+ENV EFFIGIES_MODEL_DIR=/usr/local/share/effigies/models
 
 # --- Obj2Tiles (OpenDroneMap) for the 3D Tiles export (opt-in --3d-tiles) ---
 # Self-contained single-file binary (bundles its own .NET runtime — no runtime to
@@ -288,9 +331,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 # of codec/format libs). The version suffixes (406, t64, 1.83.0) are noble's and
 # stable for the LTS lifetime. libtbb12 (OpenPointClass) and libicu74 (Obj2Tiles'
 # bundled .NET) are belt-and-braces; the exercise gate below catches any miss.
+#
+# libglew2.2 + libopengl0 arrived with COLMAP 4.1.1 (OPENGL_ENABLED defaults ON
+# upstream, so pycolmap._core links GLEW/OpenGL even with GUI_ENABLED=OFF) — see
+# the CUDA Dockerfile for the full note.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       libblas3 liblapack3 libgomp1 \
+      libglew2.2 libopengl0 \
       libboost-iostreams1.83.0 libboost-program-options1.83.0 libboost-serialization1.83.0 \
       libceres4t64 libcholmod5 libmetis5 libgoogle-glog0v6t64 \
       libgmp10 \
@@ -322,6 +370,8 @@ RUN rm -rf /usr/local/include /usr/local/lib/cmake /usr/local/lib/pkgconfig \
 ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
 ENV EFFIGIES_VOCAB_TREE=/usr/local/share/effigies/vocab_tree.bin
 ENV EFFIGIES_OPC_MODEL=/usr/local/share/effigies/opc_model.bin
+# ENV does not cross build stages — re-declared here, same as the CUDA Dockerfile.
+ENV EFFIGIES_MODEL_DIR=/usr/local/share/effigies/models
 
 # --- our engine code (last layer, so source edits never bust the heavy ones) ---
 COPY . /opt/effigies

@@ -41,22 +41,48 @@ fi
 # This is the exact probe pipeline/dense_openmvs.sh:25 uses to decide whether to
 # pass --cuda-device. A CPU build (OpenMVS_USE_CUDA=OFF) rejects the option, so
 # its presence proves the CUDA build flag took effect.
+#
+# MUST run with --gpus: these binaries link libcuda.so.1, the NVIDIA *driver*
+# library, which the container runtime injects only for --gpus. Without it they
+# abort at load time and this check would fail for the wrong reason.
 head_ "OpenMVS CUDA build"
-if in_img "DensifyPointCloud --help 2>&1 | grep -q -- '--cuda-device'"; then
+if in_img_gpu "DensifyPointCloud --help 2>&1 | grep -q -- '--cuda-device'"; then
   ok "DensifyPointCloud accepts --cuda-device (OpenMVS_USE_CUDA=ON)"
 else
   bad "DensifyPointCloud has no --cuda-device — this is a CPU OpenMVS build"
 fi
 
-# --- 3. Binaries actually link against the CUDA runtime ----------------------
-# Independent of any --help string: does the loader pull in libcudart?
-head_ "CUDA runtime linkage"
+# --- 3. Binaries actually link CUDA, and it resolves -------------------------
+# Independent of any --help string. Two CUDA APIs are in play and the binaries do
+# NOT use the same one — checking only for libcudart wrongly fails RefineMesh:
+#   libcudart.so.12  CUDA *runtime* API, ships in the image (DensifyPointCloud, colmap)
+#   libcuda.so.1     CUDA *driver* API, injected by the container runtime (RefineMesh)
+# So accept either, and require that it RESOLVES rather than merely being listed.
+# Runs with --gpus, without which the driver-API link could never resolve.
+head_ "CUDA linkage"
 for b in DensifyPointCloud RefineMesh colmap; do
-  if in_img "ldd \$(which $b) 2>/dev/null | grep -qi 'libcudart\|libcuda\.so'"; then
-    ok "$b links the CUDA runtime"
+  out="$(in_img_gpu "ldd \$(which $b) 2>/dev/null | grep -E 'libcudart|libcuda\.so'" 2>/dev/null || true)"
+  libs="$(printf '%s' "$out" | grep -oE 'libcuda(rt)?\.so[.0-9]*' | sort -u | paste -sd, -)"
+  if [ -n "$libs" ] && ! printf '%s' "$out" | grep -q 'not found'; then
+    ok "$b links CUDA and it resolves ($libs)"
   else
-    bad "$b does not link the CUDA runtime"
+    bad "$b has no resolved CUDA linkage (${libs:-none found})"
   fi
+done
+
+# --- 3b. The OpenMVS binaries actually START once the driver is injected -----
+# The build-time gate can only check that libraries RESOLVE (libcuda.so.1 is absent
+# during docker build by design). This is where "they really run" is established —
+# the same loader-failure match the Dockerfile's exercise() uses.
+head_ "OpenMVS binaries start with the driver present"
+for b in DensifyPointCloud ReconstructMesh RefineMesh TextureMesh InterfaceCOLMAP; do
+  out="$(in_img_gpu "$b --help 2>&1 | head -5" 2>/dev/null || true)"
+  case "$out" in
+    *"loading shared libraries"*|*"cannot open shared object"*|*"symbol lookup error"*)
+      bad "$b still fails to load under --gpus: $(echo "$out" | head -1)" ;;
+    *)
+      ok "$b starts under --gpus" ;;
+  esac
 done
 
 # --- 4. The engine's own GPU probe resolves to GPU ---------------------------

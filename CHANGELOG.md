@@ -7,7 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **COLMAP 4.0.4 → 4.1.1, and `ONNX_ENABLED=OFF → ON`** in both Dockerfiles. This is
+  the release the ROADMAP's *Learned SfM front-end* item was explicitly waiting for:
+  stable 4.1 builds **ALIKED** extraction and **LightGlue** matching natively via
+  ONNX. 4.1.0 shipped 2026-06-26 — **one day after this repo's last commit**, which
+  is why the pin sat at 4.0.4 for a month. 4.1.1 (2026-07-17) is taken over 4.1.0 for
+  one reason above all: it fixes a **~4–6× feature-matching slowdown** caused by a
+  process-global OpenMP critical section in `RANSAC`/`LORANSAC`. Also along for the
+  ride: the **Caspar** GPU bundle-adjustment backend (1–2 orders of magnitude faster
+  than the Ceres CUDA backend), spherical/EUCM camera models, EXIF gravity priors,
+  and a faster exhaustive matcher. The **only** breaking change across the whole jump
+  is the pycolmap enum rename `GPSTransfrom` → `GPSTransformEllipsoid`, which this
+  engine does not use; CLI option names are unchanged, and `sparse_colmap.sh` probes
+  them at runtime regardless.
+  **`ONNX_ENABLED` was the real gate, not the version** — the bump alone would have
+  left the learned front-end locked out.
+- **`MVS_ENABLED=OFF`** (option new in COLMAP 4.1). Effigies never calls COLMAP's
+  dense stack — `patch_match_stereo`, `stereo_fusion`, `*_mesher` are all unused,
+  because `DensifyPointCloud` onward is OpenMVS' job and that is the whole point of
+  this node. Verified by grep over `pipeline/`, `helpers/` and `run.sh`. Compiling
+  COLMAP's MVS module only cost build time and image size.
+
 ### Added
+- **ALIKED + LightGlue ONNX models baked into both images** (~136 MB), SHA256-pinned
+  from the upstream `3.13.0` release assets: `aliked-n16rot`/`aliked-n32` extractors,
+  `aliked-lightglue` and `sift-lightglue` matchers, `bruteforce-matcher`, **and the
+  two ALIKED-specific FAISS retrieval trees**. Same offline rationale as the existing
+  vocab tree: COLMAP accepts a URL in `--AlikedExtraction.*_model_path` and downloads
+  to an ephemeral cache on first use, which would require runtime network in a node
+  that must work offline. The retrieval trees are not optional extras — retrieval
+  descriptors must match the feature type, so the SIFT tree cannot serve ALIKED, and
+  LightGlue is pairwise (sets beyond ~150 images need retrieval on top). Exposed as
+  `EFFIGIES_MODEL_DIR`, re-declared in the runtime stage because `ENV` does not cross
+  build stages. The ALIKED/LightGlue **CLI types are not wired into
+  `pipeline/sparse_colmap.sh` yet** — that is tracked as its own ROADMAP step, kept
+  separate so the GPU validation stays a single-variable test.
+
+### Fixed
+- **The CUDA image now actually builds and runs — first time ever.** Two defects
+  surfaced on the first real build, on an RTX A4000 host:
+  - **`libglew2.2` + `libopengl0` missing from the slim runtime stage.** COLMAP
+    4.1.1 defaults `OPENGL_ENABLED` to ON, so `libcolmap` (and therefore
+    `pycolmap._core`) links GLEW/OpenGL even though the build sets
+    `GUI_ENABLED=OFF`. The gate reported only pycolmap's opaque *"Cannot import the
+    C++ backend"* — `__init__.py` swallows the underlying `ImportError` — so the
+    real cause (`libGLEW.so.2.2: cannot open shared object file`) was only visible
+    by importing `pycolmap._core` directly. OpenGL is also COLMAP's non-CUDA
+    SIFT-GPU fallback, so the libraries are added rather than the flag turned off.
+  - **The runtime gate could never have passed for the CUDA image** (latent bug,
+    only observable once the image was built). It asserted that the OpenMVS binaries
+    *start*; they link `libcuda.so.1` — the NVIDIA **driver** library, not part of
+    the CUDA toolkit and absent from every base image, injected by the container
+    runtime only at `docker run --gpus`. So `--help` aborts at load time during
+    `docker build` on any host, GPU or not. (The old comment claiming "device init
+    happens only at real use, so this passes on a GPU-less builder" was wrong:
+    init is deferred, loading the NEEDED `libcuda` is not.) The gate now verifies
+    library resolution via `ldd`, ignoring `libcuda.so.1` — **stronger** than the
+    previous probe, since the loader stops at the first missing library while `ldd`
+    reports the whole unresolved set, so a second miss can no longer hide.
+- **`scripts/gpu-smoke-run.sh` left ~700 MB behind on every run.** The engine writes
+  its outputs as root inside the container, so the bind-mount tree is root-owned and
+  the trap's `rm -rf` failed with *Permission denied* for every file. Cleanup now
+  falls back to deleting the tree from inside a throwaway container as root.
+- **Two wrong assertions in `scripts/verify-gpu-image.sh`**, both found by running it:
+  the `--cuda-device` probe ran *without* `--gpus` (so it would fail for lack of the
+  driver library, not for lack of CUDA support), and the CUDA-linkage check matched a
+  bare `libcuda`, which also matches ldd's `libcuda.so.1 => not found` line and would
+  turn a broken image into a pass. It now distinguishes the two CUDA APIs, because
+  the binaries genuinely differ: `DensifyPointCloud`/`colmap` use the runtime API
+  (`libcudart`), **`RefineMesh` uses the driver API** (`libcuda`) and links no
+  `libcudart` at all.
+
+### Known issues
+- **`RefineMesh`'s GPU role may be overstated.** It links the CUDA driver API but was
+  **not** observed holding device memory during the smoke run's 5 s sampling, unlike
+  `DensifyPointCloud`, `ReconstructMesh` and `TextureMesh`. `docs/DEPLOYMENT.md`
+  sizes GPU VRAM for "DensifyPointCloud **and** RefineMesh"; at `scales=1` that half
+  of the claim is unconfirmed. Worth measuring before the sizing table is cited.
+- **ONNX on arm64 is unverified.** `Dockerfile.cpu` builds natively on Apple Silicon
+  and upstream's `FETCH_ONNX` pulls a prebuilt ONNX Runtime; whether an
+  aarch64-linux artefact resolves there has not been tested. This is the same class
+  of arm64 gap that already forces a source build for py4dgeo and a per-arch asset
+  for Obj2Tiles. Documented at the flag in `Dockerfile.cpu`. The CUDA image (x86_64)
+  is unaffected.
 - **GPU host provisioning + CUDA-build verification** (`scripts/provision-gpu-host.sh`,
   `scripts/verify-gpu-image.sh`, `scripts/gpu-smoke-run.sh`). The CUDA image had
   never been compiled or run — it was parked in the ROADMAP as *"no NVIDIA machine
