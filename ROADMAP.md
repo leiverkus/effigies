@@ -664,11 +664,26 @@ What remains is exposing it through the engine.
       `docs/DEPLOYMENT.md`'s "GPU VRAM → DensifyPointCloud **and** RefineMesh" may
       overstate RefineMesh's GPU role at `scales=1`; worth measuring before the
       sizing table is quoted in the paper.
-- [ ] **A GPU baseline run.** The shared baseline in `docs/planned-experiments.md`
-      (`8d2d31de`) is CPU/arm64. Every runtime figure there is non-comparable on
-      GPU/x86, so the two queued single-variable experiments need a fresh baseline
-      before their deltas mean anything. Not urgent at the current scope; noted so
-      the old baseline is not reused by accident.
+- [x] **A GPU baseline run.** Done — `gpu-base-01` (2026-07-25), recorded in full in
+      `docs/planned-experiments.md`, which now marks the CPU/arm64 run `8d2d31de`
+      as superseded. 110 purely nadir drone images (Zionsberg 2015–2017, gimbal
+      pitch ≤ −80°, DJI Phantom 3, 12 MP) at the full documented settings:
+      **1 h 00 min 41 s**, 17.9 M dense points, 10.6 M refined faces,
+      110/110 registered, mean reprojection error 0.798 px, 4.71 cm GSD ortho/DSM.
+
+      The stage shares change the picture the CPU run painted: **RefineMesh 46 %,
+      TextureMesh 29 %, densify only 10 %** (CPU run: densify 34 %). Experiment B's
+      expected saving therefore has to be re-derived — at res-0 densify is not the
+      bottleneck it appeared to be. RAM peaked at 53 of 125 GB on the Delaunay
+      (82 M cells, cleared in 51 s); **VRAM peaked at ~1.2 GB of 16 GB**, so the
+      GPU was never the constraint at this scale.
+
+      Chosen deliberately over the close-range Zionsberg trench data: both queued
+      experiments measure roof brightness, wall closure and building-core ortho
+      nodata — quantities that do not exist in a 5 × 3 m excavation trench, so that
+      baseline would have anchored nothing. Two other drone sets were rejected on
+      inspection (Beyenburg: gimbal 0°, 2.2 m relative altitude — not a survey
+      flight; Bethlehem: no orientation metadata).
 
 ---
 
