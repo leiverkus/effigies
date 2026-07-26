@@ -394,7 +394,9 @@ if [[ "${OPT[skip-orthophoto]}" != "true" || "${OPT[skip-dsm]}" != "true" ]]; th
        --ortho-gamma "${OPT[ortho-gamma]}" \
        --ortho-flatten "${OPT[ortho-flatten]}" \
        $([[ "${OPT[skip-orthophoto]}" == "true" ]] && echo --skip-orthophoto) \
-       $([[ "${OPT[skip-dsm]}" == "true" ]] && echo --skip-dsm); then
+       $([[ "${OPT[skip-dsm]}" == "true" ]] && echo --skip-dsm) \
+       $([[ "${OPT[semantic]}" == "true" && "${OPT[classify]}" == "true" ]] \
+         && echo --semantic-cloud "$WORK/odm_georeferenced_model.laz"); then
     echo "[effigies] WARN: orthophoto/DSM step failed; continuing without it" >&2
   fi
 fi
@@ -419,7 +421,13 @@ fi
 #      to Structura's vectorisation; fine material classes are a downstream model.
 # ---------------------------------------------------------------------------
 if [[ "${OPT[semantic]}" == "true" ]]; then
-  if ! python3 "$(dirname "$0")/helpers/semantic_ortho.py" --work "$WORK"; then
+  # The mesh path (orthophoto.py --semantic-cloud, above) is preferred: it is
+  # occlusion-correct and inherits the RefineMesh geometry. It needs both a
+  # classified cloud AND a rasterised ortho/DSM grid, so it cannot always run —
+  # fall back to the cloud-majority v0 only when it produced nothing.
+  if [[ -f "$WORK/odm_semantic/orthophoto_semantic.tif" ]]; then
+    echo "[effigies] semantic ortho came from the mesh z-buffer path; skipping the cloud v0"
+  elif ! python3 "$(dirname "$0")/helpers/semantic_ortho.py" --work "$WORK"; then
     echo "[effigies] WARN: semantic-orthophoto step failed; continuing without it" >&2
   fi
   # Multi-epoch propagation: carry the class field across epochs when a reference epoch

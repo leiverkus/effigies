@@ -114,10 +114,18 @@ def _load_textured_obj(obj_path):
             np.asarray(tris_m, np.int64), textures)
 
 
-def rasterize(V, VT, TV, TVT, TM, textures, gsd):
+def rasterize(V, VT, TV, TVT, TM, textures, gsd, tri_out=None):
     """Nadir-rasterise the textured mesh at ground sample distance ``gsd`` (metres
     per pixel). ``TM`` holds the per-triangle texture slot into ``textures``
-    (multi-page atlas). Returns (rgb[H,W,3] uint8, alpha[H,W] uint8, xmin, ymax)."""
+    (multi-page atlas). Returns (rgb[H,W,3] uint8, alpha[H,W] uint8, xmin, ymax).
+
+    ``tri_out``: optional callable returning an int32 [H,W] array to fill with the
+    index of the triangle that WON the z-buffer at each pixel (-1 = nothing). It is
+    a callable, not an array, because only this function knows H and W. Recording it
+    here rather than rasterising a second time is the point: the semantic layer then
+    inherits *exactly* the ortho's grid, geometry and occlusion decisions instead of
+    re-deriving them and risking divergence. Costs one extra scatter-write per
+    winning pixel and nothing at all when not requested."""
     xmin, ymin = V[:, 0].min(), V[:, 1].min()
     xmax, ymax = V[:, 0].max(), V[:, 1].max()
     W = max(1, int(math.ceil((xmax - xmin) / gsd)))
@@ -125,6 +133,7 @@ def rasterize(V, VT, TV, TVT, TM, textures, gsd):
     rgb = np.zeros((H, W, 3), np.uint8)
     alpha = np.zeros((H, W), np.uint8)
     zbuf = np.full((H, W), -np.inf, np.float64)
+    tribuf = tri_out(H, W) if tri_out is not None else None
 
     # vertex -> pixel-centre coordinates (north up: row grows southward)
     px = (V[:, 0] - xmin) / gsd
@@ -155,6 +164,7 @@ def rasterize(V, VT, TV, TVT, TM, textures, gsd):
     Vsafe = VT[:, 1][np.where(TVT >= 0, TVT, 0)]
     BW = C1 - C0; BH = R1 - R0
     zflat = zbuf.reshape(-1); rgbflat = rgb.reshape(-1, 3); aflat = alpha.reshape(-1)
+    triflat = tribuf.reshape(-1) if tribuf is not None else None
     done = np.zeros(len(TV), bool)
     for k in (2, 4, 8, 16, 32):
         chunk = max(2000, int(3e8 // (48 * k * k)))      # ~300 MB working set
@@ -208,6 +218,10 @@ def rasterize(V, VT, TV, TVT, TM, textures, gsd):
                 zflat[p] = zc[wsel]
                 rgbflat[p] = tex[ty, tx]
                 aflat[p] = 255
+                if triflat is not None:
+                    # tric indexes WITHIN this batch; tt maps it back to the global
+                    # triangle id the caller's per-triangle class array is keyed on.
+                    triflat[p] = tt[tric[wsel]]
     survivors = survivors[~done[survivors]]               # big triangles -> loop
     # texcoords per corner (rows for invalid tris contain garbage; never read)
     Usafe = VT[:, 0][np.where(TVT >= 0, TVT, 0)]
@@ -250,6 +264,8 @@ def rasterize(V, VT, TV, TVT, TM, textures, gsd):
         rgb[r0 + rr, c0 + cc] = tex[ty[win], tx[win]]
         alpha[r0 + rr, c0 + cc] = 255
         sub[win] = z[win]
+        if tribuf is not None:
+            tribuf[r0 + rr, c0 + cc] = t      # t is already the global triangle id
     return rgb, alpha, xmin, ymax, zbuf
 
 
@@ -332,6 +348,9 @@ def main():
                     help="do not write the RGB orthophoto")
     ap.add_argument("--skip-dsm", action="store_true",
                     help="do not write the DSM (digital surface model)")
+    ap.add_argument("--semantic-cloud", default=None,
+                    help="classified LAZ; emit odm_semantic/orthophoto_semantic.tif "
+                         "from the mesh via this pass's z-buffer winners")
     ap.add_argument("--fill-holes", type=float, default=0.25,
                     help="max hole area (m²) filled in the orthophoto (0 = off)")
     ap.add_argument("--color-balance", default="none",
@@ -384,7 +403,17 @@ def main():
     while (ext_x / gsd) * (ext_y / gsd) > 16000 * 16000:
         gsd *= 2.0
 
-    rgb, alpha, xmin, ymax, zbuf = rasterize(V, VT, TV, TVT, TM, textures, gsd)
+    # Ask the rasteriser to record the winning triangle per pixel only when the
+    # semantic layer is actually wanted — an int32 [H,W] buffer is the same order of
+    # memory as the z-buffer, so it is not allocated speculatively.
+    tribuf_box = {}
+    def _tri_out(H, W):
+        import numpy as _np
+        tribuf_box["a"] = _np.full((H, W), -1, _np.int32)
+        return tribuf_box["a"]
+    rgb, alpha, xmin, ymax, zbuf = rasterize(
+        V, VT, TV, TVT, TM, textures, gsd,
+        tri_out=_tri_out if args.semantic_cloud else None)
     ox, oy = offset[0] + xmin, offset[1] + ymax
     cov = 100.0 * (alpha > 0).mean()
 
@@ -425,6 +454,29 @@ def main():
                if finite.size else "no covered pixels")
         print(f"[ortho] wrote odm_dem/dsm.tif "
               f"({zbuf.shape[1]}x{zbuf.shape[0]} px @ {gsd*100:.1f} cm/px, {rng}, crs={crs})")
+    # --- semantic ortho from the mesh, via THIS pass's z-buffer winners ----------
+    # Deliberately here and not in a second rasterisation: reusing the triangle
+    # buffer the ortho just produced guarantees the class raster is pixel-identical
+    # to the RGB ortho and the DSM — same grid, same geometry, same occlusion
+    # decisions. A separate pass could drift on any of the three.
+    if args.semantic_cloud:
+        tribuf = tribuf_box.get("a")
+        if tribuf is None:
+            print("[semantic] rasteriser produced no triangle buffer; skipping",
+                  file=sys.stderr)
+        else:
+            from osgeo import osr
+            import semantic_ortho
+            srs = osr.SpatialReference()
+            srs.SetFromUserInput(crs)
+            geo = (ox, gsd, 0.0, oy, 0.0, -gsd)
+            try:
+                semantic_ortho.run_semantic_mesh(
+                    args.work, V, TV, tribuf, geo, srs.ExportToWkt(),
+                    laz=args.semantic_cloud)
+            except Exception as e:                       # non-fatal, like the v0 path
+                print(f"[semantic] mesh path failed ({e}); the cloud-based v0 path "
+                      "can still run", file=sys.stderr)
 
 
 if __name__ == "__main__":

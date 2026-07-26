@@ -187,6 +187,84 @@ def test_fill_ortho_holes():
     print("ok  ortho hole-fill (small interior fills; large void + border stay nodata)")
 
 
+def _overlap_scene(gsd=0.05):
+    """Two stacked quads: a low one over [0,20]x[0,15] at z=0 (triangles 0,1) and a
+    high one over [5,15]x[4,11] at z=5 (triangles 2,3). Nadir, so the high quad must
+    occlude the low one exactly inside its footprint. Returns
+    (alpha, tribuf, zbuf, W, H)."""
+    V = np.array([[0, 0, 0], [20, 0, 0], [20, 15, 0], [0, 15, 0],
+                  [5, 4, 5], [15, 4, 5], [15, 11, 5], [5, 11, 5]], float)
+    VT = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], float)
+    TV = np.array([[0, 1, 2], [0, 2, 3], [4, 5, 6], [4, 6, 7]])
+    TVT = np.array([[0, 1, 2], [0, 2, 3], [0, 1, 2], [0, 2, 3]])
+    TM = np.zeros(4, np.int64)
+    tex = np.zeros((8, 8, 3), np.uint8) + 200
+    box = {}
+
+    def tri_out(H, W):
+        box["a"] = np.full((H, W), -1, np.int32)
+        return box["a"]
+
+    _, alpha, _, _, zbuf = op.rasterize(V, VT, TV, TVT, TM, [tex], gsd,
+                                        tri_out=tri_out)
+    return alpha, box["a"], zbuf, alpha.shape[1], alpha.shape[0]
+
+
+def test_tri_buffer_matches_zbuffer_winners():
+    """tri_out must record the triangle that actually won, for every covered pixel.
+
+    This is what the semantic ortho reads, so a mismatch here would silently put
+    class edges in the wrong place while the RGB ortho looked correct. Two
+    independent checks: coverage agreement with alpha, and — in the overlap — the
+    winner must be a triangle of the HIGH quad, matching the z-buffer.
+    """
+    alpha, tribuf, zbuf, W, H = _overlap_scene(gsd=0.05)
+    cov = alpha > 0
+
+    # 1. recorded exactly where the rasteriser covered, nowhere else
+    assert (tribuf[cov] >= 0).all(), "covered pixel without a recorded triangle"
+    assert (tribuf[~cov] == -1).all(), "recorded a triangle on an uncovered pixel"
+
+    # 2. inside the high quad's footprint the winner is triangle 2 or 3, and the
+    #    z-buffer agrees it is the high surface
+    #    footprint [5,15]x[4,11] -> sample well inside to avoid edge pixels
+    r0 = int((15 - 10.5) / 0.05); r1 = int((15 - 4.5) / 0.05)
+    c0 = int(5.5 / 0.05); c1 = int(14.5 / 0.05)
+    inner = tribuf[r0:r1, c0:c1]
+    assert np.isin(inner, (2, 3)).all(), np.unique(inner)
+    assert np.allclose(zbuf[r0:r1, c0:c1], 5.0), zbuf[r0:r1, c0:c1].max()
+
+    # 3. far outside it, the low quad won
+    outer = tribuf[int((15 - 1.0) / 0.05):int((15 - 0.5) / 0.05), 20:60]
+    assert np.isin(outer, (0, 1)).all(), np.unique(outer)
+    print("ok  triangle buffer matches the z-buffer winners (coverage + occlusion)")
+
+
+def test_tri_buffer_not_allocated_when_unrequested():
+    """No tri_out -> no cost and unchanged behaviour (the ortho path must not pay)."""
+    rgb_a, alpha_a, _, _, z_a = _quad_scene(gsd=0.1)
+    V = np.array([[0, 0, 0], [20, 0, 0], [20, 15, 0], [0, 15, 0]], float)
+    VT = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], float)
+    TV = np.array([[0, 1, 2], [0, 2, 3]])
+    TVT = np.array([[0, 1, 2], [0, 2, 3]])
+    tex = np.zeros((8, 8, 3), np.uint8) + 200
+    box = {}
+
+    def tri_out(H, W):
+        box["a"] = np.full((H, W), -1, np.int32)
+        return box["a"]
+
+    rgb_b, alpha_b, _, _, z_b = op.rasterize(V, VT, TV, TVT, np.zeros(2, np.int64),
+                                            [tex], 0.1, tri_out=tri_out)
+    rgb_c, alpha_c, _, _, z_c = op.rasterize(V, VT, TV, TVT, np.zeros(2, np.int64),
+                                            [tex], 0.1)
+    # requesting the buffer must not change the ortho or the DSM
+    assert (alpha_b == alpha_c).all() and (rgb_b == rgb_c).all()
+    assert np.array_equal(z_b, z_c, equal_nan=True)
+    assert box["a"].shape == alpha_b.shape
+    print("ok  tri_out is side-effect free on the ortho/DSM output")
+
+
 if __name__ == "__main__":
     test_rasterize_orientation_and_coverage()
     test_geotiff_is_georeferenced()
@@ -194,4 +272,6 @@ if __name__ == "__main__":
     test_dsm_height_grid()
     test_dsm_geotiff_is_single_band_float()
     test_fill_ortho_holes()
+    test_tri_buffer_matches_zbuffer_winners()
+    test_tri_buffer_not_allocated_when_unrequested()
     print("\nall orthophoto tests passed")

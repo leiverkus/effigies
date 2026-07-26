@@ -407,14 +407,30 @@ propagate — and **never bakes an archaeological-material model into the shippe
 > DEM-as-reference, and camera-asset re-land. **Carried forward (post-v0.7.0):** the three
 > unchecked items below — the full mesh-classify → z-buffer `--semantic` path, the
 > fine-class material model (Structura's deliverable, itself data-blocked), and contract
-> finalisation.
+> finalisation. **Of those, the mesh z-buffer `--semantic` path shipped 2026-07-26**
+> (see the first item); the fine-class model and the contract remain open.
 
-- [ ] **`--semantic`: a per-pixel class ortho rasterised from a 3D class field.** *(carried forward)*
-      Classify the mesh / cloud, then nadir-rasterise through the existing
-      true-ortho z-buffer pass into `odm_semantic/orthophoto_semantic.tif` —
-      occlusion-correct, inheriting RefineMesh geometry, georeferenced like the RGB
-      ortho. Same machinery as the existing class rasters (`classify_cloud.py`
-      `buildings.tif` / `canopy.tif`). Self-skips for local-frame results.
+- [x] **`--semantic` from a 3D class field via the ortho z-buffer — shipped 2026-07-26.**
+      Cloud classes are transferred to the mesh **vertices** by 3D nearest neighbour
+      (`scipy.cKDTree`; 3D, not plan-view — a 2D match assigns the wrong class wherever
+      the surface folds back under an eave or baulk overhang), reduced to a per-triangle
+      class (majority, ties to the lowest code so the result never depends on OBJ vertex
+      order), and read off the triangle that **won the orthophoto's z-buffer** at each
+      pixel.
+
+      The mechanism is the point: `rasterize()` gained an optional `tri_out` that records
+      the winning triangle index in the pass it already performs, so the class raster is
+      **pixel-identical** to the RGB ortho and the DSM — same grid, same geometry, same
+      occlusion decisions. A second rasterisation could drift on any of the three. Cost
+      is one scatter-write per winning pixel and nothing when unrequested (verified by
+      test: the ortho and DSM outputs are bit-identical with and without `tri_out`).
+      Gains over the v0 cloud path: **occlusion-correct** (only the nadir-visible surface
+      contributes) and it **inherits the RefineMesh geometry**, so class edges land on the
+      refined surface instead of a per-cell majority of scattered points.
+      `orthophoto.py --semantic-cloud` + `semantic_ortho.run_semantic_mesh`; legend
+      version `v1-mesh`. The cloud-majority v0 stays as the fallback for when there is a
+      classified cloud but no rasterised grid. Self-skips for local-frame results,
+      non-fatal throughout.
 - [x] **v0 is free from the existing point classification — shipped.**
       `helpers/semantic_ortho.py` (opt-in `--semantic`) rasterises the OpenPointClass
       cloud classes onto the orthophoto grid (pixel-aligned with `odm_dem/dsm.tif`),

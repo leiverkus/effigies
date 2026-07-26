@@ -30,6 +30,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   COLMAP's MVS module only cost build time and image size.
 
 ### Added
+- **`--semantic` now derives the class raster from the MESH via the orthophoto's
+  z-buffer** — the carried-forward ROADMAP v0.7.0 item. Cloud classes are transferred
+  to mesh vertices by **3D** nearest neighbour (not plan-view: a 2D match assigns the
+  wrong class wherever the surface folds back under an eave or a baulk overhang),
+  reduced to a per-triangle class by majority with **ties to the lowest code** so the
+  result never depends on arbitrary OBJ vertex order — otherwise the same geometry
+  could flip class between epochs for no physical reason — and read off the triangle
+  that won the ortho's z-buffer at each pixel.
+  The mechanism matters more than the feature: `rasterize()` gained an optional
+  `tri_out` that records the winning triangle *in the pass it already performs*, so
+  the class raster is **pixel-identical** to the RGB ortho and the DSM. A second
+  rasterisation could drift on grid, geometry or occlusion; this cannot. Cost is one
+  scatter-write per winning pixel and nothing when unrequested — a test asserts the
+  ortho and DSM come out identical with and without it.
+  Gains over the v0 cloud path: occlusion-correct (only the nadir-visible surface
+  contributes) and it inherits the RefineMesh geometry, so class edges sit on the
+  refined surface instead of a per-cell majority of scattered points. Legend version
+  `v1-mesh`; the cloud-majority v0 remains the fallback when there is a classified
+  cloud but no rasterised grid. `helpers/orthophoto.py --semantic-cloud`,
+  `helpers/semantic_ortho.py` (`run_semantic_mesh`, `triangle_classes`, `read_xyc`
+  gained `with_z`), wired in `run.sh`, four new unit tests.
 - **First out-of-sample accuracy figure: check-point RMSE 3.6 cm 3D.** Measured on
   Zionsberg 2023 trench 6-2 (339 close-range images, total-station GCPs) with
   `scripts/gcp_check_split.py` holding out 3 of 10 targets. Every accuracy number

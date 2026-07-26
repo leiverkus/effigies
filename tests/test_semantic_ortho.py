@@ -71,8 +71,45 @@ def test_write_raster_roundtrip():
     print("ok  write_raster round-trips Byte + nodata + colour table")
 
 
+def test_triangle_classes_majority_and_ties():
+    """Per-triangle class: majority of the three corners, ties to the LOWEST code.
+
+    The tie rule matters because OBJ vertex order is arbitrary — without it the same
+    geometry could get different classes on a re-run, and the semantic ortho would
+    flicker between epochs for no physical reason.
+    """
+    import numpy as np
+    vc = np.array([0, 1, 1, 2, 2, 3], np.uint8)     # vertex classes by index
+    TV = np.array([
+        [1, 2, 3],    # 1,1,2 -> majority 1
+        [3, 4, 5],    # 2,2,3 -> majority 2
+        [1, 3, 5],    # 1,2,3 -> three-way tie -> lowest = 1
+        [0, 0, 0],    # all unclassified -> nodata 0
+        [0, 0, 5],    # single classified corner still carries the triangle -> 3
+        [1, 3, 0],    # 1,2,unclassified -> tie between 1 and 2 -> lowest = 1
+    ])
+    got = so.triangle_classes(vc, TV)
+    assert list(got) == [1, 2, 1, 0, 3, 1], list(got)
+    print("ok  triangle classes (majority, ties to lowest, nodata only if all three)")
+
+
+def test_tribuf_to_class_raster():
+    """tribuf -> class raster: -1 becomes nodata, everything else its triangle class."""
+    import numpy as np
+    tri_class = np.array([1, 3, 2], np.uint8)
+    tribuf = np.array([[-1, 0, 1],
+                       [2, -1, 0]], np.int32)
+    arr = np.where(tribuf >= 0, tri_class[np.clip(tribuf, 0, None)], so.NODATA).astype(np.uint8)
+    assert arr.tolist() == [[0, 1, 3], [2, 0, 1]], arr.tolist()
+    # nodata must never be a real class code
+    assert so.NODATA not in so.V0_NAMES
+    print("ok  triangle buffer maps to the class raster (nodata preserved)")
+
+
 if __name__ == "__main__":
     test_build_semantic_majority()
     test_asprs_mapping()
     test_write_raster_roundtrip()
+    test_triangle_classes_majority_and_ties()
+    test_tribuf_to_class_raster()
     print("\nall semantic-orthophoto tests passed")

@@ -50,15 +50,19 @@ def read_grid(work):
     return None
 
 
-def read_xyc(laz, n_target=4000000):
-    """Decimated (X, Y, Classification) arrays from a classified cloud via PDAL."""
+def read_xyc(laz, n_target=4000000, with_z=False):
+    """Decimated (X, Y, Classification) arrays from a classified cloud via PDAL.
+
+    ``with_z=True`` returns (X, Y, Z, Classification) instead — the mesh path needs Z
+    for a 3D nearest-neighbour transfer."""
     import numpy as np
     txt = tempfile.mktemp(suffix=".csv")
     pj = tempfile.mktemp(suffix=".json")
+    order = "X,Y,Z,Classification" if with_z else "X,Y,Classification"
     try:
         pipe = {"pipeline": [laz,
                 {"type": "writers.text", "filename": txt, "format": "csv",
-                 "order": "X,Y,Classification", "keep_unspecified": False,
+                 "order": order, "keep_unspecified": False,
                  "write_header": False}]}
         open(pj, "w").write(json.dumps(pipe))
         subprocess.check_call(["pdal", "pipeline", pj],
@@ -68,6 +72,8 @@ def read_xyc(laz, n_target=4000000):
             return None
         if len(a) > n_target:
             a = a[np.linspace(0, len(a) - 1, n_target).astype(int)]
+        if with_z:
+            return a[:, 0], a[:, 1], a[:, 2], a[:, 3].astype(np.int64)
         return a[:, 0], a[:, 1], a[:, 2].astype(np.int64)
     finally:
         for f in (txt, pj):
@@ -119,6 +125,98 @@ def write_raster(arr, geo, proj, out):
     band.WriteArray(arr)
     band.FlushCache()
     ds = None
+
+
+def read_xyzc(laz, n_target=4000000):
+    """Like read_xyc but keeps Z — the mesh path needs 3D nearest-neighbour.
+
+    A 2D (x,y) match would assign the wrong class wherever the surface folds back
+    over itself: under an eave or a baulk overhang the nearest point in plan view can
+    sit metres above or below the mesh vertex it would be matched to.
+    """
+    return read_xyc(laz, n_target=n_target, with_z=True)
+
+
+def triangle_classes(vert_class, TV):
+    """Per-triangle class from its three vertex classes: majority, ties to the LOWEST
+    class code so the result never depends on vertex ordering. 0 (nodata) only when
+    all three corners are unclassified — a single classified corner still carries the
+    triangle, which matters at class boundaries where the cloud thins out."""
+    import numpy as np
+    c = vert_class[TV]                                  # [T,3]
+    T = c.shape[0]
+    best = np.zeros(T, np.uint8)
+    best_n = np.zeros(T, np.int8)
+    for code in sorted(V0_NAMES):                       # ascending -> ties to lowest
+        n = (c == code).sum(1).astype(np.int8)
+        take = n > best_n
+        best[take] = code
+        best_n[take] = n[take]
+    return best
+
+
+def run_semantic_mesh(work, V, TV, tribuf, geo, proj, laz=None):
+    """Mesh-derived semantic ortho: transfer cloud classes to mesh vertices, then read
+    the class off the triangle that won the ortho's z-buffer at each pixel.
+
+    This is the ROADMAP's carried-forward `--semantic` path. Two things it gains over
+    the v0 cloud rasterisation: it is **occlusion-correct** (only the surface actually
+    visible from nadir contributes, because the z-buffer already decided that) and it
+    **inherits the RefineMesh geometry**, so class edges land on the refined surface
+    rather than on a per-cell majority of scattered points. Returns True on success.
+    """
+    import numpy as np
+    laz = laz or os.path.join(work, "odm_georeferenced_model.laz")
+    if not os.path.exists(laz):
+        print(f"[semantic] no georeferenced LAZ at {laz}; skipping mesh path", file=sys.stderr)
+        return False
+    xyzc = read_xyzc(laz)
+    if xyzc is None:
+        print("[semantic] empty cloud; skipping mesh path", file=sys.stderr)
+        return False
+    x, y, z, c = xyzc
+    keep = np.isin(c, list(ASPRS_TO_V0))
+    if not keep.any():
+        print("[semantic] cloud carries no OpenPointClass classes — run with "
+              "--classify to enable the semantic orthophoto; skipping", file=sys.stderr)
+        return False
+    x, y, z, c = x[keep], y[keep], z[keep], c[keep]
+    v0 = np.zeros(c.shape, np.uint8)
+    for asprs, code in ASPRS_TO_V0.items():
+        v0[c == asprs] = code
+
+    try:
+        from scipy.spatial import cKDTree
+    except ImportError:
+        print("[semantic] scipy unavailable; skipping mesh path", file=sys.stderr)
+        return False
+    tree = cKDTree(np.column_stack([x, y, z]))
+    _, nn = tree.query(V, k=1, workers=-1)
+    vert_class = v0[nn]
+    tri_class = triangle_classes(vert_class, TV)
+
+    arr = np.where(tribuf >= 0, tri_class[np.clip(tribuf, 0, None)], NODATA).astype(np.uint8)
+
+    out_dir = os.path.join(work, "odm_semantic")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, "orthophoto_semantic.tif")
+    write_raster(arr, geo, proj, out)
+    present = {int(k): V0_NAMES[int(k)] for k in np.unique(arr) if int(k) in V0_NAMES}
+    legend = {"version": "v1-mesh",
+              "source": "OpenPointClass cloud classes transferred to mesh vertices "
+                        "(3D nearest neighbour), read off the ortho z-buffer winner "
+                        "— occlusion-correct, inherits RefineMesh geometry",
+              "nodata": NODATA,
+              "classes": {str(code): {"name": V0_NAMES[code],
+                                      "rgb": list(V0_COLOURS[code])}
+                          for code in V0_NAMES}}
+    json.dump(legend, open(os.path.join(out_dir, "orthophoto_semantic.legend.json"), "w"),
+              indent=2)
+    h, w = arr.shape
+    cov = float((arr != NODATA).mean())
+    print(f"[semantic] wrote odm_semantic/orthophoto_semantic.tif (mesh path, {w}x{h}, "
+          f"{100*cov:.0f}% classified, classes: {sorted(present.values())})")
+    return True
 
 
 def run_semantic_ortho(work):
