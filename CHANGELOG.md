@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Dockerfile layer order reworked for cache architecture** (both images, in
+  lock-step). The `PDAL` stage was built *before* COLMAP and OpenMVS, which do not
+  depend on it, so a PDAL patch bump — the cheapest change imaginable — invalidated
+  the two most expensive layers in the image. PDAL now sits after OpenMVS, together
+  with **OpenPointClass**, its only consumer that was still above entwine. No
+  behaviour change; the built image is identical. Verified by build: with
+  `--build-arg PDAL_VERSION=2.10.1`, engine stages 2–9 (COLMAP at 3/19, OpenMVS at
+  9/19) all report `CACHED` and only PDAL (63.3 s) and OpenPointClass (44.2 s) re-run
+  — **~12 min → ~4.4 min** per PDAL bump.
+  *(Correcting this repo's own figure: ROADMAP and briefing said a full engine
+  rebuild costs "~50 minutes". That was an unmeasured estimate from the first cold
+  build. Measured wall-clock of three consecutive full builds on the A4000 host: 13,
+  12 and 11 minutes. The change is still right; it buys about a sixth of what was
+  claimed.)*
+  **Moving the stage alone would not have been enough.** A controlled probe showed
+  the actual mechanism: an `ARG`'s *declaration site* is part of the cache key of
+  every layer below it, even layers that never reference the variable. With the ARG
+  above an unrelated `RUN`, that `RUN` re-ran on an `--build-arg` change; declared
+  below it, the same `RUN` stayed `CACHED`. The tidy "pinned versions" block at the
+  top of both Dockerfiles was therefore itself the defect, so `OPENMVS_VERSION`,
+  `VCG_REF`, `CGAL_VERSION` and `PDAL_VERSION` each moved next to the stage that
+  consumes them. Only `COLMAP_VERSION` and `CUDA_ARCH` stay on top. This incidentally
+  fixes two cases nobody had flagged: bumping **CGAL** or **OpenMVS** used to rebuild
+  COLMAP as well.
 - **COLMAP 4.0.4 → 4.1.1, and `ONNX_ENABLED=OFF → ON`** in both Dockerfiles. This is
   the release the ROADMAP's *Learned SfM front-end* item was explicitly waiting for:
   stable 4.1 builds **ALIKED** extraction and **LightGlue** matching natively via
@@ -212,6 +236,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The same problem was already solved for entwine (*"Placed after the engine layers to
   keep their build cache"*); PDAL was missed. Tracked in `ROADMAP.md` as its own item,
   because moving a stage is cache architecture and needs its own verifying build.
+  *(The "~50-minute" figure in this entry was never measured and is wrong — see the
+  Unreleased entry above: three measured full builds took 13, 12 and 11 minutes. Left
+  standing here because it is what the entry said at the time.)*
 
 - **CUDA base 12.8.1 → 13.2.1**, adopted after a same-host A/B. Two gates were checked
   before spending an hour on the build: the driver (595.84) reports CUDA **13.2**, so

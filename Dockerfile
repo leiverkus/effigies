@@ -51,6 +51,15 @@ ARG UBUNTU_VERSION=24.04
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS engine
 
 # --- Pinned upstream versions (identical to Dockerfile.cpu; bump both together) ---
+#
+# LAYER-CACHE RULE (measured 2026-07-26, see ROADMAP "Build cache architecture"):
+# an ARG's *declaration site* is part of the cache key of every layer after it.
+# Changing an ARG value rebuilds everything below the ARG line — including layers
+# that never reference it. Verified with a controlled probe: with the ARG above an
+# unrelated RUN, that RUN re-ran; moved below it, the same RUN stayed CACHED.
+# Therefore: declare each version ARG **immediately before the stage that uses it**,
+# never in a block on top. Only ARGs used by the *first* heavy stage belong here.
+#
 # OpenMVS 2.4.0 swaps the FLANN-based nearest-neighbour code for nanoflann and
 # brings dense-stage stability fixes over 2.3.0.
 #
@@ -63,24 +72,14 @@ FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS engine
 # whole jump is the pycolmap enum GPSTransfrom->GPSTransformEllipsoid, which this
 # engine does not use; CLI option names are unchanged (and sparse_colmap.sh probes
 # them anyway). The which-gate below guards regressions.
+# COLMAP is the first heavy stage, so its ARG has to live here.
 ARG COLMAP_VERSION=4.1.1
-ARG OPENMVS_VERSION=v2.4.0
-# VCGlib has no release tags aligned to OpenMVS. Pinned to the cdcseacave/VCG
-# commit the 2.4.0 engine was built and validated end-to-end against.
-ARG VCG_REF=658ba36d0a5666650da6e066b4794efc5a463407
-# CGAL 6 is the one header-only dep newer than noble (5.6): OpenMVS 2.4.0
-# includes CGAL/AABB_traits_3.h, added in CGAL 6.0.
-# DELIBERATELY NOT bumped to 6.2 (audited 2026-07-26). The pin exists only because
-# noble ships 5.6 and OpenMVS 2.4.0 needs >=6.0 for CGAL/AABB_traits_3.h — 6.0.1
-# satisfies that. OpenMVS 2.4.0 is validated against 6.0.x, and CGAL feeds its
-# Delaunay/AABB code, so two minors risk a compile break or a subtle behaviour change
-# for no named benefit. Bump it when something needs it, not for currency.
-ARG CGAL_VERSION=6.0.1
-# PDAL from pinned source — noble dropped it from the repos.
-ARG PDAL_VERSION=2.10.2
 # GPU architectures to compile for. 'all-major' covers common cards; narrow it
-# (e.g. "75;86;89") to speed up the build for known hardware.
+# (e.g. "75;86;89") to speed up the build for known hardware. Used by COLMAP and
+# OpenMVS, so it must precede the earlier of the two.
 ARG CUDA_ARCH=all-major
+# OPENMVS_VERSION / VCG_REF / CGAL_VERSION / PDAL_VERSION are declared further
+# down, each right before the stage that consumes it — see the cache rule above.
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -103,16 +102,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3-pil python3-pyproj python3-gdal python3-reportlab \
       nodejs npm \
     && rm -rf /var/lib/apt/lists/*
-
-# --- PDAL from pinned source (noble dropped the distro package) ---
-RUN git clone --depth 1 --branch ${PDAL_VERSION} https://github.com/PDAL/PDAL.git /opt/pdal && \
-    cmake -S /opt/pdal -B /opt/pdal/build -GNinja \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DWITH_TESTS=OFF \
-      -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    ninja -C /opt/pdal/build install && ldconfig && \
-    rm -rf /opt/pdal && \
-    pdal --version
 
 # --- COLMAP from pinned source, CUDA- and ONNX-enabled, no GUI, no MVS ---
 # ONNX_ENABLED=ON (was OFF) is what actually unlocks ALIKED extraction and
@@ -232,45 +221,27 @@ RUN set -eux; \
     Obj2Tiles --help >/dev/null 2>&1 || { rc=$?; [ "$rc" = 1 ] || { echo "Obj2Tiles exec failed (rc=$rc)"; exit 1; }; }; \
     echo "[effigies] Obj2Tiles ${OBJ2TILES_VERSION} (${A}) baked in"
 
-# --- OpenPointClass for ML point classification (opt-in --classify) ---
-# ODM's classifier; no prebuilt binary, so build pcclassify from pinned source
-# (links our installed PDAL; LightGBM is fetched+built by its cmake). AGPL, invoked
-# as a separate process (mere aggregation, as with OpenMVS). Pinned model baked in.
-# DELIBERATELY NOT bumped (audited 2026-07-26): 2 commits behind upstream HEAD, for
-# an opt-in feature whose weights are pinned separately (model v1.1.3; upstream is at
-# v1.1.7). Near-zero benefit against a real binary/model format-mismatch risk — and
-# the mesh --semantic path was validated against exactly this model, so changing it
-# would invalidate that evidence. Bump source and model together, with a re-run.
-ARG OPC_REF=dd6a560a1d43cb709f7b220b19a436e25a889e3e
-ARG OPC_MODEL_URL=https://github.com/uav4geo/OpenPointClass/releases/download/v1.1.3/vehicles-vegetation-buildings.zip
-ARG OPC_MODEL_SHA256=258f67f02a9d2c329c61726a227281f3ac0af9dd4c274c5c893975beb9dc191a
-RUN apt-get update && apt-get install -y --no-install-recommends libtbb-dev libeigen3-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    git clone https://github.com/uav4geo/OpenPointClass.git /opt/opc && \
-    git -C /opt/opc checkout ${OPC_REF} && \
-    cmake -S /opt/opc -B /opt/opc/build -DCMAKE_BUILD_TYPE=Release \
-      -DWITH_GBT=ON -DBUILD_PCTRAIN=OFF -DPDAL_DIR=/usr/local/lib/cmake/PDAL && \
-    cmake --build /opt/opc/build -j"$(nproc)" --target pcclassify && \
-    install -m755 /opt/opc/build/pcclassify /usr/local/bin/pcclassify && \
-    rm -rf /opt/opc && \
-    pcclassify </dev/null >/dev/null 2>&1; rc=$?; [ "$rc" -lt 126 ] || { echo "pcclassify exec failed (rc=$rc)"; exit 1; }; \
-    echo "[effigies] OpenPointClass pcclassify (${OPC_REF}) baked in"
-RUN mkdir -p /usr/local/share/effigies && \
-    python3 -c "import urllib.request; urllib.request.urlretrieve('${OPC_MODEL_URL}', '/tmp/opc_model.zip')" && \
-    echo "${OPC_MODEL_SHA256}  /tmp/opc_model.zip" | sha256sum -c - && \
-    python3 -m zipfile -e /tmp/opc_model.zip /tmp/opc_model/ && \
-    install -m644 /tmp/opc_model/model.bin /usr/local/share/effigies/opc_model.bin && \
-    rm -rf /tmp/opc_model /tmp/opc_model.zip && \
-    echo "[effigies] OpenPointClass model (vehicles-vegetation-buildings v1.1.3) baked in"
-ENV EFFIGIES_OPC_MODEL=/usr/local/share/effigies/opc_model.bin
-
 # --- CGAL 6 (header-only, pinned; used via -DCGAL_DIR below) ---
+# CGAL 6 is the one header-only dep newer than noble (5.6): OpenMVS 2.4.0
+# includes CGAL/AABB_traits_3.h, added in CGAL 6.0.
+# DELIBERATELY NOT bumped to 6.2 (audited 2026-07-26). The pin exists only because
+# noble ships 5.6 and OpenMVS 2.4.0 needs >=6.0 for CGAL/AABB_traits_3.h — 6.0.1
+# satisfies that. OpenMVS 2.4.0 is validated against 6.0.x, and CGAL feeds its
+# Delaunay/AABB code, so two minors risk a compile break or a subtle behaviour change
+# for no named benefit. Bump it when something needs it, not for currency.
+# Declared here, not on top: a CGAL bump must not rebuild COLMAP (cache rule).
+ARG CGAL_VERSION=6.0.1
 # The one dep newer than noble: OpenMVS 2.4.0 includes CGAL/AABB_traits_3.h
 # (CGAL >=6.0); noble ships 5.6.
 RUN python3 -c "import urllib.request; urllib.request.urlretrieve('https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}-library.tar.xz', '/tmp/cgal.tar.xz')" && \
     tar -xf /tmp/cgal.tar.xz -C /opt && rm /tmp/cgal.tar.xz
 
 # --- OpenMVS from pinned source, CUDA-enabled ---
+# Declared here, not on top: an OpenMVS or VCG bump must not rebuild COLMAP.
+ARG OPENMVS_VERSION=v2.4.0
+# VCGlib has no release tags aligned to OpenMVS. Pinned to the cdcseacave/VCG
+# commit the 2.4.0 engine was built and validated end-to-end against.
+ARG VCG_REF=658ba36d0a5666650da6e066b4794efc5a463407
 # Two source patches keep 2.4.0 building against noble's OpenCV (4.6) — identical
 # to the CPU image:
 #   1. libs/IO: the JXL pkg-config check is hard-REQUIRED via a macro; we do not
@@ -304,6 +275,58 @@ RUN git clone https://github.com/cdcseacave/VCG.git /opt/vcglib && \
 
 # OpenMVS installs its tools under <prefix>/bin/OpenMVS — put them on PATH.
 ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
+
+# ===========================================================================
+# Everything from here down depends on PDAL. Deliberately placed AFTER COLMAP
+# and OpenMVS: PDAL sees frequent patch releases (2.10.1 -> 2.10.2 within this
+# project's lifetime), and while it sat above them a PDAL bump rebuilt both —
+# the two most expensive layers in the image — for a change neither depends on.
+# Nothing above this line references PDAL, so the order is free. Consumers below:
+# pcclassify (-DPDAL_DIR), entwine, and the pdal CLI used by pointcloud_to_laz.py.
+# ===========================================================================
+
+# --- PDAL from pinned source (noble dropped the distro package) ---
+ARG PDAL_VERSION=2.10.2
+RUN git clone --depth 1 --branch ${PDAL_VERSION} https://github.com/PDAL/PDAL.git /opt/pdal && \
+    cmake -S /opt/pdal -B /opt/pdal/build -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DWITH_TESTS=OFF \
+      -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    ninja -C /opt/pdal/build install && ldconfig && \
+    rm -rf /opt/pdal && \
+    pdal --version
+
+# --- OpenPointClass for ML point classification (opt-in --classify) ---
+# ODM's classifier; no prebuilt binary, so build pcclassify from pinned source
+# (links our installed PDAL; LightGBM is fetched+built by its cmake). AGPL, invoked
+# as a separate process (mere aggregation, as with OpenMVS). Pinned model baked in.
+# DELIBERATELY NOT bumped (audited 2026-07-26): 2 commits behind upstream HEAD, for
+# an opt-in feature whose weights are pinned separately (model v1.1.3; upstream is at
+# v1.1.7). Near-zero benefit against a real binary/model format-mismatch risk — and
+# the mesh --semantic path was validated against exactly this model, so changing it
+# would invalidate that evidence. Bump source and model together, with a re-run.
+ARG OPC_REF=dd6a560a1d43cb709f7b220b19a436e25a889e3e
+ARG OPC_MODEL_URL=https://github.com/uav4geo/OpenPointClass/releases/download/v1.1.3/vehicles-vegetation-buildings.zip
+ARG OPC_MODEL_SHA256=258f67f02a9d2c329c61726a227281f3ac0af9dd4c274c5c893975beb9dc191a
+RUN apt-get update && apt-get install -y --no-install-recommends libtbb-dev libeigen3-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone https://github.com/uav4geo/OpenPointClass.git /opt/opc && \
+    git -C /opt/opc checkout ${OPC_REF} && \
+    cmake -S /opt/opc -B /opt/opc/build -DCMAKE_BUILD_TYPE=Release \
+      -DWITH_GBT=ON -DBUILD_PCTRAIN=OFF -DPDAL_DIR=/usr/local/lib/cmake/PDAL && \
+    cmake --build /opt/opc/build -j"$(nproc)" --target pcclassify && \
+    install -m755 /opt/opc/build/pcclassify /usr/local/bin/pcclassify && \
+    rm -rf /opt/opc && \
+    pcclassify </dev/null >/dev/null 2>&1; rc=$?; [ "$rc" -lt 126 ] || { echo "pcclassify exec failed (rc=$rc)"; exit 1; }; \
+    echo "[effigies] OpenPointClass pcclassify (${OPC_REF}) baked in"
+RUN mkdir -p /usr/local/share/effigies && \
+    python3 -c "import urllib.request; urllib.request.urlretrieve('${OPC_MODEL_URL}', '/tmp/opc_model.zip')" && \
+    echo "${OPC_MODEL_SHA256}  /tmp/opc_model.zip" | sha256sum -c - && \
+    python3 -m zipfile -e /tmp/opc_model.zip /tmp/opc_model/ && \
+    install -m644 /tmp/opc_model/model.bin /usr/local/share/effigies/opc_model.bin && \
+    rm -rf /tmp/opc_model /tmp/opc_model.zip && \
+    echo "[effigies] OpenPointClass model (vehicles-vegetation-buildings v1.1.3) baked in"
+ENV EFFIGIES_OPC_MODEL=/usr/local/share/effigies/opc_model.bin
 
 # --- Verify the binaries that justify this node's existence (fail loudly) ---
 RUN set -eux; \

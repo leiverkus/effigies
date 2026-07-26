@@ -33,18 +33,26 @@ Treiber 595.84, unterstützt CUDA 13.2.
 |---|---|---|
 | `~/effigies/` | 4,5 MB | rsync-Ziel des Effigies-Repos |
 | Docker-Image `effigies:gpu` | 12,4 GB | der kanonische Build (CUDA 13.2.1) |
-| Docker **Build-Cache** | 62,9 GB (98 Layer) | macht einen Effigies-Neubau zu Minuten statt **einer Stunde** |
+| Docker **Build-Cache** | 62,9 GB (98 Layer) | spart einen Effigies-Neubau — der aber nur ~12 min dauert, s. u. |
 | `~/baseline`, `~/expA`–`~/expD` | ~18 GB | die fünf Benchmark-Läufe hinter `docs/planned-experiments.md` |
 | `~/cprmse`, `~/semtest` | ~13 GB | Validierungsläufe (Check-Point-RMSE, Semantik-Pfad) |
 | `~/data`, `~/gpu-smoke-*` | ~0,7 GB | Smoke-Datensatz und GPU-Sampling-Logs |
 
-**`docker builder prune` und `docker system prune -a` bitte abstimmen.** Ersteres
-kostet eine Stunde Neubau, Letzteres zusätzlich das Image. Beides ist kein Drama,
-nur unnötig. Platte stand am 26.07. bei **100 von 228 GB frei** — es besteht kein
-Platzdruck. Wenn doch mal Platz gebraucht wird: 32,6 GB des Build-Cache sind
-bereits unreferenziert, `docker builder prune` (ohne `-a`) holt genau die und
-lässt die 20 aktiven Layer stehen. Das ist der billige Weg; erst danach die
-Ergebnis-Verzeichnisse, und die nur nach Rückfrage.
+> **Korrektur 17:00.** Dieser Absatz stand hier zuerst mit „kostet eine Stunde
+> Neubau". Diese Zahl war nie gemessen, sondern von meinem ersten Kaltbau
+> geschätzt. Inzwischen liegen drei gemessene Voll-Builds vor: **13, 12 und 11
+> Minuten**. Der Cache ist also deutlich weniger kostbar, als ich geschrieben
+> hatte — die Empfehlung unten ist entsprechend entschärft.
+
+**`docker builder prune` gern, `docker system prune -a` bitte kurz abstimmen.**
+Ersteres kostet im schlimmsten Fall ~12 min Neubau — wenn du die 62,9 GB
+brauchst, nimm sie. Letzteres wirft zusätzlich das Image `effigies:gpu` weg;
+das ist auch kein Drama, aber sag mir vorher Bescheid, damit ich nicht mitten
+in einem Lauf ohne Image dastehe. Platte am 26.07.: **74 von 228 GB frei**.
+Billigster Weg zuerst: `docker builder prune` **ohne** `-a` holt nur die
+unreferenzierten Layer und lässt die aktiven stehen. Die Ergebnis-Verzeichnisse
+erst danach, und die nur nach Rückfrage — die sind im Gegensatz zum Cache nicht
+in Minuten reproduzierbar.
 
 ### Messungen: die eigentliche Kollisionsgefahr
 
@@ -54,9 +62,10 @@ die Maschine dabei ruhig war; es wurde zweimal absichtlich gewartet statt parall
 gerechnet.
 
 **Wenn eine Session rechnet, sind Laufzeitmessungen der anderen ungültig.** Bei
-rechenintensiven Läufen also kurz abstimmen. Relevante Größenordnungen: ein
-Effigies-Vollbau ~50 min, ein Benchmark-Lauf 20–60 min, ein Semantik-Testlauf über
-400 Bilder ~1 h 45.
+rechenintensiven Läufen also kurz abstimmen. Gemessene Größenordnungen: ein
+Effigies-Vollbau **11–13 min** (drei Messungen), ein Benchmark-Lauf 20–60 min, ein
+Semantik-Testlauf über 400 Bilder ~1 h 45. Der Build ist dabei der harmloseste
+Posten — die langen Läufe sind das, was sich lohnt abzustimmen.
 
 **GPU-Konkurrenz betrifft Structura direkt.** Der 2D-Track hat `sam` (samgeo) und
 `cellpose` als wählbare Backends — beide GPU-Inferenz. Der Default `classical` ist

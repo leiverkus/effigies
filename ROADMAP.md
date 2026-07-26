@@ -847,17 +847,61 @@ localises itself. Verified `13/13` plus a smoke run.
       validated against exactly this model, so changing it would invalidate that
       evidence. Bump source **and** model together, with a re-run.
 
-### Follow-up: Dockerfile layer order costs more than the bumps do
+### Build cache architecture *(done 2026-07-26)*
 
-`PDAL` is built at engine stage 3, **before** COLMAP and OpenMVS, which do not
-depend on it. So a PDAL *patch* bump invalidates the cache for the entire engine and
-costs a ~50-minute rebuild — the cheapest change in the list is the most expensive to
-apply. The author already solved exactly this for entwine (*"Placed after the engine
-layers to keep their build cache"*); PDAL was missed.
+`PDAL` was built at engine stage 3, **before** COLMAP and OpenMVS, which do not
+depend on it. So a PDAL *patch* bump invalidated the cache for the entire engine —
+the cheapest change in the list was the most expensive to apply. The author already
+solved exactly this for entwine (*"Placed after the engine layers to keep their build
+cache"*); PDAL was missed.
 
-- [ ] **Move the PDAL stage after the COLMAP/OpenMVS layers.** Pure cache
-      architecture, no behaviour change, but it needs its own build to verify — do
-      not fold it into an unrelated change.
+> **Correction, same day.** The item above (and the CHANGELOG, and the Structura
+> briefing) put the cost of a full engine rebuild at *"~50 minutes"*. That figure was
+> never measured; it was an estimate carried from the first cold build. Measured
+> wall-clock of the three full builds on the A4000 host: **13, 12 and 11 minutes**.
+> The saving from this change is therefore **~12 min → ~4.4 min per PDAL bump**, not
+> ~45 minutes. The change is still right — it just buys about a sixth of what was
+> claimed, and the build cache is far less precious than that number implied.
+
+- [x] **PDAL stage moved after the COLMAP/OpenMVS layers**, together with
+      OpenPointClass (its only consumer above entwine). Nothing above the new
+      `PDAL` banner references PDAL, so the order was free. Both Dockerfiles moved
+      in lock-step.
+
+**The layer move alone would not have worked.** Probing the assumption first turned
+up the real mechanism: *an `ARG`'s declaration site is part of the cache key of every
+layer below it, whether or not that layer references the variable.* Measured with a
+controlled probe — two `RUN`s, an `ARG` only the second one uses:
+
+| ARG declared | change the ARG value | first (unrelated) RUN |
+|---|---|---|
+| above both RUNs | `--build-arg BAR=2` | **re-ran** (`DONE 2.2s`) |
+| between the RUNs | `--build-arg BAR=2` | **`CACHED`** |
+
+Control (same ARG value, no change) kept it `CACHED` in both layouts, so the probe
+was not simply cache-less.
+
+Consequence: the tidy "pinned versions" block at the top of both Dockerfiles was
+itself the defect. Every version ARG has therefore moved next to the stage that
+consumes it — `OPENMVS_VERSION`, `VCG_REF`, `CGAL_VERSION`, `PDAL_VERSION`. Only
+`COLMAP_VERSION` and `CUDA_ARCH` remain on top, because COLMAP is the first heavy
+stage and `CUDA_ARCH` feeds both COLMAP and OpenMVS. This also fixes cases nobody had
+noticed: before, bumping **CGAL** or **OpenMVS** rebuilt COLMAP too.
+
+**Verified by build, not by argument.** With the reordered Dockerfile built once,
+a `--build-arg PDAL_VERSION=2.10.1` rebuild reported:
+
+| engine stage | before | after |
+|---|---|---|
+| 3/19 COLMAP | rebuilt | **CACHED** |
+| 9/19 OpenMVS | rebuilt | **CACHED** |
+| 10/19 PDAL | rebuilt | rebuilt (63.3 s) |
+| 11/19 OpenPointClass | rebuilt | rebuilt (44.2 s) |
+
+Engine stages 2–9 all came back `CACHED`; only PDAL and what genuinely depends on it
+re-ran. **~12 min → ~4.4 min** for a PDAL patch bump. CGAL, OpenMVS and VCG bumps get
+the same treatment. The rule is written into both Dockerfiles at the top of the pin
+block so the next tidy-up does not silently undo it.
 
 ## Out of scope
 
