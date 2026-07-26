@@ -477,7 +477,7 @@ def main():
             try:
                 semantic_ortho.run_semantic_mesh(
                     args.work, V, TV, tribuf, geo, srs.ExportToWkt(),
-                    laz=args.semantic_cloud)
+                    offset, laz=args.semantic_cloud)
             except Exception as e:                       # non-fatal, like the v0 path
                 print(f"[semantic] mesh path failed ({e}); the cloud-based v0 path "
                       "can still run", file=sys.stderr)

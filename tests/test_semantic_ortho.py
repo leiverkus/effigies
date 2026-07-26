@@ -106,10 +106,80 @@ def test_tribuf_to_class_raster():
     print("ok  triangle buffer maps to the class raster (nodata preserved)")
 
 
+def _have_scipy_gdal():
+    try:
+        import scipy.spatial  # noqa: F401
+        from osgeo import gdal  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def test_mesh_path_reconciles_coordinate_frames():
+    """The OBJ and the LAZ live in DIFFERENT frames by design, and the mesh path must
+    add the offset back before matching them.
+
+    The textured OBJ carries offset-subtracted projected coordinates (float precision,
+    CLAUDE.md constraint 5); pointcloud_to_laz.py writes the LAZ in FULL projected
+    coordinates on purpose. Query one with the other and the tree sits ~10^6 m from
+    every query point: every vertex resolves to the same arbitrary nearest point, the
+    whole mesh collapses to ONE class, and the raster looks perfectly plausible. This
+    test pins the reconciliation, and the second half pins the guard that refuses when
+    it is missing.
+    """
+    if not _have_scipy_gdal():
+        print("skip  frame reconciliation (needs scipy + GDAL)")
+        return
+    import numpy as np
+
+    OFFSET = [711000.0, 3517000.0, 0.0]
+    # two triangles: the left one over cloud points classified ground(2),
+    # the right one over points classified building(6) -> structure
+    V = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0],
+                  [9, 0, 0], [10, 0, 0], [9, 1, 0]], float)
+    TV = np.array([[0, 1, 2], [3, 4, 5]])
+    cx = np.array([0.3, 0.4, 9.3, 9.4]) + OFFSET[0]
+    cy = np.array([0.3, 0.4, 0.3, 0.4]) + OFFSET[1]
+    cz = np.zeros(4)
+    cc = np.array([2, 2, 6, 6], np.int64)
+
+    captured = {}
+    orig_read, orig_write = so.read_xyzc, so.write_raster
+    so.read_xyzc = lambda laz, n_target=None: (cx, cy, cz, cc)
+    so.write_raster = lambda arr, geo, proj, out: captured.update(arr=arr.copy())
+    try:
+        tribuf = np.array([[0, 1]], np.int32)
+        with tempfile.TemporaryDirectory() as work:
+            laz = os.path.join(work, "cloud.laz")
+            open(laz, "w").close()          # existence check only; read is patched
+            ok = so.run_semantic_mesh(work, V, TV, tribuf,
+                                      (OFFSET[0], 1.0, 0, OFFSET[1], 0, -1.0), "",
+                                      OFFSET, laz=laz)
+        assert ok, "mesh path refused a correctly-framed input"
+        arr = captured["arr"]
+        assert arr.tolist() == [[1, 3]], arr.tolist()   # ground, structure
+        print("ok  mesh path reconciles OBJ/LAZ frames (correct per-triangle classes)")
+
+        # now the failure this guards: pass a zero offset for offset-subtracted V
+        captured.clear()
+        with tempfile.TemporaryDirectory() as work:
+            laz = os.path.join(work, "cloud.laz")
+            open(laz, "w").close()
+            ok = so.run_semantic_mesh(work, V, TV, tribuf,
+                                      (0, 1.0, 0, 0, 0, -1.0), "",
+                                      [0.0, 0.0, 0.0], laz=laz)
+        assert ok is False, "mismatched frames were accepted"
+        assert "arr" not in captured, "wrote a raster from mismatched frames"
+        print("ok  mesh path refuses mismatched frames instead of writing a uniform raster")
+    finally:
+        so.read_xyzc, so.write_raster = orig_read, orig_write
+
+
 if __name__ == "__main__":
     test_build_semantic_majority()
     test_asprs_mapping()
     test_write_raster_roundtrip()
     test_triangle_classes_majority_and_ties()
     test_tribuf_to_class_raster()
+    test_mesh_path_reconciles_coordinate_frames()
     print("\nall semantic-orthophoto tests passed")

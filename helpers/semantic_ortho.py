@@ -155,7 +155,7 @@ def triangle_classes(vert_class, TV):
     return best
 
 
-def run_semantic_mesh(work, V, TV, tribuf, geo, proj, laz=None):
+def run_semantic_mesh(work, V, TV, tribuf, geo, proj, offset, laz=None):
     """Mesh-derived semantic ortho: transfer cloud classes to mesh vertices, then read
     the class off the triangle that won the ortho's z-buffer at each pixel.
 
@@ -190,8 +190,33 @@ def run_semantic_mesh(work, V, TV, tribuf, geo, proj, laz=None):
     except ImportError:
         print("[semantic] scipy unavailable; skipping mesh path", file=sys.stderr)
         return False
+    # FRAME RECONCILIATION — do not remove. The two inputs live in different frames
+    # by design: the textured OBJ carries offset-subtracted projected coordinates
+    # (CLAUDE.md constraint 5, float precision), while pointcloud_to_laz.py writes the
+    # LAZ in FULL projected coordinates on purpose ("the OBJ-only offset is
+    # intentionally NOT subtracted here"). Querying one with the other puts the tree
+    # ~10^6 m away from every query point, so every vertex resolves to the same
+    # arbitrary nearest point and the whole mesh collapses to ONE class — a uniform
+    # raster that looks entirely plausible on an excavation. Add the offset back.
+    Vw = V + np.asarray(offset, dtype=np.float64).reshape(1, 3)
     tree = cKDTree(np.column_stack([x, y, z]))
-    _, nn = tree.query(V, k=1, workers=-1)
+    dist, nn = tree.query(Vw, k=1, workers=-1)
+    # Sanity gate on the reconciliation itself: if the frames were still mismatched
+    # the nearest-neighbour distances would be enormous. Refuse rather than emit a
+    # confident-looking uniform raster.
+    med = float(np.median(dist))
+    # np.ptp as a FUNCTION — the ndarray .ptp() method was removed in numpy 2.x
+    span = float(max(np.ptp(V[:, 0]), np.ptp(V[:, 1]))) or 1.0
+    # Threshold deliberately loose: the failure this guards is a frame mismatch, which
+    # is wrong by ~10^6 m — orders of magnitude, not percent. Gating on "the nearest
+    # cloud point is further away than the scene is wide" catches that unambiguously
+    # while never firing on a merely sparse cloud. A tighter bound would turn point
+    # density into a hard error, which is not this function's business.
+    if med > span:
+        print(f"[semantic] mesh/cloud frames look mismatched (median nearest-point "
+              f"distance {med:.1f} m against a {span:.1f} m scene); refusing to write a "
+              f"class raster from it", file=sys.stderr)
+        return False
     vert_class = v0[nn]
     tri_class = triangle_classes(vert_class, TV)
 
