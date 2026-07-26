@@ -482,6 +482,18 @@ propagate — and **never bakes an archaeological-material model into the shippe
       artifact** (produced / retrained in Structura's research, dropped into
       Effigies). Validation of the semantic ortho's archaeological usefulness is
       Structura's evaluation, not Effigies'. See the Structura research plan.
+      Handoff notes for a parallel session: [`docs/briefing-structura-2026-07-26.md`](docs/briefing-structura-2026-07-26.md).
+      **Downstream decided 2026-07-26 (Structura ADR-0001, *Proposed*):** Structura
+      hands off a **GeoPackage file**; Contexta imports it through a management
+      command via the ORM. `PostGISSink` is withdrawn — so the line above ("Structura
+      carries object identity *in PostGIS*") describes where the identity ends up,
+      not who writes it. Nothing for Effigies to change: the flow stays
+      one-directional and Effigies still never reads the DB. One consequence does
+      land here, though: Structura's `FileSink` deliberately **never reprojects**,
+      and Contexta's target CRS is **per site** (`Site.srid`; 6991 / 28191) rather
+      than global. That makes Effigies' `--crs` the place where the site's grid is
+      fixed, and makes the explicit-CRS constraint (#4) load-bearing for the whole
+      chain, not just for our own outputs.
 
 ## v0.8.0 — Benchmark campaign & profile calibration *(needs reference data)*
 
