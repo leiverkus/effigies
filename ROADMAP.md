@@ -461,6 +461,42 @@ done; the *runs* are here). Gated on a dataset with **reference data** — a TLS
 scan and/or surveyed check points — for absolute accuracy; relative metrics
 (roughness, detail, completeness, runtime) can proceed without it.
 
+**The surveyed-check-point half of that gate is now open.**
+
+- [x] **Check-point RMSE measured — 3.6 cm 3D, out of sample** (2026-07-26).
+      First absolute-accuracy figure for this engine that is *not* a fit residual.
+      Zionsberg 2023 trench 6-2, 339 close-range iPhone images, GCPs from
+      total-station survey via `metashape_gcp_export.py`, control/check split by
+      `scripts/gcp_check_split.py` (7 control / 3 check, rule fixed before any
+      number existed).
+
+      | | |
+      |---|---|
+      | **CP-RMSE, post-hoc similarity** | **0.0361 m** |
+      | CP-RMSE, GCP-constrained BA | 0.0397 m |
+      | Fit residual over all 10 GCPs | 0.0368 m (horiz 0.0185 / vert 0.0318) |
+      | Worst single point | 0.0796 m |
+      | GCP localization | 10/10 triangulated, 0 nearest-point fallbacks |
+
+      Two things worth keeping. **Fit residual and out-of-sample error agree**
+      (3.68 vs 3.61 cm), so the similarity generalises — no sign of overfitting to
+      the control points. And **`--gcp-bundle-adjust auto` rejected the bundle
+      adjustment**: 0.0397 m vs 0.0361 m for the post-hoc similarity, so it
+      restored the free sparse model. That arbitration is impossible without check
+      points, so this run is also the first functional proof of that mode.
+
+      Caveat, flagged by the split tool before the run: the worst point is 2.2× the
+      RMS, and with only 3 check points a single target can dominate. The prime
+      suspect is `target 4`, which carries 4 observations against a median of 8 —
+      a weakly triangulated position whose residual mixes marking noise into the
+      georeferencing error. Read `rms_3d` with `max_3d`, and prefer projects with
+      ≥ 10 well-observed targets when this is repeated. 31 further `gcp_list.txt`
+      files are available from the same campaign for exactly that.
+
+      Still missing for the *other* half of the gate: an independent reference
+      surface (TLS scan) for cloud/mesh-to-reference distance. Check points bound
+      the georeferencing, not the geometry.
+
 - [ ] **Comparison runs.** Process shared datasets through Effigies, stock ODM,
       Metashape and (where available) RealityScan, and compute the
       `scripts/benchmark.sh` metrics — cloud/mesh-to-reference distance,
@@ -726,6 +762,42 @@ What remains is exposing it through the engine.
       flight; Bethlehem: no orientation metadata).
 
 ---
+
+## Pinned-stack currency *(audited 2026-07-26)*
+
+Every `ARG` in both Dockerfiles checked against upstream. Current and deliberately
+so: **COLMAP 4.1.1**, **OpenMVS 2.4.0** (upstream's newest tag), **VCGlib**
+`658ba36` (identical to upstream HEAD), **NodeODM** `8ad3e30` (identical to HEAD —
+newer than the last release v2.2.3 of 2024, so the commit pin is correct). The
+asset-hosting tags `COLMAP_MODEL_TAG=3.13.0` and the `3.11.1` vocab-tree URL are
+*where the files live*, not versions to chase.
+
+What is behind, roughly in order of weight:
+
+- [ ] **CUDA base 12.8.1 → 13.x** (13.3.0 available for `cudnn-runtime-ubuntu24.04`).
+      A **major** jump, and everything compiles against it — COLMAP, OpenMVS, and
+      ONNX Runtime. Must be run and verified on its own, never bundled: a failure
+      would otherwise be unattributable. Also re-check that ONNX Runtime's CUDA
+      provider still resolves (that is what forced the `-cudnn-` base in the first
+      place) and that `CUDA_ARCH=86` still applies.
+- [ ] **`entwine` `0cf9574` has DIVERGED**, not merely aged: 10 commits on upstream
+      HEAD that the pin lacks, and **21 commits on the pin's line that HEAD lacks**.
+      The pin sits on a different branch. This is the only divergence in the stack,
+      and the open question is which line is even correct — not a version bump.
+      Decide before touching it; entwine builds the EPT tileset for the Potree
+      viewer, so a wrong branch is a silent output regression.
+- [ ] **CGAL 6.0.1 → 6.2** (two minors). Header-only, vendored because noble ships
+      5.6 and OpenMVS 2.4.0 needs ≥ 6.0. Shared with OpenMVS' build, so bump and
+      rebuild together with an OpenMVS smoke run.
+- [ ] **py4dgeo 1.1.0 → 1.2.0** (one minor). Only the `--align-to` change-detection
+      path; `scripts/smoke_change_detect.py` covers it.
+- [ ] **PDAL 2.10.1 → 2.10.2** (one patch). Lowest risk in the list.
+- [ ] **OpenPointClass `dd6a560` is 2 commits behind HEAD.** Affects `--classify`
+      only.
+- [ ] **Obj2Tiles v1.4.0 — UNVERIFIED.** Neither `git ls-remote --tags` nor the
+      releases API returned anything, although the build pulls an asset from
+      `releases/download/v1.4.0/`. Possibly rate-limiting, possibly a moved repo.
+      Recorded as a white spot rather than assumed current.
 
 ## Out of scope
 

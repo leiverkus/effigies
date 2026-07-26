@@ -30,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   COLMAP's MVS module only cost build time and image size.
 
 ### Added
+- **First out-of-sample accuracy figure: check-point RMSE 3.6 cm 3D.** Measured on
+  Zionsberg 2023 trench 6-2 (339 close-range images, total-station GCPs) with
+  `scripts/gcp_check_split.py` holding out 3 of 10 targets. Every accuracy number
+  this engine reported before was a *fit residual*; this is the first error against
+  points the transform never saw. Fit residual and out-of-sample error agree
+  (0.0368 m vs 0.0361 m), so the similarity generalises. **`--gcp-bundle-adjust
+  auto` rejected the bundle adjustment** (0.0397 m vs 0.0361 m) and restored the
+  free sparse model — that arbitration cannot run without check points, so this is
+  also the first functional proof of that mode. Worst single point is 0.0796 m,
+  2.2× the RMS; with only 3 check points one target can dominate, and the split tool
+  had flagged the likely culprit up front (4 observations against a median of 8).
+  Recorded in `ROADMAP.md` under v0.8.0. Bounds the georeferencing, **not** the
+  geometry — cloud/mesh-to-reference distance still needs a TLS scan.
 - **`--features`: the learned SfM front-end is now reachable from the engine.**
   Closes the ROADMAP item that waited on stable COLMAP 4.1. One option selects
   extractor *and* matcher together — `sift` (default, unchanged), `sift-lightglue`,
