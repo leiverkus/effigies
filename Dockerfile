@@ -25,10 +25,25 @@
 # binary so a missing runtime .so fails the build, not the user. The runtime apt
 # set was derived empirically (readelf -d NEEDED) and verified end-to-end on the
 # CPU image (Dockerfile.cpu); keep the two files in lock-step. The CUDA binaries'
-# own runtime exercise (device init) is verified on a GPU host — this machine has
-# none — but the loader/shared-object gate runs at build time here too.
+# own runtime exercise (device init) is verified on a GPU host (RTX A4000, since
+# 2026-07); the loader/shared-object gate runs at build time, and
+# scripts/verify-gpu-image.sh asserts device init and that the OpenMVS binaries
+# actually start under --gpus.
 
-ARG CUDA_VERSION=12.8.1
+# CUDA 13.2.1 (was 12.8.1), adopted 2026-07-26 after an A/B on the same host.
+# NOT 13.3.0, although it exists: this host's driver (595.84) reports CUDA 13.2, so
+# 13.2.1 is natively covered and needs no minor-version forward compatibility — the
+# highest available tag is not automatically the right pin.
+# Verified before building: nvcc --list-gpu-arch in the 13.2.1 base still lists
+# compute_86, so Ampere survives (CUDA 13 cut below Turing, i.e. compute_70 and
+# older). COLMAP 4.1.1 and OpenMVS 2.4.0 compile against it with no source change.
+# What it buys: the image drops 16.6 -> 12.4 GB (-25 %), from the leaner runtime
+# base, with verify-gpu-image.sh identically 13/13 green. What it does NOT buy is
+# speed — a same-host A/B was indistinguishable per unit of work (densify 24.9 vs
+# 25.2 us/point, refine 118.3 vs 120.8 us/face). Raw stage times ran ~4 % longer
+# only because that run produced 4.7 % more dense points; no quality claim is made
+# from that, one A/B pair does not carry it.
+ARG CUDA_VERSION=13.2.1
 # Ubuntu 24.04 (noble), exactly as the CPU image — the current LTS. Noble dropped
 # PDAL from its repos, so PDAL is built from pinned source below; the only header
 # vendored is CGAL >=6.0 (OpenMVS 2.4.0 requires it; released after noble froze).

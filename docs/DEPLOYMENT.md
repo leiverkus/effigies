@@ -160,7 +160,7 @@ CPU- and RAM-bound.** Stage shares of the reference run (110 nadir drone images,
 | ReconstructMesh | 6 % | CPU + **the RAM peak** |
 | RefineMesh | **46 %** | CPU |
 | TextureMesh | 29 % | CPU (atlas packing is largely serial) |
-| Post-processing | 7 % | CPU |
+| Post-processing | 7 % | CPU (see the caveat below — this share does **not** scale) |
 
 About **90 % of wall clock is CPU work**. `RefineMesh` links the CUDA *driver* API
 but was never observed holding device memory, so despite the name it behaves as CPU
@@ -196,10 +196,18 @@ spent most of their time in `vocab_tree` matching and the incremental mapper.
 Priority order, from the measurements: **CPU > RAM > disk > GPU.**
 
 **CPU wants both axes.** `RefineMesh` and matching parallelise well, so cores pay
-off directly; but `TextureMesh`'s atlas packing looked largely serial — 33 min for
-425 k patches in one experiment — so single-thread speed matters too. Disabling
-E-cores on a hybrid Intel part is reasonable: the scheduler anomalies cost more than
-the extra threads gain.
+off directly; but two stages are largely serial, so single-thread speed matters too:
+`TextureMesh`'s atlas packing (33 min for 425 k patches in one experiment) and
+`helpers/texture_blend.py`. Disabling E-cores on a hybrid Intel part is reasonable:
+the scheduler anomalies cost more than the extra threads gain.
+
+> **The 7 % post-processing share is the reference run's, and it does not scale.**
+> On a 400-image / 16 MP set (10 atlas pages) `texture_blend.py` alone ran **~30 min
+> single-threaded at 100 % of one core** — against ~4 min for the whole
+> post-processing block on the 110-image reference (4 pages). The multi-view blend
+> re-bakes every texel as a depth-tested, angle/distance-weighted mix of its best
+> four views, so its cost scales with **atlas area × view count**, and it is serial.
+> On large sets, budget for it separately rather than trusting the 7 %.
 
 **What the RAM ceiling means in practice.** At ~3 GB per million dense points,
 125 GB tops out near **40 M dense points ≈ 250 images at 12 MP, full resolution**.

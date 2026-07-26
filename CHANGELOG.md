@@ -30,6 +30,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   COLMAP's MVS module only cost build time and image size.
 
 ### Added
+- **The mesh `--semantic` path validated on real data** (Tiberias 2023, 400 oblique
+  Anafi images at 15 m AGL, ~5 mm GSD, deliberately *not* a nadir block so the
+  occlusion logic is actually exercised). Grid identity holds across **separate
+  invocations**: RGB ortho, DSM and class raster all 3116×2659 at 3.173 cm with a
+  geotransform identical to nine decimals — the semantic re-run used
+  `--skip-orthophoto --skip-dsm`, which also exercises the early-return fix on real
+  data. The class field is differentiated, not degenerate: ground 17.7 %,
+  vegetation 48.6 %, structure 33.6 % of the classified 53 %.
+  Two things worth keeping. **Before the coordinate-frame fix the same run produced
+  one class over 100 % of the classified area** — a uniform raster that looks
+  entirely plausible on an excavation; the before/after pair is preserved as evidence
+  and the nodata mask is pixel-identical between them, so only the class assignment
+  changed. And **area share inverts against point share**: 10.4 M `building` points
+  yield 33.6 % of the area while 2.15 M vegetation points yield 48.6 %, because
+  masonry is surface-rich per unit plan area and vegetation is sparse but broad — a
+  field over area is not a point histogram.
+  OpenPointClass on an excavation is more useful than expected: the class *names* stay
+  domain-foreign (`building` for a wall) but the *separation* masonry / soil / plants
+  is real and usable as a prior for Structura. It does not remove the need for the
+  fine-class model.
 - **`--semantic` now derives the class raster from the MESH via the orthophoto's
   z-buffer** — the carried-forward ROADMAP v0.7.0 item. Cloud classes are transferred
   to mesh vertices by **3D** nearest neighbour (not plan-view: a 2D match assigns the
@@ -150,6 +170,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `libcudart` at all.
 
 ### Changed
+- **CUDA base 12.8.1 → 13.2.1**, adopted after a same-host A/B. Two gates were checked
+  before spending an hour on the build: the driver (595.84) reports CUDA **13.2**, so
+  **13.2.1 — not the newer 13.3.0** — is the right pin, natively covered with no
+  reliance on minor-version forward compatibility; and `nvcc --list-gpu-arch` in the
+  13.2.1 base still lists `compute_86`, so Ampere survives (CUDA 13 cut below Turing).
+  COLMAP 4.1.1 and OpenMVS 2.4.0 compile against it with **no source change**.
+  **What it buys: the image drops 16.6 → 12.4 GB (−25 %)**, from the leaner runtime
+  base, `verify-gpu-image.sh` identically 13/13 green, smoke run PASS.
+  **What it does not buy is speed.** Per unit of work the two are indistinguishable —
+  densify 24.9 vs 25.2 µs/point, refine 118.3 vs 120.8 µs/face. Raw stage times ran
+  ~4 % longer on 13.2.1 only because that run produced 4.7 % more dense points; no
+  quality claim is made from that, a single A/B pair does not carry it. Both runs were
+  taken back-to-back on a quiet machine with identical engine code, because comparing
+  against the older smoke figures would have varied CUDA base *and* code version.
+- **Sizing corrected: the 7 % post-processing share does not scale.** On a
+  400-image / 16 MP set (10 atlas pages) `helpers/texture_blend.py` alone ran ~30 min
+  **single-threaded**, against ~4 min for the entire post-processing block on the
+  110-image reference (4 pages). The multi-view blend re-bakes every texel from its
+  best four views, so it scales with **atlas area × view count** and is serial. The
+  earlier sizing note implied it was a fixed 7 %; on large sets it must be budgeted
+  separately. Reinforces the "CPU wants both axes" point — this is a second
+  purely-serial stage alongside atlas packing.
 - **`docs/DEPLOYMENT.md`'s hardware sizing rewritten from measurements.** The old
   table was reasoned, over-specified VRAM (12–16 GB "recommended", 24 GB "heavy")
   and did not mention CPU or disk at all. Five instrumented runs say the workload is

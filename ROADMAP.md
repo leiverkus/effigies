@@ -431,6 +431,19 @@ propagate — and **never bakes an archaeological-material model into the shippe
       version `v1-mesh`. The cloud-majority v0 stays as the fallback for when there is a
       classified cloud but no rasterised grid. Self-skips for local-frame results,
       non-fatal throughout.
+
+      **Validated on real data 2026-07-26** — Tiberias 2023, 400 oblique Anafi images
+      at 15 m AGL (~5 mm GSD), deliberately not a nadir block so the occlusion logic is
+      exercised. Grid identity holds across *separate invocations*: RGB ortho, DSM and
+      class raster all 3116×2659 at 3.173 cm, geotransform identical to nine decimals.
+      Field is differentiated: ground 17.7 %, vegetation 48.6 %, structure 33.6 % of the
+      classified 53 %. Two findings kept in CHANGELOG: before the coordinate-frame fix
+      the same run yielded ONE class over 100 % of the classified area (a plausible-
+      looking uniform raster), and area share inverts against point share (10.4 M
+      `building` points → 33.6 % of area; 2.15 M vegetation points → 48.6 %) because
+      masonry is surface-rich per unit plan area. OpenPointClass on an excavation
+      separates masonry / soil / plants usefully even though the class *names* stay
+      domain-foreign — it does not remove the need for the fine-class model.
 - [x] **v0 is free from the existing point classification — shipped.**
       `helpers/semantic_ortho.py` (opt-in `--semantic`) rasterises the OpenPointClass
       cloud classes onto the orthophoto grid (pixel-aligned with `odm_dem/dsm.tif`),
@@ -790,12 +803,15 @@ asset-hosting tags `COLMAP_MODEL_TAG=3.13.0` and the `3.11.1` vocab-tree URL are
 
 What is behind, roughly in order of weight:
 
-- [ ] **CUDA base 12.8.1 → 13.x** (13.3.0 available for `cudnn-runtime-ubuntu24.04`).
-      A **major** jump, and everything compiles against it — COLMAP, OpenMVS, and
-      ONNX Runtime. Must be run and verified on its own, never bundled: a failure
-      would otherwise be unattributable. Also re-check that ONNX Runtime's CUDA
-      provider still resolves (that is what forced the `-cudnn-` base in the first
-      place) and that `CUDA_ARCH=86` still applies.
+- [x] **CUDA base 12.8.1 → 13.2.1 — done 2026-07-26.** Run on its own, as planned.
+      Pinned to **13.2.1, not 13.3.0**: the host driver (595.84) reports CUDA 13.2, so
+      13.2.1 is natively covered and needs no forward compatibility — the highest tag
+      is not automatically the right pin. `compute_86` verified present in the base's
+      `nvcc --list-gpu-arch` before building (CUDA 13 cut below Turing). COLMAP 4.1.1
+      and OpenMVS 2.4.0 compiled with no source change; ONNX Runtime's CUDA provider
+      still resolves on the `-cudnn-` base. **Image 16.6 → 12.4 GB (−25 %)**,
+      `verify-gpu-image.sh` 13/13, smoke run PASS. **No speed gain** — a same-host A/B
+      was indistinguishable per unit of work; details in CHANGELOG.
 - [ ] **`entwine` `0cf9574` has DIVERGED**, not merely aged: 10 commits on upstream
       HEAD that the pin lacks, and **21 commits on the pin's line that HEAD lacks**.
       The pin sits on a different branch. This is the only divergence in the stack,
