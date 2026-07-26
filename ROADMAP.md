@@ -792,44 +792,60 @@ What remains is exposing it through the engine.
 
 ---
 
-## Pinned-stack currency *(audited 2026-07-26)*
+## Pinned-stack currency *(audited 2026-07-26, re-audited the same day)*
 
-Every `ARG` in both Dockerfiles checked against upstream. Current and deliberately
-so: **COLMAP 4.1.1**, **OpenMVS 2.4.0** (upstream's newest tag), **VCGlib**
-`658ba36` (identical to upstream HEAD), **NodeODM** `8ad3e30` (identical to HEAD —
-newer than the last release v2.2.3 of 2024, so the commit pin is correct). The
-asset-hosting tags `COLMAP_MODEL_TAG=3.13.0` and the `3.11.1` vocab-tree URL are
-*where the files live*, not versions to chase.
+Every `ARG` in both Dockerfiles checked against upstream. **The first pass got two
+items wrong**, both from querying GitHub before reading the URL the Dockerfile
+actually uses — recorded here because the errors are more instructive than the
+findings:
 
-What is behind, roughly in order of weight:
+- **`entwine` is not "diverged" and needs no decision.** The Dockerfile clones
+  **`OpenDroneMap/entwine`** and the comment says so (*"Same fork + commit ODM
+  pins"*). The first pass compared against `connormanning/entwine` — upstream, which
+  a fork diverges from by definition. Against the fork the pin sits **21 commits
+  ahead of its master** with nothing newer: current, deliberate, documented.
+- **`Obj2Tiles` was never a white spot.** The first pass queried
+  `DroneDB/Obj2Tiles`; the Dockerfile uses **`OpenDroneMap/Obj2Tiles`**, which has
+  tags up to v1.6.2. Real state was two minors behind, now bumped.
 
-- [x] **CUDA base 12.8.1 → 13.2.1 — done 2026-07-26.** Run on its own, as planned.
-      Pinned to **13.2.1, not 13.3.0**: the host driver (595.84) reports CUDA 13.2, so
-      13.2.1 is natively covered and needs no forward compatibility — the highest tag
-      is not automatically the right pin. `compute_86` verified present in the base's
-      `nvcc --list-gpu-arch` before building (CUDA 13 cut below Turing). COLMAP 4.1.1
-      and OpenMVS 2.4.0 compiled with no source change; ONNX Runtime's CUDA provider
-      still resolves on the `-cudnn-` base. **Image 16.6 → 12.4 GB (−25 %)**,
-      `verify-gpu-image.sh` 13/13, smoke run PASS. **No speed gain** — a same-host A/B
-      was indistinguishable per unit of work; details in CHANGELOG.
-- [ ] **`entwine` `0cf9574` has DIVERGED**, not merely aged: 10 commits on upstream
-      HEAD that the pin lacks, and **21 commits on the pin's line that HEAD lacks**.
-      The pin sits on a different branch. This is the only divergence in the stack,
-      and the open question is which line is even correct — not a version bump.
-      Decide before touching it; entwine builds the EPT tileset for the Potree
-      viewer, so a wrong branch is a silent output regression.
-- [ ] **CGAL 6.0.1 → 6.2** (two minors). Header-only, vendored because noble ships
-      5.6 and OpenMVS 2.4.0 needs ≥ 6.0. Shared with OpenMVS' build, so bump and
-      rebuild together with an OpenMVS smoke run.
-- [ ] **py4dgeo 1.1.0 → 1.2.0** (one minor). Only the `--align-to` change-detection
-      path; `scripts/smoke_change_detect.py` covers it.
-- [ ] **PDAL 2.10.1 → 2.10.2** (one patch). Lowest risk in the list.
-- [ ] **OpenPointClass `dd6a560` is 2 commits behind HEAD.** Affects `--classify`
-      only.
-- [ ] **Obj2Tiles v1.4.0 — UNVERIFIED.** Neither `git ls-remote --tags` nor the
-      releases API returned anything, although the build pulls an asset from
-      `releases/download/v1.4.0/`. Possibly rate-limiting, possibly a moved repo.
-      Recorded as a white spot rather than assumed current.
+**Current after this pass:** COLMAP 4.1.1, CUDA base 13.2.1, OpenMVS 2.4.0
+(upstream's newest tag), VCGlib and NodeODM identical to upstream HEAD, entwine at
+the ODM fork pin — and, newly bumped and version-verified *inside the built image*:
+
+| | from | to |
+|---|---|---|
+| PDAL | 2.10.1 | **2.10.2** |
+| py4dgeo | 1.1.0 | **1.2.0** |
+| Obj2Tiles | v1.4.0 | **v1.6.2** (per-arch SHA256 re-pinned) |
+
+Bumped together on purpose: each lives in its **own build stage**, so a failure
+localises itself. Verified `13/13` plus a smoke run.
+
+**Deliberately not bumped** — recorded at the pin in both Dockerfiles as
+`DELIBERATELY NOT bumped`, so the next audit does not chase them:
+
+- [ ] **CGAL 6.0.1 → 6.2.** The pin exists only because noble ships 5.6 and OpenMVS
+      2.4.0 needs ≥ 6.0 for `CGAL/AABB_traits_3.h`; 6.0.1 satisfies that. OpenMVS
+      2.4.0 is validated against 6.0.x and CGAL feeds its Delaunay/AABB code, so two
+      minors risk a compile break or a subtle behaviour change for no named benefit.
+      Bump when something needs it.
+- [ ] **OpenPointClass, 2 commits.** Opt-in feature; its weights are pinned
+      separately (model v1.1.3, upstream v1.1.7). Near-zero benefit against a real
+      binary/model format-mismatch risk — and the mesh `--semantic` path was
+      validated against exactly this model, so changing it would invalidate that
+      evidence. Bump source **and** model together, with a re-run.
+
+### Follow-up: Dockerfile layer order costs more than the bumps do
+
+`PDAL` is built at engine stage 3, **before** COLMAP and OpenMVS, which do not
+depend on it. So a PDAL *patch* bump invalidates the cache for the entire engine and
+costs a ~50-minute rebuild — the cheapest change in the list is the most expensive to
+apply. The author already solved exactly this for entwine (*"Placed after the engine
+layers to keep their build cache"*); PDAL was missed.
+
+- [ ] **Move the PDAL stage after the COLMAP/OpenMVS layers.** Pure cache
+      architecture, no behaviour change, but it needs its own build to verify — do
+      not fold it into an unrelated change.
 
 ## Out of scope
 

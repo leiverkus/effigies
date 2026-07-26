@@ -70,9 +70,14 @@ ARG OPENMVS_VERSION=v2.4.0
 ARG VCG_REF=658ba36d0a5666650da6e066b4794efc5a463407
 # CGAL 6 is the one header-only dep newer than noble (5.6): OpenMVS 2.4.0
 # includes CGAL/AABB_traits_3.h, added in CGAL 6.0.
+# DELIBERATELY NOT bumped to 6.2 (audited 2026-07-26). The pin exists only because
+# noble ships 5.6 and OpenMVS 2.4.0 needs >=6.0 for CGAL/AABB_traits_3.h — 6.0.1
+# satisfies that. OpenMVS 2.4.0 is validated against 6.0.x, and CGAL feeds its
+# Delaunay/AABB code, so two minors risk a compile break or a subtle behaviour change
+# for no named benefit. Bump it when something needs it, not for currency.
 ARG CGAL_VERSION=6.0.1
 # PDAL from pinned source — noble dropped it from the repos.
-ARG PDAL_VERSION=2.10.1
+ARG PDAL_VERSION=2.10.2
 # GPU architectures to compile for. 'all-major' covers common cards; narrow it
 # (e.g. "75;86;89") to speed up the build for known hardware.
 ARG CUDA_ARCH=all-major
@@ -209,9 +214,9 @@ ENV EFFIGIES_MODEL_DIR=/usr/local/share/effigies/models
 # Self-contained single-file binary (bundles its own .NET runtime — no runtime to
 # install); the SAME tool + version ODM uses for OGC 3D Tiles. Asset picked by
 # build arch (this CUDA image is x86_64; the CPU image is arm64). Pin per-arch sha.
-ARG OBJ2TILES_VERSION=v1.4.0
-ARG OBJ2TILES_SHA256_ARM64=1310d44c10eb3b149d2b5b07b8c2379a15262f64a34ef9d479c13de911e7508b
-ARG OBJ2TILES_SHA256_X64=ff09c26ba32fe6122dfd6e60adf258ca942fb1574a75a34927344d8ceedccc4a
+ARG OBJ2TILES_VERSION=v1.6.2
+ARG OBJ2TILES_SHA256_ARM64=b5252158f81a3d5659a978d1468f7c8915f3794e11359dfeb351e5eeaac48ed5
+ARG OBJ2TILES_SHA256_X64=34a576e0b8ebbd73da5e2271d238724a9b39be3ee1edc167214b5b28bed2baa0
 RUN set -eux; \
     case "$(uname -m)" in \
       aarch64) A=LinuxArm64; S="${OBJ2TILES_SHA256_ARM64}" ;; \
@@ -231,6 +236,11 @@ RUN set -eux; \
 # ODM's classifier; no prebuilt binary, so build pcclassify from pinned source
 # (links our installed PDAL; LightGBM is fetched+built by its cmake). AGPL, invoked
 # as a separate process (mere aggregation, as with OpenMVS). Pinned model baked in.
+# DELIBERATELY NOT bumped (audited 2026-07-26): 2 commits behind upstream HEAD, for
+# an opt-in feature whose weights are pinned separately (model v1.1.3; upstream is at
+# v1.1.7). Near-zero benefit against a real binary/model format-mismatch risk — and
+# the mesh --semantic path was validated against exactly this model, so changing it
+# would invalidate that evidence. Bump source and model together, with a re-run.
 ARG OPC_REF=dd6a560a1d43cb709f7b220b19a436e25a889e3e
 ARG OPC_MODEL_URL=https://github.com/uav4geo/OpenPointClass/releases/download/v1.1.3/vehicles-vegetation-buildings.zip
 ARG OPC_MODEL_SHA256=258f67f02a9d2c329c61726a227281f3ac0af9dd4c274c5c893975beb9dc191a
@@ -331,7 +341,7 @@ RUN git clone https://github.com/OpenDroneMap/entwine.git /opt/entwine && \
 # build isolation. Pinned for reproducibility (same policy as every other
 # component). NOTE: the multithreaded path segfaults on arm64, so change_detect.py
 # pins py4dgeo.set_num_threads(1) before run() — do not remove that.
-ARG PY4DGEO_VERSION=1.1.0
+ARG PY4DGEO_VERSION=1.2.0
 RUN pip install --break-system-packages --no-cache-dir py4dgeo==${PY4DGEO_VERSION} && \
     python3 -c "import py4dgeo; print('[effigies] py4dgeo', py4dgeo.__version__)"
 

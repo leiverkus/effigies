@@ -170,6 +170,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `libcudart` at all.
 
 ### Changed
+- **Pinned-stack maintenance: PDAL 2.10.1 → 2.10.2, py4dgeo 1.1.0 → 1.2.0,
+  Obj2Tiles v1.4.0 → v1.6.2** (per-arch SHA256 re-pinned from the release digests).
+  Bumped together on purpose — each lives in its own build stage, so a failure
+  localises itself. Versions verified **inside the built image**, not just in the
+  Dockerfile: a green build could also mean a cache hit on old layers. `13/13` on
+  `verify-gpu-image.sh` plus a smoke run. Both Dockerfiles kept in lockstep.
+  **Two pins deliberately left alone**, with the reasoning recorded at the pin in
+  both files so the next audit does not chase them: **CGAL 6.0.1** (the pin exists
+  only because noble ships 5.6 and OpenMVS 2.4.0 needs ≥ 6.0 for
+  `CGAL/AABB_traits_3.h`; OpenMVS is validated against 6.0.x and CGAL feeds its
+  Delaunay/AABB code, so two minors risk a break for no named benefit) and
+  **OpenPointClass** (2 commits, opt-in feature, weights pinned separately at model
+  v1.1.3 — and the mesh `--semantic` path was validated against exactly that model,
+  so changing it would invalidate the evidence; source and model belong bumped
+  together with a re-run).
+
+### Fixed
+- **Two errors in the 2026-07-26 stack audit, corrected the same day.** Both came
+  from querying GitHub before reading the URL the Dockerfile actually uses, and both
+  had been recorded in `ROADMAP.md` as findings:
+  - **`entwine` was reported as "diverged, the only real branch fork, needs a
+    decision".** It is neither diverged nor undecided: the Dockerfile clones
+    `OpenDroneMap/entwine` and its comment says so (*"Same fork + commit ODM pins"*).
+    The audit compared against `connormanning/entwine` — upstream, which a fork
+    diverges from by definition. Against the fork the pin sits 21 commits *ahead* of
+    master with nothing newer.
+  - **`Obj2Tiles` was reported as an unverified white spot** because neither
+    `ls-remote --tags` nor the releases API answered. The audit queried
+    `DroneDB/Obj2Tiles`; the Dockerfile uses `OpenDroneMap/Obj2Tiles`, which has tags
+    through v1.6.2.
+  The corrected audit and the reasoning are kept in `ROADMAP.md` rather than quietly
+  overwritten — the failure mode (verify the reference before verifying the version)
+  generalises.
+
+### Added
+- **Follow-up recorded: the Dockerfile's layer order costs more than the bumps.**
+  `PDAL` is built at engine stage 3, *before* COLMAP and OpenMVS, which do not depend
+  on it — so a PDAL **patch** bump invalidates the whole engine cache and costs a
+  ~50-minute rebuild. The cheapest change in the audit is the most expensive to apply.
+  The same problem was already solved for entwine (*"Placed after the engine layers to
+  keep their build cache"*); PDAL was missed. Tracked in `ROADMAP.md` as its own item,
+  because moving a stage is cache architecture and needs its own verifying build.
+
 - **CUDA base 12.8.1 → 13.2.1**, adopted after a same-host A/B. Two gates were checked
   before spending an hour on the build: the driver (595.84) reports CUDA **13.2**, so
   **13.2.1 — not the newer 13.3.0** — is the right pin, natively covered with no
