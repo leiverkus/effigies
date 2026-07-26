@@ -367,7 +367,11 @@ def main():
                          "Removes broad tonal gradients but can erase real albedo signal")
     args = ap.parse_args()
 
-    if args.skip_orthophoto and args.skip_dsm:
+    # Skipping both rasters used to mean "nothing to do". It no longer does: the
+    # semantic layer rides on this pass's z-buffer and builds its own grid from the
+    # mesh, so it needs the rasterisation even when neither the ortho nor the DSM is
+    # written. Returning here would make --semantic a silent no-op.
+    if args.skip_orthophoto and args.skip_dsm and not args.semantic_cloud:
         return
 
     tr_path = os.path.join(args.work, "georef_transform.json")
