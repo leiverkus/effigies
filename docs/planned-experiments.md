@@ -334,9 +334,70 @@ detail is wanted, res-0 is what buys it, and the 28 m of RefineMesh against
 full-resolution imagery is the price of the photometric detail this node exists
 for — not waste.
 
-**Open question, not answered here:** an intermediate `mfa-8` at res-1 might sit
-between B and C, but C's patch-count curve suggests the texture cost rises faster
-than the detail does. Worth one run before any profile change is baked in.
+### RESULT — `expD-densify1-mfa8` (2026-07-26): the knee, and a wrong prediction
+
+After run C we expected no useful intermediate, on the grounds that C's patch-count
+curve made texture cost rise faster than detail. **That expectation was wrong.**
+`mfa-8` at res-1 is a genuine sweet spot. Four points, one variable pair:
+
+| | baseline<br>res-0 / mfa-16 | B<br>res-1 / mfa-16 | **D<br>res-1 / mfa-8** | C<br>res-1 / mfa-4 |
+|---|---|---|---|---|
+| **Total** | 1 h 00 m 41 s | 19 m 38 s | **27 m 35 s** | 54 m 52 s |
+| vs baseline | — | −67.6 % | **−54.6 %** | −9.6 % |
+| DensifyPointCloud | 6 m 20 s | 3 m 52 s | 3 m 49 s | 3 m 51 s |
+| ReconstructMesh | 3 m 55 s | 2 m 43 s | 2 m 39 s | 2 m 38 s |
+| RefineMesh | 28 m 01 s | 6 m 38 s | 6 m 58 s | 7 m 40 s |
+| TextureMesh | 17 m 44 s | 3 m 36 s | **11 m 10 s** | 37 m 22 s |
+| └ atlas generation | 9 m 51 s | 1 m 37 s | 7 m 51 s | 33 m 17 s |
+| Refined faces | 10 608 471 | 2 283 164 | **3 876 353** | 6 574 854 |
+| Texture patches (atlas) | 232 716 | 89 842 | 212 576 | 425 527 |
+| Patches per face | 0.0219 | 0.0393 | 0.0548 | 0.0647 |
+| Textured OBJ | 1.39 GB | 288 MB | 497 MB | 855 MB |
+| Open-edge fraction | 0.0763 % | 0.1199 % | 0.0866 % | 0.0590 % |
+| Interior ortho nodata | 0.746 % | 0.732 % | **0.613 %** | 0.645 % |
+
+**The knee is at `mfa-8`.** The marginal cost of face density roughly doubles across
+it:
+
+| step | faces | wall clock |
+|---|---|---|
+| B → D (`mfa` 16→8) | **+69.8 %** | +40.5 % |
+| D → C (`mfa` 8→4) | +69.6 % | **+98.9 %** |
+
+Identical face-density gain, at 2.4× the time cost on the second step. `mfa-8` buys
+70 % more geometry than the `drone-3d` default for 40 % more runtime; going one
+step further buys the same again for a doubling. That is the quality/cost knee the
+v0.8.0 profile-calibration item asks for, located.
+
+**The fragmentation mechanism was right, the conclusion drawn from it was not.**
+Patches per face does climb monotonically as subdivision gets finer
+(0.0219 → 0.0393 → 0.0548 → 0.0647), and atlas cost is superlinear in patches —
+fitting the three res-1 points gives an exponent of ≈ 1.8 (B→D) to ≈ 2.1 (D→C).
+But at `mfa-8` the *absolute* patch count (212 576) is still below the baseline's
+(232 716), so the atlas stage costs 7 m 51 s — **less than the baseline's 9 m 51 s**.
+The explosion at `mfa-4` is real but starts beyond this point; D sits on the cheap
+side of it. Reasoning from the curve's shape alone, without the middle
+measurement, produced the wrong call.
+
+**Coverage is best here, not worst.** D has the **lowest interior ortho nodata of
+all four runs** (0.613 %) and an open-edge fraction between the baseline and the
+default. Nothing about the intermediate setting degrades watertightness or coverage.
+
+### Recommendation for the `drone-3d` profile
+
+Change `refine-max-face-area` from **16 to 8**, keeping
+`densify-resolution-level 1`. Measured against the current default: +70 % refined
+faces, +40 % runtime (19 m 38 s → 27 m 35 s), lower interior ortho nodata, and an
+atlas stage still cheaper than the full-resolution baseline's. `res-0` remains the
+max-detail option — its 28 m of RefineMesh against full-resolution imagery is the
+price of the photometric detail this node exists for, and 2.7× the faces of D.
+Do **not** go to `mfa-4`: same detail step, double the cost, texture-atlas blow-up.
+
+> One caveat on all four runs: they share a single dataset (110 nadir images, one
+> site) and each setting was run once. The face-density and runtime effects are far
+> above the ~1.5 % noise floor, but the *location* of the knee may shift with scene
+> content and image count. Before baking this into the shipped profile, it is worth
+> one confirmation on a second drone block.
 
 ---
 

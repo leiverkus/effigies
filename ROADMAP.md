@@ -496,13 +496,24 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       the baseline's faces but **1.83× its texture patches** (fine subdivision on
       half-resolution imagery fragments view selection), and atlas packing is
       superlinear. `res-1` + `mfa-4` is the worst of the three combinations.
-- [ ] **Profile decision, now decidable.** The `drone-3d` default (`res-1`,
-      `mfa-16`) is a defensible production setting — but it must be documented as
-      *fast and coarser*, not "same quality, cheaper". Compensating via
-      `refine-max-face-area` is counterproductive and should not be adopted. One
-      optional run remains before baking anything in: `mfa-8` at res-1, to see
-      whether an intermediate exists — C's patch-count curve suggests texture cost
-      rises faster than detail does.
+- [x] **`mfa-8` run (`expD`, 2026-07-26) — the knee is located.** It contradicted the
+      expectation stated after run C (that the patch curve left no useful
+      intermediate). At res-1, `refine-max-face-area 8` gives **27 m 35 s (−54.6 %)**
+      for **3 876 353 faces** — +69.8 % geometry over the `mfa-16` default for +40.5 %
+      runtime, whereas the next identical step (`mfa 8→4`) buys +69.6 % for +98.9 %.
+      Marginal cost doubles across `mfa-8`. Its atlas stage (7 m 51 s, 212 576
+      patches) is still **cheaper than the full-res baseline's** (9 m 51 s, 232 716)
+      — the blow-up starts past this point, not at it. Interior ortho nodata is the
+      **lowest of all four runs**. Reasoning from the curve's shape without the
+      middle measurement produced the wrong call.
+- [ ] **Adopt `refine-max-face-area 8` in the `drone-3d` profile** (from 16), keeping
+      `densify-resolution-level 1`. Recommendation and full four-point table in
+      [docs/planned-experiments.md](docs/planned-experiments.md). `res-0` stays the
+      max-detail option (2.7× D's faces); `mfa-4` must not be adopted. **Before
+      shipping it:** all four runs share one dataset (110 nadir images, one site)
+      and one repetition each — the effects are far above the ~1.5 % noise floor,
+      but the knee's *position* may move with scene content and image count, so one
+      confirmation on a second drone block is due first.
 - [ ] **Profile calibration.** Sweep the key levers (esp. `RefineMesh`
       iterations / `max-face-area` / `gradient-step`, `densify-resolution-level`,
       `number-views-fuse`) per capture type against the benchmark metrics, find
