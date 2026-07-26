@@ -149,12 +149,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`libcudart`), **`RefineMesh` uses the driver API** (`libcuda`) and links no
   `libcudart` at all.
 
-### Known issues
-- **`RefineMesh`'s GPU role may be overstated.** It links the CUDA driver API but was
-  **not** observed holding device memory during the smoke run's 5 s sampling, unlike
-  `DensifyPointCloud`, `ReconstructMesh` and `TextureMesh`. `docs/DEPLOYMENT.md`
-  sizes GPU VRAM for "DensifyPointCloud **and** RefineMesh"; at `scales=1` that half
-  of the claim is unconfirmed. Worth measuring before the sizing table is cited.
+### Changed
+- **`docs/DEPLOYMENT.md`'s hardware sizing rewritten from measurements.** The old
+  table was reasoned, over-specified VRAM (12–16 GB "recommended", 24 GB "heavy")
+  and did not mention CPU or disk at all. Five instrumented runs say the workload is
+  **CPU- and RAM-bound**: ~90 % of wall clock is CPU (RefineMesh 46 %, TextureMesh
+  29 %, densify only 10 %), the VRAM peak was **1.2 GB of 16 GB** at full resolution,
+  and the RAM peak was **53 GB at 17.9 M dense points** — about **3 GB per million
+  dense points**, the one number worth sizing against. New priority order:
+  **CPU > RAM > disk > GPU**. Adds the disk reality (outputs 1.7–6.6 GB per run,
+  but 37 GB of Docker images plus 70 GB of BuildKit cache), the RAM ceiling this
+  implies (~250 images at 12 MP full-res on 128 GB, beyond which `--tiles` is the
+  alternative to buying RAM), and a throughput note: since one task does not
+  saturate a mid-range GPU, two mid nodes may beat one large one at equal budget.
+  Caveats are listed rather than buried — one host, one dataset family, three
+  unmeasured future GPU consumers (ONNX inference, the fine-class model, M3C2 on
+  large multi-epoch sets), nothing tested beyond 400 images or 16 MP.
+  The "Why two images?" note lost its claim that RefineMesh is GPU work — it links
+  the CUDA *driver* API but was never measured holding device memory.
 - **ONNX on arm64 is unverified.** `Dockerfile.cpu` builds natively on Apple Silicon
   and upstream's `FETCH_ONNX` pulls a prebuilt ONNX Runtime; whether an
   aarch64-linux artefact resolves there has not been tested. This is the same class
