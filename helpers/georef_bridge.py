@@ -22,6 +22,18 @@ as a Umeyama fit on >=3 non-collinear correspondences. For georeferenced output 
 also emit a UTM/projected offset so vertices stay within float precision; the OBJ
 is rewritten in place with offset-subtracted coordinates.
 
+  REPLAY WARNING. That in-place rewrite is one-way and leaves no backup, so any
+  stage that runs BEFORE georeferencing cannot simply be re-run on a finished
+  workdir: the OBJ is then in the projected frame while the COLMAP poses under
+  sparse/ and dense/sparse are still in the local SfM frame. Nothing errors — the
+  mismatch surfaces as work that silently does nothing. It cost three attempts on
+  2026-07-27 before being named: texture_blend reporting "2.9 % of faces have valid
+  views" and later "0.0 %" (99.5 % is normal), and the semantic path resolving every
+  mesh vertex to one arbitrary point because its KD-tree query was ~1e6 m off.
+  To replay such a stage, invert this transform first with the s/R/t/offset recorded
+  in georef_transform.json:  V_local = R^T @ (V_geo + offset - t) / s
+  and verify the round-trip before trusting the result.
+
 Correspondences:
   * GCP path  : gcp_list.txt gives world (projected) + pixel + image. We back out
     the local 3D position of each GCP from COLMAP by triangulating the marked

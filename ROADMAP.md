@@ -552,8 +552,23 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       in 6 m 06). Structural advantage that survives the runtime loss: our DSM is the
       z-buffer of the ortho's own rasterisation, so the two share a grid byte for byte,
       while Metashape's DEM and ortho land ~5 px apart even when pinned to one GSD.
-      Still missing for the *quality* half — this measured runtime and products only:
-      cloud/mesh-to-reference distance, roughness, completeness. The workdir of the
+      **Quality half attempted 2026-07-27 — and it did not answer the question.**
+      Mesh-to-mesh after ICP: mean 9.96 cm, rms 11.46 cm, completeness 38.6 %. Both
+      numbers are unusable as a detail claim, for two reasons recorded in
+      planned-experiments.md: `compare`'s 1 M-point default leaves a 4.59 cm sample
+      spacing, so sub-centimetre detail — what RefineMesh actually produces — is below
+      the measurement floor; and the aggregate mixes the excavation surface with
+      heavy vegetation, where two reconstructions of moving foliage differ by
+      decimetres (max 1.27 m). **Do not quote the 9.96 cm as an accuracy figure.**
+      What the gate needs instead: 20–50 M sample points, and the distance split **by
+      terrain class** using the semantic raster (`ground`/`vegetation`/`structure`) so
+      stone surfaces are measured on their own. Roughness was obtained and is
+      suggestive but not conclusive: Effigies mesh 0.47 cm vs Metashape 0.57 cm, and —
+      more interesting — Effigies cloud 4.15 cm vs Metashape 8.47 cm, i.e. our dense
+      cloud is half as rough at 62 % of the point count.
+      Cloud-to-cloud was **not obtained**: `filters.icp` ran >40 min single-core
+      without converging (vs ~7 min for the mesh pair) and was cut off when host access
+      ended. Worth knowing before planning a campaign around that tool. The workdir of the
       Effigies run is kept (`--keep-workdir true`) so those can be computed without
       re-running the 2.5 h chain.
       Remaining engines and the original scope:

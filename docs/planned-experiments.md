@@ -578,6 +578,58 @@ resolution. That is honest on Metashape's part — it does not interpolate a DEM
 than the depth maps support — but it means DEM-at-ortho-resolution costs a 16x more
 expensive depth-map pass there, and is free here.
 
+### Quality comparison — run, and it did NOT answer the question
+
+Both results were brought into EPSG:6991 (Metashape's exports reprojected with proj;
+Metashape itself refuses WGS 84 → Israeli Grid, "Unsupported datum transformation"),
+the Effigies OBJ given its offset back so the two are co-located, then
+`benchmark.sh stats` on all four products and `benchmark.sh compare` mesh-to-mesh.
+
+**Surface roughness** (local plane residual over k=16 neighbours, 50 000 sample
+points):
+
+| | elements | mean | rms | p95 |
+|---|---|---|---|---|
+| Effigies mesh | 11 283 119 faces | **0.47 cm** | 0.69 cm | 1.49 cm |
+| Metashape mesh | 13 926 780 faces | 0.57 cm | 0.80 cm | 1.62 cm |
+| Effigies cloud | 51 282 498 pts | **4.15 cm** | 7.54 cm | 14.49 cm |
+| Metashape cloud | 83 063 231 pts | 8.47 cm | 12.32 cm | 23.55 cm |
+
+**Mesh-to-mesh distance** (ICP-aligned, converged, 1 M points sampled per side):
+mean **9.96 cm**, rms 11.46 cm, p95 20.96 cm, max 1.27 m; completeness 38.6 % within
+an auto threshold of 9.18 cm.
+
+#### Why that mean is not an answer
+
+The question was whether RefineMesh yields measurably more surface detail. A 10 cm
+mean on a reconstruction with 0.58 cm GSD measures something else.
+
+1. **The measurement cannot resolve the effect.** `compare` decimates both sides to
+   1 M points; the reference's median nearest-neighbour spacing is then **4.59 cm**.
+   Two independent samples of the *same* surface already sit ~2 cm apart at that
+   density. Sub-centimetre detail — exactly what RefineMesh produces — is below the
+   floor of this measurement. The `--sample 1e6` default is too coarse for this
+   question, not wrong in general.
+2. **Vegetation almost certainly dominates the mean.** Large parts of the block are
+   overgrown (visible in the orthophoto), and two reconstructions of moving foliage
+   differ by decimetres — consistent with the 1.27 m maximum, the long tail, and
+   cloud roughness of 4–8 cm, far above what a stone surface produces. The mean mixes
+   the excavation surface, where the answer matters, with the scrub, where it does
+   not, and the scrub wins.
+3. **Completeness inherits the same problem**: its 9.18 cm threshold is derived from
+   the sample spacing, not from a meaningful tolerance.
+
+What would answer it: sampling 20–50 M points instead of 1 M, and splitting the
+distance **by terrain class**. The tool for the second part already exists — the
+semantic raster separates `ground` / `vegetation` / `structure`, so the distance can
+be computed on stone surfaces alone. That is the shape the v0.8.0 quality gate should
+take; the aggregate number should not be quoted as an accuracy figure.
+
+Not obtained: the cloud-to-cloud comparison. Its ICP ran **>40 minutes single-core**
+without converging (against ~7 minutes for the mesh pair) and was cut off when access
+to the host ended. That `filters.icp` is serial and can behave this badly on a noisy
+pair is itself worth knowing before planning a benchmark campaign around it.
+
 ### Caveats — read before quoting any of this
 
 - **Different hardware.** Directions are meaningful, magnitudes indicative.
