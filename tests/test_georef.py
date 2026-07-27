@@ -476,6 +476,59 @@ def test_marker_check_absent_for_unlabeled_gcp():
     print("ok  marker_check + consistency absent for unlabeled gcp_list")
 
 
+
+
+def _gps(alt, alt_ref, lat=(32, 46, 37.2241), lon=(35, 32, 37.0786),
+         lat_ref="N", lon_ref="E"):
+    """The dict Pillow hands over for a photo's GPS block."""
+    return {"GPSLatitude": lat, "GPSLatitudeRef": lat_ref,
+            "GPSLongitude": lon, "GPSLongitudeRef": lon_ref,
+            "GPSAltitude": alt, "GPSAltitudeRef": alt_ref}
+
+
+def test_exif_altitude_ref_below_sea_level_is_negated():
+    """GPSAltitudeRef == 1 means BELOW sea level (EXIF 2.32, 4.6.6).
+
+    Regression for a shipped bug found 2026-07-27: the lat/lon refs were honoured
+    but the altitude ref was not, so every site below sea level was placed at
+    +|alt|. On Tiberias (Sea of Galilee) that put the model 365 m too high, and the
+    georef residuals could not see it — every camera carried the SAME sign error,
+    so the constellation stayed internally consistent and rms_vertical still
+    reported a healthy 1.21 m.
+    """
+    _, _, below = gb.gps_fix_from_exif_dict(_gps(186.3, 1))
+    _, _, above = gb.gps_fix_from_exif_dict(_gps(186.3, 0))
+    assert abs(below - (-186.3)) < 1e-6, f"ref=1 must negate, got {below}"
+    assert abs(above - (+186.3)) < 1e-6, f"ref=0 must not negate, got {above}"
+    # The gap between them IS the size of the bug.
+    assert abs((above - below) - 372.6) < 1e-6
+    print("ok  GPSAltitudeRef=1 negates the altitude (below sea level)")
+
+
+def test_exif_altitude_ref_accepts_bytes_and_missing():
+    """Pillow may hand the BYTE tag back as int, as bytes, or not at all."""
+    for ref in (b"\x01", bytearray(b"\x01")):
+        _, _, a = gb.gps_fix_from_exif_dict(_gps(50.0, ref))
+        assert abs(a - (-50.0)) < 1e-6, f"{ref!r} -> {a}"
+    for ref in (0, b"\x00", None, "unerwartet"):
+        _, _, a = gb.gps_fix_from_exif_dict(_gps(50.0, ref))
+        assert abs(a - 50.0) < 1e-6, f"{ref!r} -> {a}"
+    d = _gps(50.0, 0); del d["GPSAltitudeRef"]
+    _, _, a = gb.gps_fix_from_exif_dict(d)
+    assert abs(a - 50.0) < 1e-6, a
+    print("ok  GPSAltitudeRef tolerates int / bytes / missing / junk")
+
+
+def test_exif_lat_lon_still_correct_after_altitude_fix():
+    """The altitude change must not disturb the lat/lon path it sits next to."""
+    la, lo, al = gb.gps_fix_from_exif_dict(
+        _gps(100.0, 0, lat=(12, 30, 0), lon=(45, 15, 0), lat_ref="S", lon_ref="W"))
+    assert abs(la - (-12.5)) < 1e-9, la
+    assert abs(lo - (-45.25)) < 1e-9, lo
+    assert abs(al - 100.0) < 1e-9, al
+    print("ok  S/W refs and altitude unaffected by the fix")
+
+
 if __name__ == "__main__":
     test_umeyama_recovers_known_similarity()
     test_quat_identity()
@@ -494,4 +547,7 @@ if __name__ == "__main__":
     test_inter_marker_consistency_noops()
     test_marker_check_written_for_multi_marker_gcp()
     test_marker_check_absent_for_unlabeled_gcp()
+    test_exif_altitude_ref_below_sea_level_is_negated()
+    test_exif_altitude_ref_accepts_bytes_and_missing()
+    test_exif_lat_lon_still_correct_after_altitude_fix()
     print("\nall georef tests passed")

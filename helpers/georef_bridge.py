@@ -394,6 +394,64 @@ def gcp_correspondences(model_dir, gcp_entries, min_points=3):
 # ---------------------------------------------------------------------------
 # EXIF-GPS path
 # ---------------------------------------------------------------------------
+def exif_gps_fix(img_path):
+    """-> (lat, lon, alt) from a photo's EXIF GPS block, or None.
+
+    Module level, not nested, so it can be unit-tested on its own — the
+    GPSAltitudeRef handling below is exactly the kind of thing that needs a
+    regression test (see tests/test_georef.py)."""
+    img = Image.open(img_path)
+    exif = img._getexif() or {}
+    gps = {}
+    for k, v in exif.items():
+        if TAGS.get(k) == "GPSInfo":
+            for gk, gv in v.items():
+                gps[GPSTAGS.get(gk, gk)] = gv
+    return gps_fix_from_exif_dict(gps)
+
+
+def gps_fix_from_exif_dict(gps):
+    """-> (lat, lon, alt) from a decoded EXIF GPS dict, or None.
+
+    Split out from the file-opening half so the *logic* is testable without a JPEG
+    and without piexif — the dict is exactly what Pillow hands over. That matters:
+    the first version of the regression test below needed piexif to synthesise a
+    file, piexif is not in the image, the test silently skipped, and it therefore
+    "passed" against the very bug it was written for."""
+    if not gps or "GPSLatitude" not in gps or "GPSLongitude" not in gps:
+        return None
+    def dms(x):
+        d, m, s = x
+        return float(d) + float(m)/60 + float(s)/3600
+    lat = dms(gps["GPSLatitude"])
+    lon = dms(gps["GPSLongitude"])
+    if gps.get("GPSLatitudeRef") == "S":
+        lat = -lat
+    if gps.get("GPSLongitudeRef") == "W":
+        lon = -lon
+    alt = float(gps.get("GPSAltitude", 0))
+    # GPSAltitudeRef == 1 means BELOW sea level and the value must be negated
+    # (EXIF 2.32, 4.6.6). Honoured here for the same reason the lat/lon refs
+    # above are: without it every site below sea level is placed at +|alt|.
+    # Found 2026-07-27 on Tiberias (Sea of Galilee): the cameras report
+    # GPSAltitude 186.3 with ref 1, were read as +186.3, and the whole model
+    # landed 365 m too high — our DSM claimed +164..175 m for a site Metashape
+    # puts at -197.8 m. The residuals cannot catch this: every camera carries
+    # the SAME sign error, so the constellation stays internally consistent and
+    # rms_vertical still reported a healthy 1.21 m.
+    # The tag is a BYTE (0/1); Pillow may hand it back as int or as bytes.
+    ref = gps.get("GPSAltitudeRef", 0)
+    if isinstance(ref, (bytes, bytearray)):
+        ref = ref[0] if ref else 0
+    try:
+        below = int(ref) == 1
+    except (TypeError, ValueError):
+        below = False
+    if below:
+        alt = -alt
+    return lat, lon, alt
+
+
 def exif_correspondences(model_dir, images_dir, target_crs):
     """Pair COLMAP camera centers (local) with EXIF-GPS (reprojected to target)."""
     try:
@@ -410,27 +468,6 @@ def exif_correspondences(model_dir, images_dir, target_crs):
     if not centers:
         raise RuntimeError("no COLMAP camera centers found")
 
-    def _gps(img_path):
-        img = Image.open(img_path)
-        exif = img._getexif() or {}
-        gps = {}
-        for k, v in exif.items():
-            if TAGS.get(k) == "GPSInfo":
-                for gk, gv in v.items():
-                    gps[GPSTAGS.get(gk, gk)] = gv
-        if not gps or "GPSLatitude" not in gps or "GPSLongitude" not in gps:
-            return None
-        def dms(x):
-            d, m, s = x
-            return float(d) + float(m)/60 + float(s)/3600
-        lat = dms(gps["GPSLatitude"])
-        lon = dms(gps["GPSLongitude"])
-        if gps.get("GPSLatitudeRef") == "S":
-            lat = -lat
-        if gps.get("GPSLongitudeRef") == "W":
-            lon = -lon
-        alt = float(gps.get("GPSAltitude", 0))
-        return lat, lon, alt
 
     # Determine target CRS: explicit, else UTM derived from first fix
     first = None
@@ -441,7 +478,7 @@ def exif_correspondences(model_dir, images_dir, target_crs):
         if not ip:
             continue
         try:                       # one malformed image must not sink the whole solve
-            g = _gps(ip)
+            g = exif_gps_fix(ip)
         except Exception:
             g = None
         if g:

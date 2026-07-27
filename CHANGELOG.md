@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **EXIF georeferencing ignored `GPSAltitudeRef`, placing every site below sea level
+  365 m too high.** The latitude and longitude reference tags were honoured; the
+  altitude one was not, so `GPSAltitude = 186.3` with `GPSAltitudeRef = 1` (BELOW sea
+  level, EXIF 2.32 §4.6.6) was read as **+186.3**. Found on Tiberias (Sea of Galilee),
+  where our DSM claimed **+164…175 m** for ground Metashape places at **−197.8 m** —
+  a 365 m error, against the 372.6 m the doubled altitude predicts, the remainder
+  absorbed by the Umeyama fit.
+  **The residuals could not catch it.** Every camera carried the *same* sign error, so
+  the constellation stayed internally consistent and `rms_vertical` still reported a
+  healthy 1.21 m. A systematic error of this shape is invisible to a residual check by
+  construction — which is why this shipped.
+  Scope: the **EXIF path only** (`source: colmap-exif`), and only where
+  `GPSAltitudeRef = 1` — i.e. below sea level: the Jordan Valley, the Dead Sea region,
+  the Sea of Galilee, a substantial share of the Southern Levant work this engine was
+  built for. GCP-based georeferencing is unaffected. Everything *relative* — the
+  `mfa` comparisons, GLOMAP, orthophoto resolution — is unaffected too, since only
+  differences enter there.
+  The parser was split into `exif_gps_fix()` (opens the file) and
+  `gps_fix_from_exif_dict()` (the logic) so the regression test needs neither a JPEG
+  nor `piexif`. That split was not cosmetic: the first version of the test synthesised
+  a file with `piexif`, `piexif` is absent from the image, the test **silently skipped
+  and therefore "passed" against the very bug it was written for**. The test now fails
+  with `ref=1 must negate, got 186.3` when the fix is removed — verified.
+  It also caught a gap in the fix itself: `bytearray` is not `bytes`, so Pillow
+  handing the BYTE tag back as a `bytearray` fell through to the `except` and was
+  treated as "above sea level".
+
+
 ### Added
 - **`drone-3d-quick` — an explicit aerial PREVIEW profile.** For a fast look at a
   block: does the flight cover the site, did it fly cleanly, is the georeferencing
