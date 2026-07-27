@@ -398,6 +398,99 @@ Do **not** go to `mfa-4`: same detail step, double the cost, texture-atlas blow-
 > above the ~1.5 % noise floor, but the *location* of the knee may shift with scene
 > content and image count. Before baking this into the shipped profile, it is worth
 > one confirmation on a second drone block.
+> **→ That confirmation was run 2026-07-27; see the next section. The knee holds;
+> one sub-claim of this section does not.**
+
+---
+
+## Knee confirmation — block 2, run `block2-mfa{16,8,4}` (2026-07-27)
+
+The confirmation the caveat above asks for. **`refine-max-face-area` is the only
+variable**; every other setting is the `gpu-base-01` recipe at
+`densify-resolution-level 1`, i.e. the res-1 family B/D/C.
+
+### The second block, and what it does *not* control for
+
+**Tiberias 20230309** — 382 images, **Parrot Anafi**, 4608×3456 (16 MP), one camera
+model, 379 registered. Selected from a 400-image flight by
+`drone-parrot:CameraPitchDegree ≤ −60°`; the 18 discarded frames sit at ~0°
+(take-off / landing). Same pitch-filter methodology as block 1.
+
+**This is a replication, not a controlled one.** Against block 1 the following change
+*simultaneously*: site, camera, sensor format, image count (110 → 382) and — the one
+that matters most — **capture geometry**. Block 1 was *purely nadir by construction*
+(pitch ≤ −80°). This block has **zero nadir images**: median pitch −70.0°, flown at a
+fixed gimbal angle. There is no second nadir drone block in the available data, so a
+tighter control was not on offer.
+
+Consequence for reading the result: a knee that *stays* at `mfa-8` across two such
+different blocks is a **strong** result. A knee that had *moved* would have been
+ambiguous — no single cause could have been assigned.
+
+### Result
+
+| | mfa-16 | **mfa-8** | mfa-4 |
+|---|---|---|---|
+| DensifyPointCloud (res-1) | 49 821 451 pts / 18 m 06 | 50 192 336 pts / 17 m 40 | 49 602 660 pts / 17 m 11 |
+| ReconstructMesh | 43 828 511 faces / 9 m 44 | 43 610 362 faces / 9 m 44 | 43 598 179 faces / 9 m 28 |
+| RefineMesh | 6 071 497 faces / 27 m 04 | **11 415 736 faces / 28 m 20** | 21 952 834 faces / 31 m 45 |
+| TextureMesh | 10 m 45 | 26 m 41 | **2 h 01 m 16** |
+| └ atlas generation | 3 m 52 | 13 m 54 | **1 h 36 m 48** |
+| **OpenMVS span** | **1 h 15 m 30** | **1 h 32 m 41** | **3 h 10 m 34** |
+| Wall clock (whole run) | 2 h 08 m 32 | 2 h 37 m 59 | 4 h 39 m 51 |
+| Texture patches (atlas) | 93 497 | 218 045 | 589 221 |
+| Patches per face | 0.01540 | 0.01910 | 0.02684 |
+| Open-edge fraction | 0.1332 % | 0.0994 % | 0.0596 % |
+| Non-manifold edges | 0 | 0 | 0 |
+| Interior ortho nodata | 1.990 % | 1.966 % | 1.956 % |
+| Textured OBJ | 751 MB | 1.4 GB | 2.7 GB |
+| RAM peak (VmPeak) | 38.9 GB | 51.6 GB | 73.9 GB |
+
+**Two built-in controls pass.** Densify points (49.60–50.19 M, spread 1.2 %) and
+ReconstructMesh faces (43.60–43.83 M, spread 0.5 %) are flat across the three runs —
+which is exactly required, since `refine-max-face-area` first acts in RefineMesh. Both
+spreads sit under the measured ~1.5 % noise floor, so the runs really are
+single-variable.
+
+### The knee holds, and is sharper here
+
+| step | faces | OpenMVS time | time per unit face gain | block 1 |
+|---|---|---|---|---|
+| 16 → 8 | +88.0 % | **+22.8 %** | **0.26** | 0.58 |
+| 8 → 4 | +92.3 % | **+105.6 %** | **1.14** | 1.42 |
+
+Both blocks: the second step buys the same face-density gain as the first at a
+multiple of the cost — **2.4× on block 1, 4.4× on block 2**. On this block `mfa-8` is
+the better bargain of the two datasets: +88 % geometry for +23 % runtime. The
+fragmentation mechanism replicates too — patches per face climbs monotonically and
+atlas cost is superlinear in patches (fitted exponent ≈ 1.5 for 16→8, ≈ 2.0 for 8→4,
+against ≈ 1.8–2.1 on block 1).
+
+### One sub-claim of run D is refuted
+
+Run D reported **"Coverage is best here, not worst"** — `mfa-8` had the lowest
+interior ortho nodata of all four block-1 runs (0.613 %), better than both the
+baseline and its neighbours. **That does not replicate.** On block 2 the metric is
+flat: 1.990 / 1.966 / 1.956 % across a 3.6× range of face counts — a spread of 0.03
+percentage points, which is noise, not an effect. So `mfa-8` is *not* a coverage
+optimum; block 1's dip was a dataset artefact. The recommendation survives on runtime
+and geometry, but the coverage argument is withdrawn.
+
+The higher absolute level (≈ 1.97 % vs 0.61 %) is expected and not a defect: an
+obliquely flown strip covering ~50 % of its raster rectangle has more genuine holes
+than a compact nadir block. Open-edge fraction does fall monotonically
+(0.1332 → 0.0994 → 0.0596 %), as on block 1 — finer subdivision closes rims rather
+than opening them — and no run produced a single non-manifold edge.
+
+### Status of the profile gate
+
+The `v0.8.0` gate *"worth one confirmation on a second drone block"* is **met**:
+`refine-max-face-area 16 → 8` for `drone-3d` is confirmed on two drone blocks that
+share almost nothing but being drone blocks. The shipped default is **not yet
+changed** — that is a user-facing profile change and its own decision.
+
+Caveat that remains: each setting was still run **once per block**, and both blocks
+are Southern-Levant archaeology at 12–16 MP. Nothing here speaks to other scene types.
 
 ---
 

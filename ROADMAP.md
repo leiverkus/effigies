@@ -583,14 +583,67 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       — the blow-up starts past this point, not at it. Interior ortho nodata is the
       **lowest of all four runs**. Reasoning from the curve's shape without the
       middle measurement produced the wrong call.
+- [x] **Second-block confirmation (2026-07-27) — the knee holds.** Three runs
+      (`mfa` 16/8/4, res-1, everything else the `gpu-base-01` recipe) on **block 2**:
+      Tiberias 20230309, Parrot Anafi, 382 images at 16 MP, 379 registered. The
+      marginal-cost doubling reproduces and is **sharper**: 16→8 buys +88.0 % faces
+      for **+22.8 %** OpenMVS time, 8→4 buys +92.3 % for **+105.6 %** — cost per unit
+      face gain 0.26 → 1.14 (4.4×, against 2.4× on block 1). Patches-per-face climbs
+      monotonically as before, atlas cost superlinear in it.
+      **Not a controlled replication:** site, camera, sensor, image count *and*
+      capture geometry all differ — block 2 has **zero nadir images** (median gimbal
+      pitch −70.0°) where block 1 was nadir by construction. No second nadir block
+      exists in the available data. A knee that *held* across two blocks this
+      different is the strong outcome; a moved knee would have been unattributable.
+      **One block-1 sub-claim is refuted:** `mfa-8` is *not* a coverage optimum.
+      Interior ortho nodata is flat on block 2 (1.990 / 1.966 / 1.956 % across a 3.6×
+      face range — noise), so run D's "coverage is best here" was a dataset artefact
+      and is withdrawn. The recommendation survives on runtime and geometry.
+      Built-in controls passed: densify points and ReconstructMesh faces flat to
+      1.2 % / 0.5 % across the three runs, under the noise floor.
 - [ ] **Adopt `refine-max-face-area 8` in the `drone-3d` profile** (from 16), keeping
-      `densify-resolution-level 1`. Recommendation and full four-point table in
+      `densify-resolution-level 1`. Recommendation and both four-/three-point tables in
       [docs/planned-experiments.md](docs/planned-experiments.md). `res-0` stays the
-      max-detail option (2.7× D's faces); `mfa-4` must not be adopted. **Before
-      shipping it:** all four runs share one dataset (110 nadir images, one site)
-      and one repetition each — the effects are far above the ~1.5 % noise floor,
-      but the knee's *position* may move with scene content and image count, so one
-      confirmation on a second drone block is due first.
+      max-detail option; `mfa-4` must not be adopted. **The second-block gate above is
+      now met** — what remains is the decision to change a shipped default, plus the
+      standing caveat that each setting was run once per block and both blocks are
+      Southern-Levant archaeology at 12–16 MP.
+- [ ] **COLMAP's GPU bundle adjustment is built but never switched on.** Surfaced
+      2026-07-27 while starting the Metashape comparison, and it looks like the single
+      largest cheap win in the pipeline. Measured on block 2 (382 images, 16 MP), the
+      sparse stage splits as `spatial_matcher` **1 m 12** + `mapper` **11 m 12** ≈
+      14 m 30. Metashape 2.3.1 on an M3 Max does the same work in **3 m 13**
+      (`matchPhotos` 2 m 07 + `alignCameras` 1 m 06) — i.e. **our matching is already
+      faster**, and the entire gap is the incremental mapper, a factor of ~10.
+      Meanwhile COLMAP 4.1.1 — which we adopted *today*, and whose CHANGELOG entry in
+      this repo even names the "**Caspar** GPU bundle-adjustment backend (1–2 orders of
+      magnitude faster than the Ceres CUDA backend)" — exposes
+      `--Mapper.ba_use_gpu (=0)`, `--Mapper.ba_local_backend (=CERES)` and
+      `--Mapper.ba_global_backend (=CERES)`. `pipeline/sparse_colmap.sh` passes **none
+      of them**, so we build the GPU backend and then bundle-adjust on the CPU by
+      default.
+      Not yet a proven win: the mapper does more than bundle adjustment, and BA's share
+      of those 11 m is unmeasured. But it is single-variable testable and cheap — same
+      block, `--Mapper.ba_use_gpu 1`. First step is establishing the accepted
+      `ba_*_backend` values (COLMAP prints no enumeration on an invalid value).
+      Cross-reference: the hardware differs (A4000 host vs M3 Max laptop), so the
+      factor of 10 is indicative, not a clean benchmark — but the *split* between
+      matching and mapping is measured on our side alone and stands on its own.
+- [ ] **`texture_blend.py` is serial and it is now the largest post-processing cost.**
+      On block 2's `mfa-4` run it took **~60 minutes single-threaded at 100 % of one
+      core**, against 4 minutes for the entire post-processing block on the 110-image
+      reference. Cause is structural, not accidental: `select_views` streams the views
+      in a Python loop by design (the *blend streaming refactor* traded parallelism for
+      memory flat in view count), and the inner work is numpy elementwise / fancy
+      indexing plus an unbuffered `np.minimum.at` scatter-reduce — none of which numpy
+      threads. `NLWP` is 1; not even a BLAS pool is created. Cost scales as
+      **views × faces**, so it grows fastest exactly where the node is most useful.
+      The view loop is embarrassingly parallel (each view yields an independent weight
+      vector); the obstacle is the running top-K reduction, which is fixable by
+      per-worker top-K plus an associative pairwise merge. The price is memory —
+      `W × (nF·K)`, ~350 MB per worker of indices alone at 22 M faces — i.e. a genuine
+      conflict with the RAM ceiling, which is why the serial version exists. Decide
+      deliberately; do not "just parallelise it".
 - [ ] **Profile calibration.** Sweep the key levers (esp. `RefineMesh`
       iterations / `max-face-area` / `gradient-step`, `densify-resolution-level`,
       `number-views-fuse`) per capture type against the benchmark metrics, find
