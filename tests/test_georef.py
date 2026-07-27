@@ -446,6 +446,81 @@ def _run_gcp_main(root):
     return json.load(open(os.path.join(work, "georef_transform.json")))
 
 
+def _mark_check(root, labels):
+    """Append the ODM ``check`` token to the gcp_list rows of the named points.
+
+    Rows are identified by their world XYZ, which is what the synthetic builder
+    writes as the first three columns.
+    """
+    path = os.path.join(root, "gcp_list.txt")
+    out = []
+    with open(path) as f:
+        head = f.readline()
+        for ln in f:
+            p = ln.split()
+            key = (round(float(p[0]), 3), round(float(p[1]), 3))
+            out.append(ln.rstrip("\n") + (" check" if key in labels else "") + "\n")
+    with open(path, "w") as f:
+        f.write(head)
+        f.writelines(out)
+
+
+def test_gcp_path_holds_out_check_points():
+    """--georeference gcp must EXCLUDE check points from the solve.
+
+    Regression for a shipped defect found 2026-07-27: parse_gcp_list has always
+    flagged check points and gcp_bundle_adjust.py has always honoured the flag, but
+    the plain GCP path fed every entry to the Umeyama solve. Marking check points
+    therefore did nothing except make the reported residual look like an accuracy
+    figure — on Tiberias it printed "RMS 3D 0.039 over 12 correspondences" with 4 of
+    those 12 marked `check`.
+    """
+    with tempfile.TemporaryDirectory() as root:
+        _build_synthetic_colmap(root)
+        # Hold out two of the six markers.
+        _mark_check(root, {(690000.0, 3540000.0), (690010.0, 3540010.0)})
+        tr = _run_gcp_main(root)
+        res = tr["residuals"]
+        # Counts are GCPs, not rows: the six synthetic markers are each
+        # marked in two views and triangulated to one point apiece.
+        assert res["control_points"] == 4, res["control_points"]
+        assert res["check_points"] == 2, res["check_points"]
+        assert "check_point_rmse_3d" in res, res.keys()
+        # Synthetic scene is exact, so the held-out points must land on top of their
+        # surveyed position. A non-trivial value here would mean the solve leaked.
+        assert res["check_point_rmse_3d"] < 1e-6, res["check_point_rmse_3d"]
+    print("ok  gcp path holds out check points and reports an independent CP-RMSE")
+
+
+def test_gcp_path_without_check_points_uses_everything():
+    """No check token -> unchanged behaviour, and no CP-RMSE claimed."""
+    with tempfile.TemporaryDirectory() as root:
+        _build_synthetic_colmap(root)
+        tr = _run_gcp_main(root)
+        res = tr["residuals"]
+        assert res["control_points"] == 6, res["control_points"]
+        assert "check_points" not in res and "check_point_rmse_3d" not in res, res.keys()
+    print("ok  gcp path unchanged when no check points are marked")
+
+
+def test_gcp_path_falls_back_when_too_few_control_points():
+    """Holding out so much that <3 control points remain must not fail the run.
+
+    It falls back to using everything — and must NOT then claim a CP-RMSE, because
+    the check points were part of the solve.
+    """
+    with tempfile.TemporaryDirectory() as root:
+        _build_synthetic_colmap(root)
+        _mark_check(root, {(690000.0, 3540000.0), (690010.0, 3540000.0),
+                           (690000.0, 3540010.0), (690010.0, 3540010.0),
+                           (690005.0, 3540005.0)})            # only 1 marker left
+        tr = _run_gcp_main(root)
+        res = tr["residuals"]
+        assert res["control_points"] == 6, res["control_points"]
+        assert "check_point_rmse_3d" not in res, res.keys()
+    print("ok  gcp path falls back and withholds the CP-RMSE when control < 3")
+
+
 def test_marker_check_written_for_multi_marker_gcp():
     with tempfile.TemporaryDirectory() as root:
         L = _build_marker_colmap(root)
@@ -571,6 +646,9 @@ if __name__ == "__main__":
     test_inter_marker_consistency_noops()
     test_marker_check_written_for_multi_marker_gcp()
     test_marker_check_absent_for_unlabeled_gcp()
+    test_gcp_path_holds_out_check_points()
+    test_gcp_path_without_check_points_uses_everything()
+    test_gcp_path_falls_back_when_too_few_control_points()
     test_exif_altitude_ref_below_sea_level_is_negated()
     test_exif_altitude_ref_accepts_bytes_and_missing()
     test_exif_gps_fix_is_callable_on_a_real_file()

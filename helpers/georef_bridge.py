@@ -859,13 +859,54 @@ def main():
                 if not have_gcp:
                     raise RuntimeError(f"GCP mode requested but file not found: {args.gcp}")
                 crs_header, entries = parse_gcp_list(args.gcp)
-                local, world, gcp_info = gcp_correspondences(model_dir, entries)
+                # HOLD OUT the check points. parse_gcp_list has always flagged them
+                # and gcp_bundle_adjust.py has always honoured the flag, but this
+                # path fed *every* entry to the solve — so marking check points and
+                # running plain --georeference gcp silently used them as control and
+                # reported the fit residual as if it were an accuracy figure. Found
+                # 2026-07-27 on Tiberias: "RMS 3D 0.039 over 12 correspondences"
+                # with 4 of those 12 marked `check`.
+                control = [e for e in entries if not e.get("check")]
+                check = [e for e in entries if e.get("check")]
+                if check and len(control) >= 3:
+                    solve_entries = control
+                elif check:
+                    # Too few control points to solve on their own. Use everything
+                    # rather than fail — but say so, because the CP-RMSE below is
+                    # then NOT independent.
+                    print(f"[georef] WARN: only {len(control)} control GCP(s) after "
+                          f"holding out {len(check)} check point(s) — need >=3, so "
+                          f"the check points are being used in the solve too. The "
+                          f"reported residuals are a FIT, not an accuracy estimate.",
+                          file=sys.stderr)
+                    solve_entries = entries
+                    check = []
+                else:
+                    solve_entries = entries
+                local, world, gcp_info = gcp_correspondences(model_dir, solve_entries)
                 s, R, t = umeyama_similarity(local, world)
                 residuals = solve_residuals(s, R, t, local, world)
                 residuals["gcp_localization"] = {
                     "triangulated": gcp_info["triangulated"],
                     "nearest_point": gcp_info["nearest_point"],
                 }
+                residuals["control_points"] = len(local)
+                # The honest number: the solve never saw these, so their residual is
+                # an independent estimate of the georeferencing error, not a fit.
+                if check:
+                    try:
+                        cp = evaluate_umeyama_cp(model_dir, control, check)
+                        # Count GCPs, not rows — `control_points` above is
+                        # len(local), i.e. triangulated points, and mixing the two
+                        # units in one residuals block invites misreading.
+                        n_check = len({tuple(np.round(e["world"], 3)) for e in check})
+                        residuals["check_point_rmse_3d"] = float(cp)
+                        residuals["check_points"] = n_check
+                        print(f"[georef] check-point RMSE (3D, {n_check} held-out "
+                              f"GCP(s)): {float(cp):.3f} m", file=sys.stderr)
+                    except Exception as e:            # noqa: BLE001 — never fatal
+                        print(f"[georef] WARN: check-point RMSE unavailable: {e}",
+                              file=sys.stderr)
                 offset = _xy_offset(world)
                 crs = args.crs if args.crs not in ("auto", "") else crs_header
                 apply_to_obj(args.work, s, R, t, offset)

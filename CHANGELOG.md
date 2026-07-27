@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`--georeference gcp` used check points in the solve.** `parse_gcp_list()` has
+  always flagged them and `gcp_bundle_adjust.py` has always honoured the flag, but
+  the plain GCP path fed **every** entry to the Umeyama fit. Marking check points
+  therefore did nothing except make the reported residual *look* like an accuracy
+  figure — on Tiberias it printed `RMS 3D 0.039 over 12 correspondences` with 4 of
+  those 12 marked `check`. A fit residual and an independent check-point RMSE are
+  different quantities, and this path silently reported the first as if it were the
+  second.
+  The path now solves on the control points and reports
+  `check_point_rmse_3d` + `check_points` from a genuinely held-out evaluation
+  (`evaluate_umeyama_cp`, which was already there but only reachable from the BA
+  path). With fewer than 3 control points left it falls back to using everything —
+  and then withholds the CP-RMSE and says why, rather than quietly reporting a
+  number that is not independent. Measured on Tiberias: 12 GCPs → 8 control /
+  4 check, **CP-RMSE 3.4 cm**, against 1.7 m RMS from the EXIF path.
+  `control_points` and `check_points` both count **GCPs, not marked rows** — the
+  first implementation mixed the two units in one residuals block, which the new
+  tests caught.
 - **Follow-up to the same change: the lifted GPS parser lost its Pillow import.**
   Moving the parser out of `exif_correspondences` to module level (so it could be
   tested) left the lazy `from PIL import Image` behind in the enclosing function. The
