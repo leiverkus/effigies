@@ -608,6 +608,25 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       now met** — what remains is the decision to change a shipped default, plus the
       standing caveat that each setting was run once per block and both blocks are
       Southern-Levant archaeology at 12–16 MP.
+
+      **DECIDED 2026-07-27: ship it as a bundle, not on its own.** On its own this
+      change makes every drone run slower — +17 min OpenMVS on block 2 (1 h 15 m 30 →
+      1 h 32 m 41) — and it also costs **+33 % RAM peak** (38.9 → 51.6 GB, which lowers
+      the maximum set size against the documented 125 GB ceiling) and **doubles the
+      textured OBJ** (751 MB → 1.4 GB per task in WebODM storage). Those two are not
+      bought back by any speedup; they belong in the CHANGELOG entry when it ships.
+      Two measured savings are queued against it, both pure waste rather than quality:
+      **GLOMAP** (`mapper global`, −5 min sparse *and* better on every sparse metric —
+      382/382 images registered vs 379, 1.137 px vs 1.164) and **`texture_blend`
+      phase 1**, which the 2026-07-27 instrumented run shows to be essentially the
+      whole ~45 min, with two memory-neutral attack points (frustum-cull in
+      `render_depth`; reuse of the visibility OpenMVS' `TextureMesh` already computes).
+      Ship `mfa-8` together with those, so the user-visible net is *more quality at
+      equal or better runtime* instead of *slower for more faces*. Blocking on: the
+      GLOMAP end-to-end verification (15 % fewer sparse points → densify?) and at
+      least one of the two blend fixes.
+      Note: `mfa-8` is **already live in the `object` profile** (run.sh) — this item is
+      only about the aerial path.
 - [ ] **COLMAP's GPU bundle adjustment is built but never switched on.** Surfaced
       2026-07-27 while starting the Metashape comparison, and it looks like the single
       largest cheap win in the pipeline. Measured on block 2 (382 images, 16 MP), the
@@ -629,7 +648,23 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       Cross-reference: the hardware differs (A4000 host vs M3 Max laptop), so the
       factor of 10 is indicative, not a clean benchmark — but the *split* between
       matching and mapping is measured on our side alone and stands on its own.
-- [ ] **`texture_blend.py` is serial and it is now the largest post-processing cost.**
+- [ ] **`texture_blend.py` is serial and it is the largest post-processing cost.**
+      **MEASURED 2026-07-27 — and the split refutes the plan written below.** The
+      instrumented markers on an 11.3 M-face / 382-view / 11-page run:
+      `entry -> after view selection` **21 m 19**, `after view selection -> exit`
+      **21 m 04**, total **42 m 24**. That is **50.3 % / 49.7 %** — not the
+      phase-1-dominated profile assumed here. Consequences: page-parallel baking,
+      dismissed below as "nearly useless", addresses **half** the cost and is the
+      memory-cheap option (one atlas page is resident at a time anyway); the
+      frustum-cull and the OpenMVS-visibility reuse address the other half. Do both,
+      cheapest first, rather than either on its own. Peak RSS at the phase boundary is
+      **11 GB** before any worker is added — that is the budget any parallel version
+      starts from. Note the phase-1 figure still includes parsing the 1.4 GB textured
+      OBJ, so `select_views` alone is *less* than 21 m; do not over-attribute it
+      (an earlier offline attempt to measure this failed outright: `run.sh` rewrites
+      the OBJ into the georeferenced frame in place while the COLMAP poses stay local,
+      so a rebuilt workdir yields 2.9 % valid views instead of 99.5 %).
+
       On block 2's `mfa-4` run it took **~60 minutes single-threaded at 100 % of one
       core**, against 4 minutes for the entire post-processing block on the 110-image
       reference. Cause is structural, not accidental: `select_views` streams the views

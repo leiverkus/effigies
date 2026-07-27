@@ -29,6 +29,7 @@ import argparse
 import os
 import resource
 import sys
+import time
 
 import numpy as np
 
@@ -46,14 +47,30 @@ FRAME_MARGIN = 4.0        # px margin inside the image frame
 WEIGHT_FLOOR = 0.15       # drop views weaker than this fraction of the best
 
 
+_T_START = time.monotonic()
+
+
 def _log_rss(tag):
-    """Peak-RSS probe, gated on EFFIGIES_BLEND_RSS (the v0.5.0 memory-ceiling
-    instrument). ru_maxrss is KB on Linux, bytes on macOS — report the raw value
-    and a KB-assuming MB so the slope across runs is readable. No-op when unset."""
+    """Peak-RSS **and elapsed-time** probe, gated on EFFIGIES_BLEND_RSS (the v0.5.0
+    memory-ceiling instrument). ru_maxrss is KB on Linux, bytes on macOS — report the
+    raw value and a KB-assuming MB so the slope across runs is readable. No-op when
+    unset.
+
+    The timing half was added 2026-07-27. This module has two expensive phases —
+    ``select_views`` (cost ∝ views × faces) and the view-major bake (cost ∝ atlas area)
+    — and which one dominates decides which optimisation is worth anything: a
+    frustum-cull and reuse of OpenMVS' visibility only help the first, page-parallel
+    baking only the second. Reconstructing a workdir to measure that offline failed:
+    ``run.sh`` rewrites the textured OBJ into the *georeferenced* frame in place, while
+    the COLMAP poses stay in the local SfM frame, so a rebuilt ``dense/`` yields 2.9 %
+    valid views instead of 99.5 % and times the wrong thing. Measuring inside a real
+    run is the only way to keep the frames consistent by construction, so the markers
+    at entry / after view selection / exit now bracket both phases."""
     if not os.environ.get("EFFIGIES_BLEND_RSS"):
         return
     kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    print(f"[blend] peak RSS @ {tag}: {kb} ru_maxrss (~{kb / 1024:.0f} MB if KB)",
+    print(f"[blend] peak RSS @ {tag}: {kb} ru_maxrss (~{kb / 1024:.0f} MB if KB); "
+          f"t+{time.monotonic() - _T_START:.1f} s",
           file=sys.stderr)
 
 
