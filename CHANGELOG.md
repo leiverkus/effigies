@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The orthophoto/DSM `auto` resolution ignored the imagery entirely** — it sized the
+  raster from the *scene extent* (`diag / 4096`, clamped to 1 cm/px) and never looked
+  at what the photos resolve. On a Tiberias excavation block flown at **15.0 m AGL**
+  (native GSD **0.5 cm/px**, confirmed by the Anafi's `AboveGroundAltitude` XMP across
+  all 382 frames) this produced **3.1 cm/px** — a factor of **5.3 thrown away**, on a
+  flight that had been flown *for* millimetre resolution. Metashape's export of the
+  same flight is 0.497 cm/px, so the resolution was in the data and only our heuristic
+  was losing it.
+  `auto` now derives the GSD the way the quantity is defined: project the sparse points
+  into every camera, keep the ones actually inside the frame, and take
+  `median(slant range) / focal length in pixels`, scaled by the georeferencing factor.
+  Measured on the same block: **0.582 cm/px**, and a production run wrote a
+  **17103 x 13916 (238 Mpx)** orthophoto with a **pixel-identical** DSM in **5 m 59 s**.
+  A nearest-neighbour proxy was tried first and discarded — it reads ~30 % low, because
+  the points *closest* to a camera are not the ones it photographs, and this block flies
+  a -70 deg gimbal where the slant range deliberately exceeds the height above ground.
+  The extent heuristic survives as a fallback for runs without a usable sparse model,
+  but now says so instead of coarsening silently.
+- **The raster size cap was a hidden 3 GB ceiling.** `16000 x 16000` was a fixed pixel
+  count that silently doubled the GSD until it fit — exactly on the high-resolution
+  excavation blocks this engine exists for. It is now a *memory* budget (a quarter of
+  physical RAM, capped at 8 GB; `--max-raster-bytes` overrides), so a small VM is not
+  pushed into OOM and a 125 GB host is not throttled to a thumbnail. When it does bite,
+  it warns and names the flag.
+  *Caveat:* our estimate reads ~17 % high against Metashape's 0.497 cm/px. Good enough
+  to close a factor of 5.3, not exact.
+
+
 ### Changed
 - **Dockerfile layer order reworked for cache architecture** (both images, in
   lock-step). The `PDAL` stage was built *before* COLMAP and OpenMVS, which do not

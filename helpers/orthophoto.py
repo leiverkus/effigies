@@ -339,11 +339,96 @@ def write_dem_geotiff(path, zbuf, originx, originy, gsd, crs, nodata=-9999.0):
     ds.FlushCache(); ds = None
 
 
+def native_gsd(work, scale):
+    """The ground sample distance the *imagery* actually supports, in world units.
+
+    ``GSD = imaging distance / focal length in pixels`` — the definition, applied to
+    the COLMAP sparse model: the focal length comes from ``cameras.bin``, the imaging
+    distance from each camera centre to the sparse points nearest it (for a nadir
+    block that is the ground directly below, i.e. the height above ground). Distances
+    are measured in the local SfM frame and multiplied by the georeferencing scale,
+    so this works in any CRS and for local-only runs (scale 1.0).
+
+    Why this exists (2026-07-27): the previous ``auto`` rule was ``diag / 4096`` — it
+    sized the raster from the *scene extent* and never looked at the imagery at all.
+    On a block flown at 15.0 m AGL with a 3062 px focal length (native 0.49 cm/px) it
+    produced 3.1 cm/px, throwing away a factor of 6. Metashape's export of the same
+    flight is 5.91 mm/px, so the resolution was in the data and only our heuristic
+    was losing it. Excavation work needs ~5 mm/px; anything coarser is of no use.
+
+    Returns None when the sparse model is missing or the estimate is implausible, so
+    the caller can fall back rather than fail — this must never break a run.
+    """
+    try:
+        from colmap_bin import read_cameras_bin, read_images_bin, read_points3D_bin
+    except ImportError:
+        return None
+    # The UNDISTORTED workspace, like every other colmap_bin consumer
+    # (texture_blend, tiling). colmap_bin is deliberately scoped to the PINHOLE
+    # models image_undistorter emits; the original sparse/0 holds OPENCV cameras
+    # with 8 parameters, which the shared reader rejects on purpose — widening it
+    # would break texture_blend's `fx, fy, cx, cy = K` unpack.
+    sparse = os.path.join(work, "dense", "sparse")
+    try:
+        cams = read_cameras_bin(os.path.join(sparse, "cameras.bin"))
+        imgs = read_images_bin(os.path.join(sparse, "images.bin"))
+        pts = read_points3D_bin(os.path.join(sparse, "points3D.bin"))
+    except (OSError, ValueError):
+        return None
+    if not cams or not imgs or len(pts) < 100:
+        return None
+
+    per_cam = []
+    P = np.asarray(pts, dtype=np.float64).T                # (3, N)
+    for pose in imgs.values():
+        cam = cams.get(pose["camera_id"])
+        if cam is None:
+            continue
+        _model, cw, ch, params = cam
+        fx = float(params[0])
+        cx, cy = (float(params[-2]), float(params[-1]))
+        if fx <= 0:
+            continue
+        # Project every sparse point into this camera and keep the ones that are in
+        # front of it AND inside the frame. Those are the points it actually images,
+        # which is what sets the sampling distance. A nearest-neighbour proxy was
+        # tried first and reads ~20 % low: the points *closest* to a camera are not
+        # the ones it photographs, and on this block the gimbal is at -70 deg, where
+        # the slant range is deliberately longer than the height above ground.
+        Xc = pose["R"] @ P + pose["t"][:, None]            # (3, N), camera frame
+        z = Xc[2]
+        vis = z > 1e-6
+        if not vis.any():
+            continue
+        u = fx * Xc[0][vis] / z[vis] + cx
+        v = fx * Xc[1][vis] / z[vis] + cy
+        inside = (u >= 0) & (u < cw) & (v >= 0) & (v < ch)
+        if inside.sum() < 20:
+            continue
+        # Range along the ray, not depth along the axis: the ground sampling distance
+        # is set by how far the surface is from the lens, which for an oblique view
+        # is the slant range.
+        rng = np.linalg.norm(Xc[:, vis][:, inside], axis=0)
+        per_cam.append(float(np.median(rng)) / fx)
+    if not per_cam:
+        return None
+    gsd = float(np.median(per_cam)) * float(scale)
+    # Guard against a degenerate sparse model producing a nonsense scale.
+    return gsd if 1e-4 < gsd < 10.0 else None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", required=True, help="OpenMVS workdir")
     ap.add_argument("--resolution", default="auto",
-                    help="ground sample distance in cm/px, or 'auto' (~4k px wide)")
+                    help="ground sample distance in cm/px, or 'auto' (native GSD of "
+                         "the imagery, from camera distance / focal length)")
+    ap.add_argument("--max-raster-bytes", type=float, default=None,
+                    help="memory budget for the raster buffers; the GSD is doubled "
+                         "until it fits. ~12 bytes/px (RGB+alpha+z), 16 with the "
+                         "semantic buffer. Default: a quarter of physical RAM, "
+                         "capped at 8 GB (~670 Mpx) — so a small VM is not pushed "
+                         "into OOM and a large host is not needlessly throttled.")
     ap.add_argument("--skip-orthophoto", action="store_true",
                     help="do not write the RGB orthophoto")
     ap.add_argument("--skip-dsm", action="store_true",
@@ -400,12 +485,39 @@ def main():
     ext_x = float(np.ptp(V[:, 0])); ext_y = float(np.ptp(V[:, 1]))
     diag = math.hypot(ext_x, ext_y)
     if str(args.resolution).lower() == "auto":
-        gsd = min(max(diag / 4096.0, 0.01), 1.0)     # ~4k px wide, clamped 1cm..1m
+        gsd = native_gsd(args.work, tr.get("s", 1.0))
+        if gsd is not None:
+            print(f"[ortho] auto GSD {gsd * 100:.3f} cm/px from the imagery "
+                  f"(camera distance / focal length)")
+        else:
+            # Fallback only: sizes the raster from the scene extent, which says
+            # nothing about what the images resolve. Kept so a run without a usable
+            # sparse model still produces an orthophoto instead of failing.
+            gsd = min(max(diag / 4096.0, 0.01), 1.0)
+            print(f"[ortho] WARN: no usable sparse model for the native GSD; "
+                  f"falling back to the extent heuristic ({gsd * 100:.2f} cm/px). "
+                  f"Pass --orthophoto-resolution to set it explicitly.", file=sys.stderr)
     else:
         gsd = float(args.resolution) / 100.0          # cm/px -> m/px
-    # cap raster size so a bad GSD cannot blow memory
-    while (ext_x / gsd) * (ext_y / gsd) > 16000 * 16000:
+    # Cap the raster against a MEMORY budget rather than a fixed pixel count: the
+    # buffers are ~12 bytes/px (uint8 RGB + uint8 alpha + float64 z), 16 with the
+    # semantic triangle buffer. The old 16000x16000 rule was a hidden 3 GB ceiling
+    # that silently coarsened exactly the high-resolution excavation blocks this
+    # engine is for — Metashape's export of the same flight is 446 Mpx.
+    bytes_per_px = 16 if args.semantic_cloud else 12
+    budget = args.max_raster_bytes
+    if budget is None:
+        try:
+            total = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+            budget = min(8e9, total * 0.25)
+        except (ValueError, OSError, AttributeError):
+            budget = 3e9                       # the old 16000x16000 ceiling
+    args.max_raster_bytes = budget
+    while (ext_x / gsd) * (ext_y / gsd) * bytes_per_px > args.max_raster_bytes:
         gsd *= 2.0
+        print(f"[ortho] WARN: raster over the {args.max_raster_bytes / 1e9:.1f} GB "
+              f"budget; coarsening to {gsd * 100:.3f} cm/px "
+              f"(raise --max-raster-bytes to keep the resolution)", file=sys.stderr)
 
     # Ask the rasteriser to record the winning triangle per pixel only when the
     # semantic layer is actually wanted — an int32 [H,W] buffer is the same order of
