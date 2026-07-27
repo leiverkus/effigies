@@ -399,7 +399,17 @@ def exif_gps_fix(img_path):
 
     Module level, not nested, so it can be unit-tested on its own — the
     GPSAltitudeRef handling below is exactly the kind of thing that needs a
-    regression test (see tests/test_georef.py)."""
+    regression test (see tests/test_georef.py).
+
+    Imports Pillow here, not at module scope, to keep the module's contract that
+    only numpy is a hard dependency. NOTE: this import was missing when the
+    function was first lifted out of ``exif_correspondences`` — the nested version
+    inherited ``Image``/``TAGS``/``GPSTAGS`` from the enclosing scope, the lifted one
+    did not, and every call raised NameError. The EXIF path then reported
+    "found 0 fixes" and fell back to a local frame, silently, for every site."""
+    from PIL import Image
+    from PIL.ExifTags import GPSTAGS, TAGS
+
     img = Image.open(img_path)
     exif = img._getexif() or {}
     gps = {}

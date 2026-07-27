@@ -519,6 +519,30 @@ def test_exif_altitude_ref_accepts_bytes_and_missing():
     print("ok  GPSAltitudeRef tolerates int / bytes / missing / junk")
 
 
+def test_exif_gps_fix_is_callable_on_a_real_file():
+    """The FILE half of the parser must actually run, not just the dict half.
+
+    Regression: when the parser was lifted out of ``exif_correspondences`` to make it
+    testable, the lazy ``from PIL import Image`` stayed behind in the enclosing
+    function. Every call then raised NameError, the EXIF path reported "found 0
+    fixes" and fell back to a local frame — silently, for every site, not just the
+    ones the altitude fix was about. The unit tests missed it because the split that
+    made them dependency-free also left this half uncovered. So: exercise the real
+    entry point on a real file.
+    """
+    try:
+        from PIL import Image as PILImage
+    except ImportError:
+        print("  skip: Pillow not available")
+        return
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "nogps.jpg")
+        PILImage.new("RGB", (4, 4)).save(p, "jpeg")
+        # No GPS block -> None, but it must RETURN, not raise NameError.
+        assert gb.exif_gps_fix(p) is None
+    print("ok  exif_gps_fix runs on a real file (imports resolve)")
+
+
 def test_exif_lat_lon_still_correct_after_altitude_fix():
     """The altitude change must not disturb the lat/lon path it sits next to."""
     la, lo, al = gb.gps_fix_from_exif_dict(
@@ -549,5 +573,6 @@ if __name__ == "__main__":
     test_marker_check_absent_for_unlabeled_gcp()
     test_exif_altitude_ref_below_sea_level_is_negated()
     test_exif_altitude_ref_accepts_bytes_and_missing()
+    test_exif_gps_fix_is_callable_on_a_real_file()
     test_exif_lat_lon_still_correct_after_altitude_fix()
     print("\nall georef tests passed")

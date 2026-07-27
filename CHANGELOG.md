@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Follow-up to the same change: the lifted GPS parser lost its Pillow import.**
+  Moving the parser out of `exif_correspondences` to module level (so it could be
+  tested) left the lazy `from PIL import Image` behind in the enclosing function. The
+  nested version had inherited `Image`/`TAGS`/`GPSTAGS` from the enclosing scope; the
+  lifted one raised `NameError` on every call. The EXIF path then reported
+  **"found 0 fixes" and fell back to a local frame — silently, for every site**, not
+  just the below-sea-level ones the altitude fix was about. Caught by re-running the
+  real pipeline, not by the unit tests: the very split that made them dependency-free
+  also left the file-opening half uncovered. `tests/test_georef.py` now exercises
+  `exif_gps_fix()` on an actual JPEG so the imports have to resolve.
 - **EXIF georeferencing ignored `GPSAltitudeRef`, placing every site below sea level
   365 m too high.** The latitude and longitude reference tags were honoured; the
   altitude one was not, so `GPSAltitude = 186.3` with `GPSAltitudeRef = 1` (BELOW sea
