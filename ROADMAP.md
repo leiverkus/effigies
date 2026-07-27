@@ -682,7 +682,22 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       Cross-reference: the hardware differs (A4000 host vs M3 Max laptop), so the
       factor of 10 is indicative, not a clean benchmark — but the *split* between
       matching and mapping is measured on our side alone and stands on its own.
-- [ ] **`texture_blend.py` is serial and it is the largest post-processing cost.**
+- [x] **`texture_blend.py` phase 2 parallelised (2026-07-27) — measured 4.18x.**
+      The bake is independent per atlas page (reads its page, writes its page, no
+      shared mutable state), so running pages concurrently is a pure scheduling change
+      and must be byte-identical — the golden test confirms `max |Δ| = 0` serial and
+      parallel. Large read-only arrays are inherited via `fork` copy-on-write rather
+      than pickled. Worker count is bounded by MEMORY, not cores: each in-flight page
+      holds ~40 bytes/texel (~2.7 GB for 8192²), so the default is
+      `min(cores, pages, 35 % of RAM / per-page)`, overridable with
+      `EFFIGIES_BLEND_WORKERS`.
+      Measured on block 2 (11.3 M faces, 382 views, 11 pages), 6 workers:
+      phase 2 **21 m 04 → 5 m 02**, whole blend **42 m 24 → 26 m 42 (−37 %)**, and the
+      full pipeline 2 h 37 → 2 h 22. Phase 1 unchanged at 21 m 39 (was 21 m 19), which
+      is the check that only the intended half moved. 70 % parallel efficiency; the
+      loss is unequal page sizes — the last page is 6 % covered and finishes early
+      while the largest sets the wall clock, so more workers than pages buys nothing.
+- [ ] **`texture_blend.py` phase 1 is now the pipeline's largest single serial cost.**
       **MEASURED 2026-07-27 — and the split refutes the plan written below.** The
       instrumented markers on an 11.3 M-face / 382-view / 11-page run:
       `entry -> after view selection` **21 m 19**, `after view selection -> exit`

@@ -9,10 +9,40 @@ anfangen, ohne den Effigies-Verlauf zu kennen.
 
 ---
 
-## 0. Die geteilte GPU-Maschine — bitte zuerst lesen
+## 0. Die GPU-Maschine — HINFÄLLIG seit 28.07.2026
 
-Seit 26.07.2026 arbeiten **zwei Sessions** auf demselben Rechner. Die folgenden
-Punkte vermeiden, dass ihr euch gegenseitig Arbeit zerstört.
+> ## ⚠ Der Zugang zu `arbi-gpu1` endet am 28.07.2026.
+>
+> Der gesamte folgende Abschnitt war für zwei parallel arbeitende Sessions
+> geschrieben und ist damit **überholt**. Er bleibt stehen, weil er die
+> Rahmenbedingungen dokumentiert, unter denen die Effigies-Messwerte entstanden
+> sind — aber **nichts darin ist mehr handlungsleitend**. Die Maschine wurde
+> abgeräumt: Ergebnisverzeichnisse, Workdirs, Docker-Image und Build-Cache.
+>
+> **Was das für dich konkret heißt:**
+>
+> - **Der Testdatensatz `~/semtest/proj/` ist dort weg.** Er liegt jetzt auf dem
+>   MacBook unter `Documents/Aktuell/effigies-host-archiv/semtest-final/` — Ortho,
+>   DSM, LAZ und das Semantikraster, unverändert. Die Eigenschaft, auf die es
+>   ankam, gilt weiter: Ortho, DSM und Semantik sind **pixelgleich**.
+> - **Ein besserer Datensatz ist dazugekommen.** Unter
+>   `effigies-host-archiv/block2-final/` liegt derselbe Tiberias-Block, aber
+>   **GCP-georeferenziert in EPSG:6991** (dem CRS, das Contexta für diesen Ort
+>   erwartet) mit einer unabhängigen **Check-Point-RMSE von 3,4 cm**, und mit
+>   Ortho und DSM bei **0,58 cm/px** statt der 3,17 cm des semtest-Satzes. Wenn du
+>   einen realen Eingang für den 2D- oder 2.5D-Track brauchst, nimm diesen.
+> - **Abstimmung über Rechenzeit, Plattenplatz und `docker prune` entfällt.**
+>   Es gibt keine geteilte Maschine mehr.
+> - **Die Warnung zu offenen Ports** (unten) bleibt sinngemäß gültig für jede
+>   künftige gemeinsam genutzte Maschine, nicht für diese.
+>
+> Die Effigies-Seite ist vollständig gesichert: Code und Dokumentation in neun
+> Commits auf `github.com/leiverkus/effigies`, Ergebnisse und sämtliche Logs auf
+> dem MacBook. Verloren gegangen ist bewusst nur, was reproduzierbar oder bereits
+> als Kennzahl dokumentiert ist.
+
+Seit 26.07.2026 arbeiteten **zwei Sessions** auf demselben Rechner. Die folgenden
+Punkte vermieden, dass sie sich gegenseitig Arbeit zerstören.
 
 **Zugang.** `ssh arbi-gpu1` (Key-Auth, Eintrag liegt in `~/.ssh/config` mit
 `BatchMode`, `ConnectTimeout` und Keepalives). Benutzer `patlei`, hat `sudo` **mit**
