@@ -494,6 +494,106 @@ are Southern-Levant archaeology at 12–16 MP. Nothing here speaks to other scen
 
 ---
 
+## Metashape comparison — block 2, run `cmp-effigies` (2026-07-27)
+
+First measurement against the v0.8.0 *Comparison runs* item. Same 382 images, both
+sides producing the **full product set** (sparse, dense, mesh, texture, DEM/DSM,
+orthophoto) at a **pinned, comparable orthophoto GSD**.
+
+### Two false starts worth recording
+
+The first attempt was invalid in ways that were not obvious:
+
+1. **The Metashape run built no orthophoto and no DEM.** Its stages stopped at
+   `buildTexture`. Comparing its 48 m 30 against an Effigies run that also emits
+   ortho, DSM, LAZ, EPT, glTF and a report was not a comparison at all.
+2. **The Effigies orthophoto was at 3.1 cm/px** — 1/28 of the pixel count the imagery
+   supports (see the `auto`-GSD fix in the CHANGELOG). The one product both sides
+   shared was a thumbnail on our side.
+
+Both are fixed here: Metashape's `buildDem` and `buildOrthomosaic` were added and
+**both pinned to 0.588 cm/px** (Effigies' own estimate for this block), and the
+Effigies run used the data-driven GSD.
+
+### Configuration
+
+| | Effigies | Metashape 2.3.1 |
+|---|---|---|
+| Host | RTX A4000, i9-13900KS (8 P-cores), 125 GB | Apple M3 Max, 69 GB |
+| Sparse | COLMAP 4.1.1, SIFT, `spatial`, **GLOMAP** | `matchPhotos(downscale=1)` + `alignCameras` |
+| Dense | OpenMVS, `densify-resolution-level 1` | `buildDepthMaps(downscale=2)` + `buildPointCloud` |
+| Mesh | ReconstructMesh + **RefineMesh** `mfa-8` | `buildModel(DepthMapsData, HighFaceCount)` |
+| Texture | TextureMesh 8192 + **multi-view blend** | `buildUV` + `buildTexture(Mosaic, 8192)` |
+
+`densify-resolution-level 1` and `downscale=2` both mean half image resolution — that
+equivalence is what makes the dense stage comparable at all.
+
+### Result
+
+| Stage | Effigies | Metashape | |
+|---|---|---|---|
+| Sparse | 9 m 34 | **3 m 12** | 3.0x slower |
+| Dense | **17 m 24** · 51.3 M pts | 32 m 12 · 83.1 M pts | 12 % faster *per point* |
+| Mesh | 9 m 33 · 44.5 M faces | **7 m 42** · 13.9 M faces | 1.2x slower |
+| **RefineMesh** | **28 m 41** → 11.3 M faces | — | no counterpart |
+| Texture | 26 m 10 | **5 m 18** | 4.9x slower |
+| **`texture_blend`** | **42 m 24** | — | no counterpart |
+| Ortho + DEM/DSM | **5 m 59** · 238 Mpx | 7 m 36 · 290 Mpx | **parity** |
+| LAZ, EPT, glTF, report | ~7 m | — | no counterpart |
+| **Total** | **2 h 37 m 30** | **56 m 06** | **2.8x** |
+
+### Where the gap actually is
+
+**71 of our 157 minutes are stages Metashape does not run at all** — RefineMesh
+(28 m 41) and the multi-view texel blend (42 m 24). That is *more than Metashape's
+entire run*. Subtracting them leaves **86 min vs 56 min, a factor of 1.5**.
+
+Within the comparable stages the picture is mixed, not uniformly bad:
+
+- **Sparse (3.0x slower)** is the one clear structural deficit, and it is not the
+  matching — `spatial_matcher` takes 1 m 12 against Metashape's 2 m 07 for detection
+  *and* matching. GLOMAP already cut the mapper from 7 m 57 to 2 m 59; the remaining
+  gap is largely `image_undistorter` (3 m 15), which Metashape needs no equivalent of.
+- **Dense: we are ahead per unit of output.** Metashape produced 62 % more points, so
+  raw wall clock understates us; normalised, 20.4 s/Mpt against 23.3.
+- **Texture (4.9x slower)** is OpenMVS' atlas packing — 13 m 20 for 215 106 patches.
+  This is the second real deficit and it compounds with `mfa-8`, which raises patch
+  count by design.
+- **Orthophoto: parity.** 238 Mpx in 5 m 59 against 290 Mpx in 6 m 06. The stage that
+  was expected to be our worst, after the resolution fix multiplied its work by 28.9,
+  turned out to be the one where we match. Predicted 15–30 min; measured 5 m 59.
+
+### What Metashape does not give you
+
+Effigies' DSM is the **z-buffer of the orthophoto's own rasterisation**, so the two are
+byte-identical in grid: same size, same origin to the last decimal. Metashape builds
+its DEM from the point cloud and its ortho from the model; even *pinned to the same
+GSD* they came out 18319x15874 vs 18265x15882 with a 28 mm origin offset — about five
+pixels apart. Overlaying them requires resampling; ours do not.
+
+Metashape's DEM default is also **4x coarser than its ortho** (19.893 vs 4.973 mm on
+the reference project), and the factor is exactly its `BuildDepthMaps/downscale = 4`:
+the DEM inherits the point-cloud spacing while the ortho inherits the image
+resolution. That is honest on Metashape's part — it does not interpolate a DEM finer
+than the depth maps support — but it means DEM-at-ortho-resolution costs a 16x more
+expensive depth-map pass there, and is free here.
+
+### Caveats — read before quoting any of this
+
+- **Different hardware.** Directions are meaningful, magnitudes indicative.
+- **The dense stages did not do the same amount of work** (83.1 M vs 51.3 M points).
+  Only the per-point figure is comparable.
+- **Effigies' configuration is the *candidate* bundle** (GLOMAP + `mfa-8`), not
+  today's shipped default.
+- **Our GSD estimate reads ~17 % high** against Metashape's 0.497 cm/px, so the ortho
+  rasters are not at identical resolution (0.582 vs 0.588 pinned).
+- **One run each.** No repetition, no second block, no quality comparison — this
+  measures *runtime and products*, not accuracy. Cloud-to-cloud and mesh-to-mesh
+  distance against these same outputs is the next step, and the absolute-accuracy half
+  still waits on a TLS scan.
+
+---
+
 ## Notes
 
 - **Both experiments are RUN (2026-07-25).** Results are recorded inline above.

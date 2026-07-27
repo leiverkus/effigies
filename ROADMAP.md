@@ -538,7 +538,26 @@ scan and/or surveyed check points — for absolute accuracy; relative metrics
       surface (TLS scan) for cloud/mesh-to-reference distance. Check points bound
       the georeferencing, not the geometry.
 
-- [ ] **Comparison runs.** Process shared datasets through Effigies, stock ODM,
+- [ ] **Comparison runs.** **Started 2026-07-27: first Metashape run measured** on
+      block 2 (382 images), both sides emitting the full product set at a pinned
+      orthophoto GSD — full table in
+      [docs/planned-experiments.md](docs/planned-experiments.md). Headline
+      **2 h 37 m 30 vs 56 m 06 (2.8x)**, but **71 of our 157 minutes are stages
+      Metashape does not run** (RefineMesh 28 m 41, multi-view blend 42 m 24) — more
+      than its entire run; without them the factor is 1.5. Comparable stages split
+      three ways: sparse **3.0x slower** (the mapper is already fixed by GLOMAP; the
+      rest is `image_undistorter`, which Metashape needs no equivalent of), texture
+      atlas **4.9x slower** (OpenMVS' packing, and it compounds with `mfa-8`), dense
+      **12 % faster per point**, orthophoto **at parity** (238 Mpx in 5 m 59 vs 290 Mpx
+      in 6 m 06). Structural advantage that survives the runtime loss: our DSM is the
+      z-buffer of the ortho's own rasterisation, so the two share a grid byte for byte,
+      while Metashape's DEM and ortho land ~5 px apart even when pinned to one GSD.
+      Still missing for the *quality* half — this measured runtime and products only:
+      cloud/mesh-to-reference distance, roughness, completeness. The workdir of the
+      Effigies run is kept (`--keep-workdir true`) so those can be computed without
+      re-running the 2.5 h chain.
+      Remaining engines and the original scope:
+      Process shared datasets through Effigies, stock ODM,
       Metashape and (where available) RealityScan, and compute the
       `scripts/benchmark.sh` metrics — cloud/mesh-to-reference distance,
       check-point RMSE, surface roughness, completeness, runtime. No prior study
