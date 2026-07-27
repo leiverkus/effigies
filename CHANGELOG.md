@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`drone-3d-quick` — an explicit aerial PREVIEW profile.** For a fast look at a
+  block: does the flight cover the site, did it fly cleanly, is the georeferencing
+  plausible. It bundles existing levers only (no new pipeline code): `mapper global`,
+  `refine-mesh-iters 0`, `mesh-decimate 0.3`, `skip-view-blending true`, on top of
+  `drone-3d`. Roughly **2.4x faster** than the full profile on block 2.
+  **It switches off the step this node exists for.** Constraint #2 forbids dropping
+  RefineMesh *silently*, so this profile does it loudly: `run.sh` prints a four-line
+  NOTE saying the result is a preview and must not be used for measurement,
+  publication or benchmark comparison. The warning is keyed to
+  `refine-mesh-iters == 0`, not to the profile name, so an explicit
+  `--refine-mesh-iters 0` triggers it too. `options.json` carries the same wording so
+  it reaches the WebODM task UI, not just the log.
+  `refine-max-face-area` is deliberately **not** set here: it is a RefineMesh argument,
+  read at exactly one place inside the `REFINE_ITERS != 0` branch, so it is inert in
+  this profile. Pinning a value would imply a coupling that does not exist. When
+  `drone-3d` moves to mfa-8 that lands on the *profile*, not the global default, so
+  this one keeps inheriting 16 even if RefineMesh is re-enabled by hand.
+  `mesh-decimate 0.3` is not cosmetic: without RefineMesh the mesh stays
+  ReconstructMesh's raw graph-cut output — 44.5 M faces on block 2 — which is unusable
+  as a deliverable and ruinous to texture. 0.3 lands near 13 M, the order Metashape's
+  "High" face count produces here.
+
 ### Fixed
 - **The orthophoto/DSM `auto` resolution ignored the imagery entirely** — it sized the
   raster from the *scene extent* (`diag / 4096`, clamped to 1 cm/px) and never looked

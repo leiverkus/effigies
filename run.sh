@@ -95,6 +95,43 @@ case "${OPT[profile]}" in
     profile_set number-views-fuse 3
     profile_set refine-mesh-iters 3
     ;;
+  drone-3d-quick)  # aerial PREVIEW path — deliberately not the quality path
+    # A fast look at a block: does the flight cover the site, did the mission fly
+    # cleanly, is the georeferencing plausible. It is NOT a smaller-but-equivalent
+    # `drone-3d` — it switches off the step this node exists for. Constraint #2 in
+    # CLAUDE.md forbids dropping RefineMesh *silently*; this profile does it
+    # loudly, by name, and run.sh warns at start-up (below). Never make it a
+    # default, and never benchmark it as "Effigies" without the qualifier.
+    #
+    # Measured on block 2 (382 images, 16 MP): ~2.4x faster than the full profile.
+    # What is given up: photometric mesh refinement and the multi-view texel blend.
+    profile_set matcher spatial
+    # GLOMAP global SfM. On block 2, against the incremental mapper on an identical
+    # database: 2m59 vs 7m57, 382/382 images registered vs 379, mean reprojection
+    # error 1.137 px vs 1.164, mean track length 6.76 vs 6.22 — faster *and* better
+    # on every sparse metric. It stays out of the full `drone-3d` profile until the
+    # 15 % lower sparse point count is verified end-to-end through densify.
+    profile_set mapper global
+    profile_set densify-resolution-level 1
+    profile_set number-views-fuse 3
+    # 0 = skip RefineMesh entirely (dense_openmvs.sh guards on this).
+    #
+    # NOTE: refine-max-face-area is therefore INERT in this profile and is
+    # deliberately not set here. It is a RefineMesh argument and is read at exactly
+    # one place (dense_openmvs.sh, inside the REFINE_ITERS != 0 branch), so pinning a
+    # value would only imply a coupling that does not exist. When `drone-3d` moves to
+    # mfa-8 that change lands on the *profile*, not the global default, so this
+    # profile keeps inheriting the global 16 even if someone re-enables RefineMesh
+    # here with an explicit --refine-mesh-iters.
+    profile_set refine-mesh-iters 0
+    # Without RefineMesh the mesh stays ReconstructMesh's raw graph-cut output
+    # (43.6 M faces on block 2) — unusable as a deliverable and ruinous to texture.
+    # 0.3 lands near 13 M, the order Metashape's "High" face count produces here.
+    profile_set mesh-decimate 0.3
+    # The multi-view blend re-bakes every texel from its best four views; ~45 min
+    # single-threaded on block 2. A preview does not need it.
+    profile_set skip-view-blending true
+    ;;
   object)        # finds / artefacts / turntable: max detail, local frame
     profile_set matcher exhaustive
     profile_set georeference none
@@ -112,6 +149,16 @@ case "${OPT[profile]}" in
   none) ;;
   *) echo "[effigies] WARN: unknown profile '${OPT[profile]}' — using defaults" >&2 ;;
 esac
+
+# Constraint #2 (CLAUDE.md) allows dropping RefineMesh only when it is not silent.
+# Anything that reaches refine-mesh-iters=0 — the preview profile or an explicit
+# --refine-mesh-iters 0 — says so here, in the log the user actually reads.
+if [[ "${OPT[refine-mesh-iters]}" == "0" ]]; then
+  echo "[effigies] NOTE: RefineMesh is OFF (refine-mesh-iters=0). The mesh is ReconstructMesh's" >&2
+  echo "[effigies]       graph-cut output, decimated to ${OPT[mesh-decimate]} — no photometric refinement." >&2
+  echo "[effigies]       This is a PREVIEW result. Do not use it for measurement, publication or" >&2
+  echo "[effigies]       benchmark comparison; rerun with --profile drone-3d for the quality path." >&2
+fi
 
 # ---------------------------------------------------------------------------
 # 1c. Named CRS presets — fill crs only when the caller did not set it

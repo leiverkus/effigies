@@ -6,11 +6,12 @@
     "domain": [
       "none",
       "drone-3d",
+      "drone-3d-quick",
       "object",
       "architecture"
     ],
     "type": "enum",
-    "help": "Capture profile: a sensible parameter bundle applied for options you did not set explicitly (your explicit choices always win). 'drone-3d': aerial survey (spatial matching, balanced resolution). 'object': finds/artefacts/turntable (exhaustive matching, full-resolution densify, finest refine, local frame). 'architecture': buildings/facades (exhaustive matching, balanced resolution). 'none': defaults only. Default: %(default)s"
+    "help": "Capture profile: a sensible parameter bundle applied for options you did not set explicitly (your explicit choices always win). 'drone-3d': aerial survey (spatial matching, balanced resolution). 'drone-3d-quick': PREVIEW ONLY — same aerial survey, but RefineMesh and the multi-view texel blend are switched OFF and the mesh is decimated, for a fast look at coverage and georeferencing (~2.4x faster). It gives up the photometric mesh refinement that is this node's whole point, so do not use its output for measurement, publication or benchmarks. 'object': finds/artefacts/turntable (exhaustive matching, full-resolution densify, finest refine, local frame). 'architecture': buildings/facades (exhaustive matching, balanced resolution). 'none': defaults only. Default: %(default)s"
   },
   {
     "name": "sparse-engine",
